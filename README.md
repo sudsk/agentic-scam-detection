@@ -31,7 +31,7 @@ The system uses a **multi-agent architecture** with specialized agents working t
 - **Message Bus** - Inter-agent communication system
 - **Utilities** - Common helper functions
 
-[Alt text](image-url)](docs/images/architecture_diagram.png)
+![Architecture Diagram](docs/images/architecture_diagram.png)
 
 ## 🚀 Quick Start Demo
 

@@ -1,1 +1,35 @@
+# Core ADK and Google Cloud
+google-cloud-adk>=2.0.0
+google-cloud-speech>=2.21.0
+google-cloud-aiplatform>=1.36.0
+google-cloud-firestore>=2.13.0
+google-cloud-pubsub>=2.18.4
+google-cloud-dlp>=3.12.0
+google-cloud-logging>=3.8.0
+google-cloud-monitoring>=2.16.0
 
+# FastAPI Backend
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+websockets>=11.0.0
+python-multipart>=0.0.6
+
+# ML and Data Processing
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+tensorflow>=2.13.0
+torch>=2.0.0
+transformers>=4.33.0
+
+# Audio Processing
+librosa>=0.10.0
+soundfile>=0.12.0
+pydub>=0.25.0
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+aiofiles>=23.0.0
+asyncio-mqtt>=0.13.0
+redis>=4.6.0

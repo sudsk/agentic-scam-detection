@@ -10,12 +10,26 @@ An enterprise-grade multi-agent fraud detection system built with Google Agent D
 
 The system uses a **multi-agent architecture** with specialized agents working together:
 
-- **Live Scam Detection Agent**: Real-time fraud pattern recognition
-- **RAG Policy Agent**: HSBC policy retrieval and guidance generation
-- **Master Orchestrator Agent**: Workflow coordination and decision aggregation
-- **Audio Processing Agent**: Stream handling and transcription
-- **Case Management Agent**: Integration with Quantexa and case workflows
-- **Compliance Agent**: PII detection, GDPR compliance, and audit logging
+**Core Processing Agents:**
+
+- **Audio Ingestion Agent** - Handles real-time audio streaming and preprocessing
+- **Transcription Agent** - Speech-to-text conversion with speaker diarization
+- **Live Scam Detection Agent** - Real-time fraud pattern recognition and risk scoring
+- **RAG Policy Agent** - HSBC policy retrieval and guidance generation
+- **Master Orchestrator Agent** - Coordinates workflow between all agents
+
+**Supporting Agents:**
+
+- **Case Management Agent** - Integration with Quantexa and case workflows
+- **Compliance Agent** - PII detection, GDPR compliance, audit logging
+- **Agent Interface Agent** - Real-time UI updates and dashboard management
+- **Learning Agent** - Continuous model improvement and feedback incorporation
+
+**Shared Components:**
+
+- **Shared Base Agent** - Common functionality for all agents
+- **Message Bus** - Inter-agent communication system
+- **Utilities** - Common helper functions
 
 ## 🚀 Quick Start Demo
 

@@ -1,5 +1,637 @@
 """
 HSBC Scam Detection Agent - FastAPI Backend
+Real-time fraud detection with Google ADK 1.4.2 multi-agent system
+"""
+
+import asyncio
+import json
+import logging
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+import aiofiles
+
+# Import Google ADK agents
+import sys
+sys.path.append('agents')
+from complete_scam_detection_system import (
+    HSBCFraudDetectionSystem,
+    audio_processing_agent,
+    live_scam_detection_agent,
+    rag_policy_agent,
+    master_orchestrator_agent,
+    case_management_agent,
+    compliance_agent
+)
+
+from websocket.connection_manager import ConnectionManager
+from api.routes import audio, fraud, cases
+from config.settings import get_settings
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load settings
+settings = get_settings()
+
+# Create FastAPI app
+app = FastAPI(
+    title="HSBC Scam Detection Agent API - Google ADK 1.4.2",
+    description="Real-time fraud detection using Google ADK multi-agent system",
+    version="2.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Global state
+fraud_detection_system = None
+connection_manager = ConnectionManager()
+
+class HealthResponse(BaseModel):
+    status: str
+    timestamp: str
+    agents_active: int
+    adk_version: str
+    framework: str
+
+class SystemStatusResponse(BaseModel):
+    system_status: str
+    agents_count: int
+    agents: Dict[str, str]
+    framework: str
+    last_updated: str
+
+class ProcessAudioRequest(BaseModel):
+    filename: str
+    session_id: Optional[str] = None
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize Google ADK agents and services on startup"""
+    global fraud_detection_system
+    
+    logger.info("🚀 Starting HSBC Scam Detection Agent System with Google ADK 1.4.2...")
+    
+    try:
+        # Create uploads directory
+        Path("uploads").mkdir(exist_ok=True)
+        
+        # Initialize the fraud detection system with ADK agents
+        logger.info("Initializing Google ADK 1.4.2 multi-agent system...")
+        fraud_detection_system = HSBCFraudDetectionSystem()
+        
+        logger.info("✅ Google ADK agents initialized successfully")
+        logger.info(f"System ready with {len(fraud_detection_system.agents)} active agents")
+        
+        # Log agent status
+        status = fraud_detection_system.get_agent_status()
+        for agent_name, agent_status in status['agents'].items():
+            logger.info(f"  - {agent_name}: {agent_status}")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize ADK agents: {e}")
+        raise
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    logger.info("🔄 Shutting down HSBC Scam Detection Agent System...")
+    
+    # Close all WebSocket connections
+    await connection_manager.disconnect_all()
+    
+    # Cleanup ADK agents if needed
+    # In production, implement proper ADK agent cleanup
+    
+    logger.info("✅ Shutdown complete")
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """Root endpoint with system information"""
+    return """
+    <html>
+        <head>
+            <title>HSBC Scam Detection Agent API - Google ADK 1.4.2</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+                .container { background: white; padding: 30px; border-radius: 8px; max-width: 800px; }
+                .header { color: #dc2626; border-bottom: 2px solid #dc2626; padding-bottom: 10px; }
+                .feature { background: #f0f9ff; padding: 15px; margin: 10px 0; border-radius: 6px; }
+                .agent { background: #ecfdf5; padding: 10px; margin: 5px 0; border-radius: 4px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1 class="header">🏦 HSBC Scam Detection Agent API</h1>
+                <p><strong>Powered by Google ADK 1.4.2 Multi-Agent Architecture</strong></p>
+                
+                <div class="feature">
+                    <h3>🤖 Active ADK Agents</h3>
+                    <div class="agent">🎵 Audio Processing Agent - Stream handling & transcription</div>
+                    <div class="agent">🔍 Live Scam Detection Agent - Real-time fraud pattern recognition</div>
+                    <div class="agent">📚 RAG Policy Agent - HSBC policy retrieval & guidance</div>
+                    <div class="agent">🎭 Master Orchestrator Agent - Workflow coordination</div>
+                    <div class="agent">📋 Case Management Agent - Investigation case creation</div>
+                    <div class="agent">🔒 Compliance Agent - GDPR/FCA compliance checking</div>
+                </div>
+                
+                <div class="feature">
+                    <h3>🔗 API Endpoints</h3>
+                    <ul>
+                        <li><a href="/docs">📚 Interactive API Documentation (Swagger)</a></li>
+                        <li><a href="/health">💚 System Health Check</a></li>
+                        <li><a href="/api/v1/system/status">📊 Agent Status</a></li>
+                        <li><a href="/api/v1/fraud/demo">🧪 Demo Fraud Analysis</a></li>
+                    </ul>
+                </div>
+                
+                <div class="feature">
+                    <h3>🧪 Demo Instructions</h3>
+                    <p>Upload sample audio files to see the ADK multi-agent system in action:</p>
+                    <ul>
+                        <li><code>investment_scam_live_call.wav</code> - Investment fraud detection</li>
+                        <li><code>romance_scam_live_call.wav</code> - Romance scam analysis</li>
+                        <li><code>impersonation_scam_live_call.wav</code> - Authority impersonation</li>
+                        <li><code>legitimate_call.wav</code> - Normal banking call</li>
+                    </ul>
+                </div>
+                
+                <p><em>Real-time fraud detection protecting customers from scams ⚡</em></p>
+            </div>
+        </body>
+    </html>
+    """
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """System health check endpoint"""
+    global fraud_detection_system
+    
+    agents_active = 0
+    if fraud_detection_system:
+        status = fraud_detection_system.get_agent_status()
+        agents_active = status.get('agents_count', 0)
+    
+    return HealthResponse(
+        status="healthy",
+        timestamp=datetime.now().isoformat(),
+        agents_active=agents_active,
+        adk_version="1.4.2",
+        framework="Google ADK"
+    )
+
+@app.get("/api/v1/system/status", response_model=SystemStatusResponse)
+async def get_system_status():
+    """Get detailed system and agent status"""
+    global fraud_detection_system
+    
+    if not fraud_detection_system:
+        raise HTTPException(status_code=503, detail="Fraud detection system not initialized")
+    
+    status = fraud_detection_system.get_agent_status()
+    
+    return SystemStatusResponse(
+        system_status=status.get('system_status', 'unknown'),
+        agents_count=status.get('agents_count', 0),
+        agents=status.get('agents', {}),
+        framework=status.get('framework', 'Google ADK 1.4.2'),
+        last_updated=status.get('last_updated', datetime.now().isoformat())
+    )
+
+@app.post("/api/v1/fraud/process-audio")
+async def process_audio_through_adk(request: ProcessAudioRequest):
+    """Process audio file through Google ADK multi-agent pipeline"""
+    global fraud_detection_system
+    
+    if not fraud_detection_system:
+        raise HTTPException(status_code=503, detail="Fraud detection system not initialized")
+    
+    try:
+        logger.info(f"🔄 Processing {request.filename} through ADK pipeline...")
+        
+        # Generate session ID if not provided
+        session_id = request.session_id or f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Process through ADK pipeline
+        result = await fraud_detection_system.process_audio_file(
+            file_path=request.filename,
+            session_id=session_id
+        )
+        
+        logger.info(f"✅ ADK pipeline completed for {request.filename}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error in ADK pipeline: {e}")
+        raise HTTPException(status_code=500, detail=f"ADK processing failed: {str(e)}")
+
+@app.get("/api/v1/fraud/demo")
+async def demo_fraud_analysis():
+    """Demo endpoint showing ADK agent capabilities"""
+    demo_cases = [
+        {
+            "case_type": "Investment Scam",
+            "transcript": "My investment advisor just called saying there's a margin call on my trading account. I need to transfer fifteen thousand pounds immediately or I'll lose all my investments. He's been guaranteeing thirty-five percent monthly returns.",
+            "expected_risk": "85-95%",
+            "agents_involved": ["live_scam_detection", "rag_policy", "master_orchestrator"],
+            "decision": "BLOCK_AND_ESCALATE"
+        },
+        {
+            "case_type": "Romance Scam", 
+            "transcript": "I need to send four thousand pounds to Turkey. My partner Alex is stuck in Istanbul and needs money for accommodation. We've been together for seven months online.",
+            "expected_risk": "70-80%",
+            "agents_involved": ["live_scam_detection", "rag_policy", "case_management"],
+            "decision": "VERIFY_AND_MONITOR"
+        },
+        {
+            "case_type": "Authority Impersonation",
+            "transcript": "Someone from HSBC security called saying my account has been compromised. They asked me to confirm my card details and PIN to verify my identity immediately.",
+            "expected_risk": "90-95%", 
+            "agents_involved": ["live_scam_detection", "compliance", "master_orchestrator"],
+            "decision": "BLOCK_AND_ESCALATE"
+        },
+        {
+            "case_type": "Legitimate Call",
+            "transcript": "Hi, I'd like to check my account balance and see if my salary has been deposited yet. I'm also interested in opening a savings account.",
+            "expected_risk": "0-15%",
+            "agents_involved": ["live_scam_detection"],
+            "decision": "CONTINUE_NORMAL"
+        }
+    ]
+    
+    return {
+        "demo_title": "HSBC Fraud Detection - Google ADK 1.4.2 Demo",
+        "description": "Sample cases showing multi-agent fraud detection capabilities",
+        "adk_version": "1.4.2",
+        "total_agents": len(fraud_detection_system.agents) if fraud_detection_system else 0,
+        "demo_cases": demo_cases,
+        "instructions": {
+            "upload_audio": "Upload sample audio files to see real-time analysis",
+            "supported_formats": [".wav", ".mp3", ".m4a"],
+            "processing_time": "Typically 2-5 seconds for complete analysis",
+            "output": "Comprehensive fraud analysis with agent guidance"
+        }
+    }
+
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, client_id: str):
+    """WebSocket endpoint for real-time ADK agent communication"""
+    await connection_manager.connect(websocket, client_id)
+    
+    try:
+        while True:
+            # Receive message from client
+            data = await websocket.receive_text()
+            message_data = json.loads(data)
+            
+            # Process message through ADK agents
+            await handle_websocket_message(client_id, message_data)
+            
+    except WebSocketDisconnect:
+        connection_manager.disconnect(client_id)
+        logger.info(f"Client {client_id} disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error for {client_id}: {e}")
+        connection_manager.disconnect(client_id)
+
+async def handle_websocket_message(client_id: str, message_data: dict):
+    """Handle incoming WebSocket messages through ADK agents"""
+    try:
+        message_type = message_data.get('type')
+        
+        if message_type == 'audio_upload':
+            await handle_realtime_audio_processing(client_id, message_data['data'])
+        elif message_type == 'agent_status':
+            await send_agent_status(client_id)
+        elif message_type == 'ping':
+            await connection_manager.send_personal_message(
+                json.dumps({'type': 'pong', 'timestamp': datetime.now().isoformat()}),
+                client_id
+            )
+        else:
+            logger.warning(f"Unknown message type: {message_type} from {client_id}")
+            
+    except Exception as e:
+        logger.error(f"Error handling WebSocket message from {client_id}: {e}")
+        await connection_manager.send_personal_message(
+            json.dumps({
+                'type': 'error',
+                'data': {'message': f'Error processing message: {str(e)}'}
+            }),
+            client_id
+        )
+
+async def handle_realtime_audio_processing(client_id: str, audio_data: dict):
+    """Process audio through ADK agents in real-time"""
+    global fraud_detection_system
+    
+    try:
+        # Send status update
+        await connection_manager.send_personal_message(
+            json.dumps({
+                'type': 'status',
+                'data': {'status': 'processing', 'message': 'Processing through ADK agents...'}
+            }),
+            client_id
+        )
+        
+        # Get filename from audio data
+        filename = audio_data.get('filename', 'unknown.wav')
+        session_id = f"ws_{client_id}_{datetime.now().strftime('%H%M%S')}"
+        
+        # Process through ADK pipeline
+        if fraud_detection_system:
+            result = await fraud_detection_system.process_audio_file(
+                file_path=filename,
+                session_id=session_id
+            )
+            
+            # Send transcription if available
+            if 'transcription' in result:
+                await connection_manager.send_personal_message(
+                    json.dumps({
+                        'type': 'transcription',
+                        'data': result['transcription']
+                    }),
+                    client_id
+                )
+            
+            # Send fraud analysis if available
+            if 'fraud_analysis' in result:
+                await connection_manager.send_personal_message(
+                    json.dumps({
+                        'type': 'fraud_analysis',
+                        'data': result['fraud_analysis']
+                    }),
+                    client_id
+                )
+            
+            # Send compliance check if available
+            if 'compliance_check' in result:
+                await connection_manager.send_personal_message(
+                    json.dumps({
+                        'type': 'compliance_update',
+                        'data': result['compliance_check']
+                    }),
+                    client_id
+                )
+        
+        # Send completion status
+        await connection_manager.send_personal_message(
+            json.dumps({
+                'type': 'status',
+                'data': {'status': 'complete', 'message': 'ADK analysis complete'}
+            }),
+            client_id
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in real-time processing for {client_id}: {e}")
+        await connection_manager.send_personal_message(
+            json.dumps({
+                'type': 'error',
+                'data': {'message': str(e)}
+            }),
+            client_id
+        )
+
+async def send_agent_status(client_id: str):
+    """Send current ADK agent status to client"""
+    global fraud_detection_system
+    
+    try:
+        if fraud_detection_system:
+            status = fraud_detection_system.get_agent_status()
+            await connection_manager.send_personal_message(
+                json.dumps({
+                    'type': 'agent_status',
+                    'data': status
+                }),
+                client_id
+            )
+        else:
+            await connection_manager.send_personal_message(
+                json.dumps({
+                    'type': 'agent_status',
+                    'data': {'error': 'ADK system not initialized'}
+                }),
+                client_id
+            )
+            
+    except Exception as e:
+        logger.error(f"Error sending agent status to {client_id}: {e}")
+
+@app.post("/upload-audio")
+async def upload_audio(file: UploadFile = File(...)):
+    """Upload audio file for ADK processing"""
+    try:
+        # Validate file type
+        if not file.filename.endswith(('.wav', '.mp3', '.m4a')):
+            raise HTTPException(status_code=400, detail="Invalid file type. Only WAV, MP3, and M4A files are supported.")
+        
+        # Read file content
+        content = await file.read()
+        
+        # Save uploaded file
+        file_path = f"uploads/{file.filename}"
+        async with aiofiles.open(file_path, "wb") as f:
+            await f.write(content)
+        
+        logger.info(f"📁 File uploaded: {file.filename} ({len(content)} bytes)")
+        
+        return {
+            "status": "success",
+            "filename": file.filename,
+            "size": len(content),
+            "message": "File uploaded successfully - ready for ADK processing"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error uploading file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/agents/list")
+async def list_adk_agents():
+    """List all active ADK agents and their capabilities"""
+    global fraud_detection_system
+    
+    if not fraud_detection_system:
+        raise HTTPException(status_code=503, detail="ADK system not initialized")
+    
+    agents_info = {
+        "audio_processing": {
+            "name": "Audio Processing Agent",
+            "description": "Handles audio stream processing and transcription using Google Speech-to-Text",
+            "capabilities": ["audio_enhancement", "transcription", "speaker_identification"],
+            "model": "gemini/gemini-2.0-flash",
+            "tools": ["process_audio_stream", "transcribe_audio"]
+        },
+        "live_scam_detection": {
+            "name": "Live Scam Detection Agent", 
+            "description": "Real-time fraud pattern recognition and risk scoring",
+            "capabilities": ["pattern_recognition", "risk_scoring", "fraud_classification"],
+            "model": "gemini/gemini-2.0-flash",
+            "tools": ["analyze_fraud_patterns"]
+        },
+        "rag_policy": {
+            "name": "RAG Policy Agent",
+            "description": "HSBC policy retrieval and agent guidance generation",
+            "capabilities": ["policy_retrieval", "guidance_generation", "escalation_advice"],
+            "model": "gemini/gemini-2.0-flash", 
+            "tools": ["retrieve_hsbc_policies"]
+        },
+        "master_orchestrator": {
+            "name": "Master Orchestrator Agent",
+            "description": "Coordinates multi-agent workflow and makes final decisions",
+            "capabilities": ["workflow_coordination", "decision_making", "agent_communication"],
+            "model": "gemini/gemini-2.0-flash",
+            "tools": ["coordinate_fraud_analysis"]
+        },
+        "case_management": {
+            "name": "Case Management Agent",
+            "description": "Creates and manages fraud investigation cases",
+            "capabilities": ["case_creation", "quantexa_integration", "workflow_management"],
+            "model": "gemini/gemini-2.0-flash",
+            "tools": ["create_fraud_case"]
+        },
+        "compliance": {
+            "name": "Compliance Agent",
+            "description": "Ensures GDPR, FCA and data protection compliance",
+            "capabilities": ["pii_detection", "gdpr_compliance", "regulatory_reporting"],
+            "model": "gemini/gemini-2.0-flash",
+            "tools": ["check_compliance_requirements"]
+        }
+    }
+    
+    status = fraud_detection_system.get_agent_status()
+    
+    return {
+        "adk_version": "1.4.2",
+        "framework": "Google Agent Development Kit",
+        "total_agents": len(agents_info),
+        "system_status": status.get('system_status', 'unknown'),
+        "agents": agents_info,
+        "agent_status": status.get('agents', {}),
+        "last_updated": datetime.now().isoformat()
+    }
+
+@app.get("/api/v1/demo/sample-results")
+async def get_sample_analysis_results():
+    """Get sample analysis results for different fraud types"""
+    sample_results = {
+        "investment_scam": {
+            "risk_score": 87,
+            "risk_level": "CRITICAL",
+            "scam_type": "investment_scam",
+            "confidence": 0.94,
+            "detected_patterns": {
+                "investment_fraud": {"matches": 3, "weight": 30, "severity": "high"},
+                "urgency_pressure": {"matches": 2, "weight": 20, "severity": "high"},
+                "third_party_instructions": {"matches": 1, "weight": 25, "severity": "high"}
+            },
+            "explanation": "CRITICAL risk detected. Detected patterns: investment_fraud, urgency_pressure, third_party_instructions.",
+            "orchestrator_decision": {
+                "decision": "BLOCK_AND_ESCALATE",
+                "reasoning": "Critical fraud risk detected - immediate intervention required",
+                "actions": [
+                    "Block all pending transactions",
+                    "Escalate to Financial Crime Team", 
+                    "Initiate fraud investigation",
+                    "Document all evidence"
+                ],
+                "priority": "CRITICAL"
+            },
+            "agent_guidance": {
+                "immediate_alerts": [
+                    "🚨 CRITICAL: Investment Scam detected",
+                    "🛑 DO NOT PROCESS ANY PAYMENTS - STOP TRANSACTION",
+                    "📞 ESCALATE TO FRAUD TEAM IMMEDIATELY"
+                ],
+                "key_questions": [
+                    "Have you been able to withdraw any money from this investment?",
+                    "Did they guarantee specific percentage returns?",
+                    "How did this investment company first contact you?"
+                ],
+                "customer_education": [
+                    "All legitimate investments carry risk - guaranteed returns are impossible",
+                    "Real investment firms are FCA regulated and listed on official register"
+                ]
+            }
+        },
+        "romance_scam": {
+            "risk_score": 72,
+            "risk_level": "HIGH", 
+            "scam_type": "romance_scam",
+            "confidence": 0.88,
+            "detected_patterns": {
+                "romance_exploitation": {"matches": 2, "weight": 25, "severity": "high"},
+                "urgency_pressure": {"matches": 1, "weight": 20, "severity": "high"}
+            },
+            "orchestrator_decision": {
+                "decision": "VERIFY_AND_MONITOR",
+                "reasoning": "High fraud risk - enhanced verification required",
+                "priority": "HIGH"
+            }
+        },
+        "legitimate_call": {
+            "risk_score": 8,
+            "risk_level": "MINIMAL",
+            "scam_type": "unknown",
+            "confidence": 0.15,
+            "detected_patterns": {},
+            "orchestrator_decision": {
+                "decision": "CONTINUE_NORMAL",
+                "reasoning": "Low fraud risk - standard processing",
+                "priority": "LOW"
+            }
+        }
+    }
+    
+    return {
+        "description": "Sample fraud analysis results from Google ADK 1.4.2 agents",
+        "adk_version": "1.4.2",
+        "generated_at": datetime.now().isoformat(),
+        "results": sample_results
+    }
+
+# Include API routes
+app.include_router(audio.router, prefix="/api/v1/audio", tags=["audio"])
+app.include_router(fraud.router, prefix="/api/v1/fraud", tags=["fraud"]) 
+app.include_router(cases.router, prefix="/api/v1/cases", tags=["cases"])
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "app:app",
+        host=settings.api_host,
+        port=settings.api_port,
+        reload=settings.debug,
+        log_level="info"
+    )"""
+HSBC Scam Detection Agent - FastAPI Backend
 Real-time fraud detection with multi-agent system
 """
 

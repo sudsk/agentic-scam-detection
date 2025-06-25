@@ -390,3 +390,93 @@ async def _store_audio_metadata(
         "customer_id": customer_id,
         "agent_id": agent_id,
         "status": "uploaded"
+    }
+    logger.debug(f"Stored metadata for file {file_id}")
+
+async def _perform_audio_analysis(
+    file_id: str, 
+    file_path: Path, 
+    request: AudioAnalysisRequest,
+    settings: Settings
+):
+    """Perform audio analysis (mock implementation)"""
+    try:
+        # Update status to processing
+        await _update_processing_status(file_id, "processing", 10, "Starting analysis")
+        
+        if request.include_transcription:
+            await asyncio.sleep(2)  # Simulate transcription time
+            await _update_processing_status(file_id, "transcribing", 40, "Transcribing audio")
+        
+        if request.include_fraud_detection:
+            await asyncio.sleep(1)  # Simulate fraud detection time
+            await _update_processing_status(file_id, "analyzing", 70, "Analyzing for fraud patterns")
+        
+        await asyncio.sleep(1)  # Final processing
+        await _update_processing_status(file_id, "completed", 100, "Analysis complete")
+        
+        logger.info(f"✅ Audio analysis completed for file {file_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in audio analysis for {file_id}: {e}")
+        await _update_processing_status(file_id, "failed", 0, f"Analysis failed: {str(e)}")
+
+async def _update_processing_status(file_id: str, status: str, progress: int, step: str):
+    """Update processing status (mock implementation)"""
+    # In production, update in Redis or Firestore
+    logger.debug(f"Status update for {file_id}: {status} ({progress}%) - {step}")
+
+async def _get_processing_status(file_id: str) -> Optional[Dict]:
+    """Get processing status (mock implementation)"""
+    # Mock status - in production, query from database
+    return {
+        "file_id": file_id,
+        "status": "completed",
+        "progress_percentage": 100,
+        "current_step": "Analysis complete",
+        "estimated_completion": None,
+        "error_message": None
+    }
+
+async def _get_transcription_result(file_id: str) -> Optional[Dict]:
+    """Get transcription result (mock implementation)"""
+    # Mock transcription - in production, query from database
+    return {
+        "file_id": file_id,
+        "transcript_text": "This is a mock transcription for demonstration purposes.",
+        "confidence_score": 0.95,
+        "speaker_segments": [
+            {"speaker": "customer", "start": 0.0, "end": 10.0, "text": "Hello, I need help with my account."},
+            {"speaker": "agent", "start": 10.5, "end": 15.0, "text": "How can I help you today?"}
+        ],
+        "word_timestamps": [],
+        "processing_time_seconds": 3.2,
+        "language_detected": "en-GB"
+    }
+
+async def _delete_audio_metadata(file_id: str):
+    """Delete audio metadata (mock implementation)"""
+    # In production, delete from Firestore
+    logger.debug(f"Deleted metadata for file {file_id}")
+
+async def _list_audio_files(limit: int, offset: int, session_id: Optional[str]) -> List[Dict]:
+    """List audio files (mock implementation)"""
+    # In production, query Firestore with pagination
+    mock_files = [
+        {
+            "file_id": "demo-file-1",
+            "filename": "investment_scam_call.wav",
+            "size_bytes": 1024000,
+            "upload_timestamp": "2024-01-15T10:30:00Z",
+            "status": "completed"
+        },
+        {
+            "file_id": "demo-file-2", 
+            "filename": "legitimate_call.wav",
+            "size_bytes": 856000,
+            "upload_timestamp": "2024-01-15T11:15:00Z",
+            "status": "completed"
+        }
+    ]
+    
+    return mock_files[offset:offset + limit]

@@ -1,7 +1,8 @@
-# agents/audio_processor/agent.py
+
+# agents/audio_processor/agent.py - UPDATED
 """
 Audio Processing Agent - Handles transcription and speaker diarization
-Inherits from BaseAgent for consistent interface and common functionality
+UPDATED: Removed wrapper functions, uses centralized config
 """
 
 import time
@@ -10,7 +11,8 @@ from datetime import datetime
 from typing import Dict, Any, List
 from pathlib import Path
 
-from ..shared.base_agent import BaseAgent, AgentCapability, ProcessingResult, agent_registry
+from ..shared.base_agent import BaseAgent, AgentCapability, agent_registry
+from backend.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -32,18 +34,9 @@ class AudioProcessorAgent(BaseAgent):
         logger.info(f"🎵 {self.agent_name} ready for transcription and speaker diarization")
     
     def _get_default_config(self) -> Dict[str, Any]:
-        """Get default configuration for audio processing"""
-        return {
-            "sample_rate": 16000,
-            "channels": 1,
-            "language_code": "en-GB",
-            "enable_speaker_diarization": True,
-            "confidence_threshold": 0.8,
-            "max_audio_duration_seconds": 300,  # 5 minutes
-            "supported_formats": [".wav", ".mp3", ".m4a"],
-            "chunk_size_seconds": 30,
-            "processing_timeout_seconds": 60
-        }
+        """Get default configuration from centralized settings"""
+        settings = get_settings()
+        return settings.get_agent_config("audio_processor")
     
     def _get_capabilities(self) -> List[AgentCapability]:
         """Get audio processing agent capabilities"""
@@ -54,7 +47,8 @@ class AudioProcessorAgent(BaseAgent):
     
     def _initialize_audio_capabilities(self):
         """Initialize audio processing capabilities"""
-        self.supported_formats = self.config["supported_formats"]
+        settings = get_settings()
+        self.supported_formats = settings.supported_audio_formats
         self.sample_scenarios = self._load_sample_scenarios()
         
         logger.info(f"📋 Loaded {len(self.sample_scenarios)} sample scenarios")
@@ -95,15 +89,7 @@ class AudioProcessorAgent(BaseAgent):
         }
     
     def process(self, input_data: Any) -> Dict[str, Any]:
-        """
-        Main processing method - transcribe audio file
-        
-        Args:
-            input_data: Audio file path or audio data
-            
-        Returns:
-            Dict containing transcription results
-        """
+        """Main processing method - transcribe audio file"""
         if isinstance(input_data, dict):
             file_path = input_data.get('file_path', input_data.get('audio_file_path', ''))
         else:
@@ -112,61 +98,43 @@ class AudioProcessorAgent(BaseAgent):
         return self.transcribe_audio(file_path)
     
     def transcribe_audio(self, audio_file_path: str) -> Dict[str, Any]:
-        """
-        Transcribe audio file with speaker diarization
-        
-        Args:
-            audio_file_path: Path to audio file
-            
-        Returns:
-            Dict with detailed transcription including speaker segments
-        """
+        """Transcribe audio file with speaker diarization"""
         start_time = time.time()
         
         try:
             self.log_activity(f"Starting transcription", {"file_path": audio_file_path})
             
-            # Validate file path
             if not audio_file_path:
                 raise ValueError("No audio file path provided")
             
-            # Get filename for scenario matching
             filename = Path(audio_file_path).name.lower()
-            
-            # Determine scenario based on filename
             scenario_type = self._determine_scenario_type(filename)
             segments = self.sample_scenarios.get(scenario_type, self.sample_scenarios["legitimate"])
             
-            # Calculate metrics
             total_duration = sum(s["end"] - s["start"] for s in segments)
             speakers_detected = list(set(s["speaker"] for s in segments))
             
-            # Build result
             result = {
                 "file_path": audio_file_path,
                 "total_duration": total_duration,
                 "speaker_segments": segments,
                 "speakers_detected": speakers_detected,
-                "primary_language": self.config["language_code"],
+                "primary_language": self.config["speech_language_code"],
                 "confidence_score": 0.94,
                 "processing_agent": self.agent_id,
                 "processing_time": time.time() - start_time,
                 "timestamp": datetime.now().isoformat()
             }
             
-            # Update metrics
             processing_time = time.time() - start_time
             self.update_metrics(processing_time, success=True)
             
-            self.log_activity(
-                f"Transcription complete", 
-                {
-                    "segments": len(segments),
-                    "duration": total_duration,
-                    "speakers": len(speakers_detected),
-                    "processing_time": processing_time
-                }
-            )
+            self.log_activity(f"Transcription complete", {
+                "segments": len(segments),
+                "duration": total_duration,
+                "speakers": len(speakers_detected),
+                "processing_time": processing_time
+            })
             
             return result
             
@@ -194,113 +162,6 @@ class AudioProcessorAgent(BaseAgent):
             return "impersonation"
         else:
             return "legitimate"
-    
-    def process_realtime_stream(self, audio_chunk: bytes, session_id: str) -> Dict[str, Any]:
-        """Process real-time audio stream chunk"""
-        start_time = time.time()
-        
-        try:
-            self.log_activity(f"Processing audio stream", {"session_id": session_id, "chunk_size": len(audio_chunk)})
-            
-            # Mock real-time processing for demo
-            interim_text = "Processing audio stream..."
-            
-            if len(audio_chunk) > 1024:  # Simulate processing larger chunks
-                interim_text = "I need help with my account transfer"
-            
-            result = {
-                "session_id": session_id,
-                "chunk_processed": True,
-                "interim_text": interim_text,
-                "speaker": "customer",
-                "confidence": 0.85,
-                "chunk_size": len(audio_chunk),
-                "processing_agent": self.agent_id,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            # Update metrics
-            processing_time = time.time() - start_time
-            self.update_metrics(processing_time, success=True)
-            
-            return result
-            
-        except Exception as e:
-            processing_time = time.time() - start_time
-            self.update_metrics(processing_time, success=False)
-            self.handle_error(e, "process_realtime_stream")
-            
-            return {
-                "error": str(e),
-                "session_id": session_id,
-                "processing_agent": self.agent_id,
-                "timestamp": datetime.now().isoformat()
-            }
-    
-    def validate_audio_file(self, file_path: str) -> Dict[str, Any]:
-        """Validate audio file format and properties"""
-        try:
-            path = Path(file_path)
-            
-            if not path.exists():
-                return {"valid": False, "error": "File does not exist"}
-            
-            if path.suffix.lower() not in self.supported_formats:
-                return {
-                    "valid": False, 
-                    "error": f"Unsupported format. Supported: {', '.join(self.supported_formats)}"
-                }
-            
-            file_size = path.stat().st_size
-            max_size = 50 * 1024 * 1024  # 50MB
-            
-            if file_size > max_size:
-                return {"valid": False, "error": f"File too large. Max size: {max_size/1024/1024}MB"}
-            
-            return {
-                "valid": True,
-                "file_size": file_size,
-                "format": path.suffix.lower(),
-                "estimated_duration": file_size / (16000 * 2)  # Rough estimate
-            }
-            
-        except Exception as e:
-            self.handle_error(e, "validate_audio_file")
-            return {"valid": False, "error": str(e)}
-    
-    def get_supported_formats(self) -> List[str]:
-        """Get list of supported audio formats"""
-        return self.supported_formats.copy()
-    
-    def update_language_model(self, language_code: str):
-        """Update language model for transcription"""
-        old_language = self.config["language_code"]
-        self.config["language_code"] = language_code
-        
-        self.log_activity(
-            f"Language model updated",
-            {"old_language": old_language, "new_language": language_code}
-        )
-    
-    def get_processing_statistics(self) -> Dict[str, Any]:
-        """Get audio processing statistics"""
-        return {
-            "total_files_processed": self.metrics["successful_requests"],
-            "failed_processing": self.metrics["failed_requests"],
-            "average_processing_time": self.metrics["average_processing_time"],
-            "supported_formats": self.supported_formats,
-            "current_language": self.config["language_code"],
-            "agent_id": self.agent_id
-        }
 
 # Create global instance
 audio_processor_agent = AudioProcessorAgent()
-
-# Export functions for backward compatibility
-def transcribe_audio(audio_file_path: str) -> Dict[str, Any]:
-    """Main function for audio transcription"""
-    return audio_processor_agent.transcribe_audio(audio_file_path)
-
-def process_audio_stream(audio_chunk: bytes, session_id: str) -> Dict[str, Any]:
-    """Main function for real-time audio processing"""
-    return audio_processor_agent.process_realtime_stream(audio_chunk, session_id)

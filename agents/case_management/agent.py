@@ -1,25 +1,39 @@
 # agents/case_management/agent.py
 """
 Case Management Agent - Creates and manages fraud investigation cases
+Inherits from BaseAgent for consistent interface and common functionality
 """
 
+import time
 import logging
+import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-import uuid
+
+from ..shared.base_agent import BaseAgent, AgentCapability, ProcessingResult, agent_registry
 
 logger = logging.getLogger(__name__)
 
-class CaseManagementAgent:
+class CaseManagementAgent(BaseAgent):
     """Agent responsible for creating and managing fraud investigation cases"""
     
     def __init__(self):
-        self.agent_id = "case_management_001"
-        self.agent_name = "Case Management Agent"
-        self.status = "active"
+        super().__init__(
+            agent_type="case_management",
+            agent_name="Case Management Agent"
+        )
         
-        # Configuration
-        self.config = {
+        # Initialize case storage and statistics
+        self._initialize_case_system()
+        
+        # Register with global registry
+        agent_registry.register_agent(self)
+        
+        logger.info(f"📋 {self.agent_name} ready for case management")
+    
+    def _get_default_config(self) -> Dict[str, Any]:
+        """Get default configuration for case management"""
+        return {
             "case_id_prefix": "FD",
             "priority_thresholds": {
                 "critical": 80,
@@ -34,19 +48,62 @@ class CaseManagementAgent:
                 "low": "customer-service-enhanced@bank.com"
             },
             "auto_escalation_enabled": True,
-            "case_retention_days": 2555  # 7 years
+            "case_retention_days": 2555,  # 7 years
+            "max_cases_per_agent": 50,
+            "case_timeout_hours": 48,
+            "notification_enabled": True
         }
-        
+    
+    def _get_capabilities(self) -> List[AgentCapability]:
+        """Get case management agent capabilities"""
+        return [
+            AgentCapability.CASE_MANAGEMENT,
+            AgentCapability.ESCALATION_MANAGEMENT
+        ]
+    
+    def _initialize_case_system(self):
+        """Initialize case management system"""
         # Active cases storage (in production, this would be a database)
         self.active_cases = {}
         self.case_statistics = {
             "total_cases": 0,
             "high_risk_cases": 0,
             "resolved_cases": 0,
-            "false_positives": 0
+            "false_positives": 0,
+            "cases_by_type": {},
+            "cases_by_priority": {},
+            "average_resolution_time": 0.0
         }
         
-        logger.info(f"✅ {self.agent_name} initialized")
+        logger.info(f"✅ Case management system initialized")
+    
+    def process(self, input_data: Any) -> Dict[str, Any]:
+        """
+        Main processing method - create or manage fraud cases
+        
+        Args:
+            input_data: Dict containing case data or case ID for updates
+            
+        Returns:
+            Dict containing case management results
+        """
+        if isinstance(input_data, dict):
+            # Check if this is a case creation request
+            if 'session_id' in input_data and 'fraud_analysis' in input_data:
+                return self.create_fraud_case(
+                    input_data['session_id'],
+                    input_data['fraud_analysis'],
+                    input_data.get('customer_id')
+                )
+            elif 'case_id' in input_data and 'action' in input_data:
+                # Case management action
+                return self._handle_case_action(input_data)
+        
+        return {
+            "error": "Invalid input data for case management",
+            "agent_id": self.agent_id,
+            "timestamp": datetime.now().isoformat()
+        }
     
     def create_fraud_case(
         self, 
@@ -65,9 +122,11 @@ class CaseManagementAgent:
         Returns:
             Dict with case details
         """
-        logger.info(f"📋 Creating fraud case for session {session_id}")
+        start_time = time.time()
         
         try:
+            self.log_activity(f"Creating fraud case", {"session_id": session_id})
+            
             risk_score = fraud_analysis.get("risk_score", 0)
             scam_type = fraud_analysis.get("scam_type", "unknown")
             
@@ -111,17 +170,34 @@ class CaseManagementAgent:
             self.active_cases[case_id] = case_data
             
             # Update statistics
-            self.case_statistics["total_cases"] += 1
-            if priority in ["critical", "high"]:
-                self.case_statistics["high_risk_cases"] += 1
+            self._update_statistics(case_data, "created")
             
-            logger.info(f"✅ Case created: {case_id} - Priority: {priority}")
+            # Update metrics
+            processing_time = time.time() - start_time
+            self.update_metrics(processing_time, success=True)
+            
+            self.log_activity(
+                f"Case created successfully", 
+                {
+                    "case_id": case_id, 
+                    "priority": priority,
+                    "processing_time": processing_time
+                }
+            )
             
             return case_data
             
         except Exception as e:
-            logger.error(f"❌ Case creation failed: {e}")
-            raise
+            processing_time = time.time() - start_time
+            self.update_metrics(processing_time, success=False)
+            self.handle_error(e, "create_fraud_case")
+            
+            return {
+                "error": str(e),
+                "session_id": session_id,
+                "case_agent": self.agent_id,
+                "timestamp": datetime.now().isoformat()
+            }
     
     def _generate_case_id(self) -> str:
         """Generate unique case ID"""
@@ -214,6 +290,30 @@ class CaseManagementAgent:
                 "No immediate action required"
             ]
     
+    def _handle_case_action(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle various case management actions"""
+        case_id = input_data.get("case_id")
+        action = input_data.get("action")
+        
+        if case_id not in self.active_cases:
+            return {"error": f"Case {case_id} not found", "agent_id": self.agent_id}
+        
+        try:
+            if action == "update":
+                return self.update_case(case_id, input_data.get("updates", {}))
+            elif action == "resolve":
+                return self.resolve_case(case_id, input_data.get("resolution", {}))
+            elif action == "escalate":
+                return self.escalate_case(case_id, input_data.get("escalation_data", {}))
+            elif action == "add_note":
+                return self.add_case_note(case_id, input_data.get("note", ""))
+            else:
+                return {"error": f"Unknown action: {action}", "agent_id": self.agent_id}
+                
+        except Exception as e:
+            self.handle_error(e, f"_handle_case_action_{action}")
+            return {"error": str(e), "agent_id": self.agent_id}
+    
     def update_case(self, case_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         """Update existing case"""
         if case_id not in self.active_cases:
@@ -237,7 +337,7 @@ class CaseManagementAgent:
             "details": f"Updated fields: {', '.join(updates.keys())}"
         })
         
-        logger.info(f"📝 Case updated: {case_id}")
+        self.log_activity(f"Case updated", {"case_id": case_id, "updates": list(updates.keys())})
         return case_data
     
     def resolve_case(self, case_id: str, resolution: Dict[str, Any]) -> Dict[str, Any]:
@@ -260,9 +360,7 @@ class CaseManagementAgent:
         }
         
         # Update statistics
-        self.case_statistics["resolved_cases"] += 1
-        if not resolution.get("fraud_confirmed", False):
-            self.case_statistics["false_positives"] += 1
+        self._update_statistics(case_data, "resolved")
         
         # Add to timeline
         case_data["timeline"].append({
@@ -272,8 +370,62 @@ class CaseManagementAgent:
             "details": f"Outcome: {resolution.get('outcome', 'investigation_complete')}"
         })
         
-        logger.info(f"✅ Case resolved: {case_id}")
+        self.log_activity(f"Case resolved", {"case_id": case_id, "outcome": resolution.get('outcome')})
         return case_data
+    
+    def escalate_case(self, case_id: str, escalation_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Escalate case to higher priority"""
+        if case_id not in self.active_cases:
+            raise ValueError(f"Case {case_id} not found")
+        
+        case_data = self.active_cases[case_id]
+        escalated_to = escalation_data.get("escalated_to", "senior-fraud-team@bank.com")
+        reason = escalation_data.get("reason", "Risk level increased")
+        
+        # Update priority
+        old_priority = case_data["priority"]
+        if old_priority != "critical":
+            case_data["priority"] = "high" if old_priority == "medium" else "critical"
+        
+        # Update assignment
+        case_data["assigned_team"] = escalated_to
+        case_data["updated_at"] = datetime.now().isoformat()
+        
+        # Add escalation to timeline
+        escalation_record = {
+            "timestamp": datetime.now().isoformat(),
+            "action": "Case escalated",
+            "actor": self.agent_id,
+            "details": f"Escalated from {old_priority} to {case_data['priority']} - Reason: {reason}",
+            "escalated_to": escalated_to
+        }
+        
+        case_data["timeline"].append(escalation_record)
+        
+        self.log_activity(f"Case escalated", {"case_id": case_id, "from": old_priority, "to": case_data['priority']})
+        return case_data
+    
+    def add_case_note(self, case_id: str, note: str) -> Dict[str, Any]:
+        """Add a note to a case"""
+        if case_id not in self.active_cases:
+            raise ValueError(f"Case {case_id} not found")
+        
+        case_data = self.active_cases[case_id]
+        
+        if "notes" not in case_data:
+            case_data["notes"] = []
+        
+        new_note = {
+            "note": note,
+            "added_by": self.agent_id,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        case_data["notes"].append(new_note)
+        case_data["updated_at"] = datetime.now().isoformat()
+        
+        self.log_activity(f"Note added to case", {"case_id": case_id})
+        return {"note_added": True, "case_id": case_id}
     
     def get_case(self, case_id: str) -> Optional[Dict[str, Any]]:
         """Get case by ID"""
@@ -291,34 +443,114 @@ class CaseManagementAgent:
         
         return cases
     
+    def _update_statistics(self, case_data: Dict[str, Any], action: str):
+        """Update case statistics"""
+        if action == "created":
+            self.case_statistics["total_cases"] += 1
+            
+            # Update by type
+            fraud_type = case_data.get("fraud_type", "unknown")
+            if fraud_type not in self.case_statistics["cases_by_type"]:
+                self.case_statistics["cases_by_type"][fraud_type] = 0
+            self.case_statistics["cases_by_type"][fraud_type] += 1
+            
+            # Update by priority
+            priority = case_data.get("priority", "low")
+            if priority not in self.case_statistics["cases_by_priority"]:
+                self.case_statistics["cases_by_priority"][priority] = 0
+            self.case_statistics["cases_by_priority"][priority] += 1
+            
+            # High risk cases
+            if case_data.get("priority") in ["critical", "high"]:
+                self.case_statistics["high_risk_cases"] += 1
+                
+        elif action == "resolved":
+            self.case_statistics["resolved_cases"] += 1
+            
+            # Calculate resolution time if available
+            created_at = case_data.get("created_at")
+            resolved_at = case_data.get("resolved_at")
+            if created_at and resolved_at:
+                try:
+                    created_time = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    resolved_time = datetime.fromisoformat(resolved_at.replace('Z', '+00:00'))
+                    resolution_hours = (resolved_time - created_time).total_seconds() / 3600
+                    
+                    # Update average resolution time
+                    current_avg = self.case_statistics["average_resolution_time"]
+                    resolved_count = self.case_statistics["resolved_cases"]
+                    self.case_statistics["average_resolution_time"] = (
+                        (current_avg * (resolved_count - 1) + resolution_hours) / resolved_count
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not calculate resolution time: {e}")
+            
+            # Check for false positive
+            resolution = case_data.get("resolution", {})
+            if not resolution.get("fraud_confirmed", False):
+                self.case_statistics["false_positives"] += 1
+    
     def get_case_statistics(self) -> Dict[str, Any]:
         """Get case management statistics"""
+        active_cases = len([c for c in self.active_cases.values() if c["status"] == "open"])
+        
         return {
             **self.case_statistics,
-            "active_cases": len([c for c in self.active_cases.values() if c["status"] == "open"]),
+            "active_cases": active_cases,
             "false_positive_rate": (
                 self.case_statistics["false_positives"] / 
                 max(self.case_statistics["resolved_cases"], 1)
             ),
+            "agent_performance": {
+                "total_requests": self.metrics["total_requests"],
+                "successful_requests": self.metrics["successful_requests"],
+                "failed_requests": self.metrics["failed_requests"],
+                "average_processing_time": self.metrics["average_processing_time"]
+            },
+            "agent_id": self.agent_id,
             "timestamp": datetime.now().isoformat()
         }
     
-    def get_status(self) -> Dict[str, Any]:
-        """Get agent status"""
-        return {
-            "agent_id": self.agent_id,
-            "agent_name": self.agent_name,
-            "status": self.status,
-            "capabilities": [
-                "case_creation",
-                "case_management",
-                "investigation_coordination",
-                "team_assignment"
-            ],
-            "config": self.config,
-            "active_cases": len(self.active_cases),
-            "statistics": self.case_statistics
-        }
+    def get_cases_by_customer(self, customer_id: str) -> List[Dict[str, Any]]:
+        """Get all cases for a specific customer"""
+        return [
+            case for case in self.active_cases.values()
+            if case.get("customer_id") == customer_id
+        ]
+    
+    def get_cases_by_session(self, session_id: str) -> List[Dict[str, Any]]:
+        """Get all cases for a specific session"""
+        return [
+            case for case in self.active_cases.values()
+            if case.get("session_id") == session_id
+        ]
+    
+    def cleanup_old_cases(self, days_old: int = None) -> int:
+        """Clean up old resolved cases"""
+        days_old = days_old or self.config["case_retention_days"]
+        cutoff_date = datetime.now()
+        cutoff_date = cutoff_date.replace(day=cutoff_date.day - days_old)
+        
+        cases_to_remove = []
+        for case_id, case_data in self.active_cases.items():
+            if case_data["status"] == "resolved":
+                resolved_at = case_data.get("resolved_at")
+                if resolved_at:
+                    try:
+                        resolved_time = datetime.fromisoformat(resolved_at.replace('Z', '+00:00'))
+                        if resolved_time < cutoff_date:
+                            cases_to_remove.append(case_id)
+                    except Exception:
+                        continue
+        
+        # Remove old cases
+        for case_id in cases_to_remove:
+            del self.active_cases[case_id]
+        
+        if cases_to_remove:
+            self.log_activity(f"Cleaned up old cases", {"count": len(cases_to_remove)})
+        
+        return len(cases_to_remove)
 
 # Create global instance
 case_management_agent = CaseManagementAgent()

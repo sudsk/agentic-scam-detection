@@ -1,7 +1,7 @@
-# agents/case_management/agent.py
+# agents/case_management/agent.py - UPDATED
 """
 Case Management Agent - Creates and manages fraud investigation cases
-Inherits from BaseAgent for consistent interface and common functionality
+UPDATED: Removed wrapper functions, uses centralized config
 """
 
 import time
@@ -10,7 +10,8 @@ import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-from ..shared.base_agent import BaseAgent, AgentCapability, ProcessingResult, agent_registry
+from ..shared.base_agent import BaseAgent, AgentCapability, agent_registry
+from backend.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -32,27 +33,9 @@ class CaseManagementAgent(BaseAgent):
         logger.info(f"📋 {self.agent_name} ready for case management")
     
     def _get_default_config(self) -> Dict[str, Any]:
-        """Get default configuration for case management"""
-        return {
-            "case_id_prefix": "FD",
-            "priority_thresholds": {
-                "critical": 80,
-                "high": 60,
-                "medium": 40,
-                "low": 0
-            },
-            "team_assignments": {
-                "critical": "financial-crime-immediate@bank.com",
-                "high": "fraud-investigation-team@bank.com",
-                "medium": "fraud-prevention-team@bank.com",
-                "low": "customer-service-enhanced@bank.com"
-            },
-            "auto_escalation_enabled": True,
-            "case_retention_days": 2555,  # 7 years
-            "max_cases_per_agent": 50,
-            "case_timeout_hours": 48,
-            "notification_enabled": True
-        }
+        """Get default configuration from centralized settings"""
+        settings = get_settings()
+        return settings.get_agent_config("case_management")
     
     def _get_capabilities(self) -> List[AgentCapability]:
         """Get case management agent capabilities"""
@@ -78,15 +61,7 @@ class CaseManagementAgent(BaseAgent):
         logger.info(f"✅ Case management system initialized")
     
     def process(self, input_data: Any) -> Dict[str, Any]:
-        """
-        Main processing method - create or manage fraud cases
-        
-        Args:
-            input_data: Dict containing case data or case ID for updates
-            
-        Returns:
-            Dict containing case management results
-        """
+        """Main processing method - create or manage fraud cases"""
         if isinstance(input_data, dict):
             # Check if this is a case creation request
             if 'session_id' in input_data and 'fraud_analysis' in input_data:
@@ -111,17 +86,7 @@ class CaseManagementAgent(BaseAgent):
         fraud_analysis: Dict[str, Any], 
         customer_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Create a fraud investigation case
-        
-        Args:
-            session_id: Call session ID
-            fraud_analysis: Fraud detection results
-            customer_id: Customer identifier
-            
-        Returns:
-            Dict with case details
-        """
+        """Create a fraud investigation case"""
         start_time = time.time()
         
         try:
@@ -130,10 +95,10 @@ class CaseManagementAgent(BaseAgent):
             risk_score = fraud_analysis.get("risk_score", 0)
             scam_type = fraud_analysis.get("scam_type", "unknown")
             
-            # Generate case ID
+            # Generate case ID using centralized prefix
             case_id = self._generate_case_id()
             
-            # Determine priority and assignment
+            # Determine priority and assignment using centralized config
             priority = self._determine_priority(risk_score)
             assigned_team = self.config["team_assignments"][priority]
             
@@ -176,14 +141,11 @@ class CaseManagementAgent(BaseAgent):
             processing_time = time.time() - start_time
             self.update_metrics(processing_time, success=True)
             
-            self.log_activity(
-                f"Case created successfully", 
-                {
-                    "case_id": case_id, 
-                    "priority": priority,
-                    "processing_time": processing_time
-                }
-            )
+            self.log_activity(f"Case created successfully", {
+                "case_id": case_id, 
+                "priority": priority,
+                "processing_time": processing_time
+            })
             
             return case_data
             
@@ -200,14 +162,14 @@ class CaseManagementAgent(BaseAgent):
             }
     
     def _generate_case_id(self) -> str:
-        """Generate unique case ID"""
+        """Generate unique case ID using centralized prefix"""
         date_str = datetime.now().strftime("%Y%m%d")
         unique_id = str(uuid.uuid4())[:8].upper()
         return f"{self.config['case_id_prefix']}-{date_str}-{unique_id}"
     
     def _determine_priority(self, risk_score: float) -> str:
-        """Determine case priority based on risk score"""
-        thresholds = self.config["priority_thresholds"]
+        """Determine case priority based on centralized risk thresholds"""
+        thresholds = self.config["risk_thresholds"]
         
         if risk_score >= thresholds["critical"]:
             return "critical"
@@ -379,7 +341,7 @@ class CaseManagementAgent(BaseAgent):
             raise ValueError(f"Case {case_id} not found")
         
         case_data = self.active_cases[case_id]
-        escalated_to = escalation_data.get("escalated_to", "senior-fraud-team@bank.com")
+        escalated_to = escalation_data.get("escalated_to", self.config["team_assignments"]["critical"])
         reason = escalation_data.get("reason", "Risk level increased")
         
         # Update priority
@@ -427,22 +389,6 @@ class CaseManagementAgent(BaseAgent):
         self.log_activity(f"Note added to case", {"case_id": case_id})
         return {"note_added": True, "case_id": case_id}
     
-    def get_case(self, case_id: str) -> Optional[Dict[str, Any]]:
-        """Get case by ID"""
-        return self.active_cases.get(case_id)
-    
-    def list_cases(self, status: Optional[str] = None, priority: Optional[str] = None) -> List[Dict[str, Any]]:
-        """List cases with optional filtering"""
-        cases = list(self.active_cases.values())
-        
-        if status:
-            cases = [case for case in cases if case["status"] == status]
-        
-        if priority:
-            cases = [case for case in cases if case["priority"] == priority]
-        
-        return cases
-    
     def _update_statistics(self, case_data: Dict[str, Any], action: str):
         """Update case statistics"""
         if action == "created":
@@ -489,77 +435,6 @@ class CaseManagementAgent(BaseAgent):
             resolution = case_data.get("resolution", {})
             if not resolution.get("fraud_confirmed", False):
                 self.case_statistics["false_positives"] += 1
-    
-    def get_case_statistics(self) -> Dict[str, Any]:
-        """Get case management statistics"""
-        active_cases = len([c for c in self.active_cases.values() if c["status"] == "open"])
-        
-        return {
-            **self.case_statistics,
-            "active_cases": active_cases,
-            "false_positive_rate": (
-                self.case_statistics["false_positives"] / 
-                max(self.case_statistics["resolved_cases"], 1)
-            ),
-            "agent_performance": {
-                "total_requests": self.metrics["total_requests"],
-                "successful_requests": self.metrics["successful_requests"],
-                "failed_requests": self.metrics["failed_requests"],
-                "average_processing_time": self.metrics["average_processing_time"]
-            },
-            "agent_id": self.agent_id,
-            "timestamp": datetime.now().isoformat()
-        }
-    
-    def get_cases_by_customer(self, customer_id: str) -> List[Dict[str, Any]]:
-        """Get all cases for a specific customer"""
-        return [
-            case for case in self.active_cases.values()
-            if case.get("customer_id") == customer_id
-        ]
-    
-    def get_cases_by_session(self, session_id: str) -> List[Dict[str, Any]]:
-        """Get all cases for a specific session"""
-        return [
-            case for case in self.active_cases.values()
-            if case.get("session_id") == session_id
-        ]
-    
-    def cleanup_old_cases(self, days_old: int = None) -> int:
-        """Clean up old resolved cases"""
-        days_old = days_old or self.config["case_retention_days"]
-        cutoff_date = datetime.now()
-        cutoff_date = cutoff_date.replace(day=cutoff_date.day - days_old)
-        
-        cases_to_remove = []
-        for case_id, case_data in self.active_cases.items():
-            if case_data["status"] == "resolved":
-                resolved_at = case_data.get("resolved_at")
-                if resolved_at:
-                    try:
-                        resolved_time = datetime.fromisoformat(resolved_at.replace('Z', '+00:00'))
-                        if resolved_time < cutoff_date:
-                            cases_to_remove.append(case_id)
-                    except Exception:
-                        continue
-        
-        # Remove old cases
-        for case_id in cases_to_remove:
-            del self.active_cases[case_id]
-        
-        if cases_to_remove:
-            self.log_activity(f"Cleaned up old cases", {"count": len(cases_to_remove)})
-        
-        return len(cases_to_remove)
 
 # Create global instance
 case_management_agent = CaseManagementAgent()
-
-# Export function for system integration
-def create_fraud_case(
-    session_id: str,
-    fraud_analysis: Dict[str, Any],
-    customer_id: Optional[str] = None
-) -> Dict[str, Any]:
-    """Main function for case creation"""
-    return case_management_agent.create_fraud_case(session_id, fraud_analysis, customer_id)

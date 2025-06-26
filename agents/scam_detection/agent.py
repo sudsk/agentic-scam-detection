@@ -1,25 +1,39 @@
 # agents/scam_detection/agent.py
 """
 Fraud Detection Agent - Analyzes text for fraud patterns and risk scoring
+Inherits from BaseAgent for consistent interface and common functionality
 """
 
 import re
+import time
 import logging
 from datetime import datetime
 from typing import Dict, Any, List
 
+from ..shared.base_agent import BaseAgent, AgentCapability, ProcessingResult, agent_registry
+
 logger = logging.getLogger(__name__)
 
-class FraudDetectionAgent:
+class FraudDetectionAgent(BaseAgent):
     """Agent specialized in detecting fraud patterns and calculating risk scores"""
     
     def __init__(self):
-        self.agent_id = "fraud_detection_001"
-        self.agent_name = "Fraud Detection Agent"
-        self.status = "active"
+        super().__init__(
+            agent_type="fraud_detection",
+            agent_name="Fraud Detection Agent"
+        )
         
-        # Configuration
-        self.config = {
+        # Load fraud patterns
+        self._load_fraud_patterns()
+        
+        # Register with global registry
+        agent_registry.register_agent(self)
+        
+        logger.info(f"🔍 {self.agent_name} ready with {len(self.scam_patterns)} pattern categories")
+    
+    def _get_default_config(self) -> Dict[str, Any]:
+        """Get default configuration for fraud detection"""
+        return {
             "risk_thresholds": {
                 "critical": 80,
                 "high": 60,
@@ -33,10 +47,21 @@ class FraudDetectionAgent:
                 "romance_exploitation": 25,
                 "urgency_pressure": 20,
                 "third_party_instructions": 25
-            }
+            },
+            "confidence_threshold": 0.7,
+            "max_processing_time_seconds": 5.0
         }
-        
-        # Enhanced fraud detection patterns
+    
+    def _get_capabilities(self) -> List[AgentCapability]:
+        """Get fraud detection agent capabilities"""
+        return [
+            AgentCapability.FRAUD_DETECTION,
+            AgentCapability.PATTERN_RECOGNITION,
+            AgentCapability.RISK_SCORING
+        ]
+    
+    def _load_fraud_patterns(self):
+        """Load fraud detection patterns"""
         self.scam_patterns = {
             'third_party_instructions': {
                 'patterns': [
@@ -46,7 +71,7 @@ class FraudDetectionAgent:
                     r'I received a call (saying|telling|asking)',
                     r'(company|platform|service) (contacted|called) me'
                 ],
-                'weight': 25,
+                'weight': self.config["pattern_weights"]["third_party_instructions"],
                 'severity': 'high'
             },
             
@@ -58,7 +83,7 @@ class FraudDetectionAgent:
                     r'(limited time|act fast|don\'t wait|hurry)',
                     r'before (it\'s too late|account frozen|arrested)'
                 ],
-                'weight': 20,
+                'weight': self.config["pattern_weights"]["urgency_pressure"],
                 'severity': 'high'
             },
             
@@ -70,7 +95,7 @@ class FraudDetectionAgent:
                     r'(officer|investigator|agent|official) said',
                     r'(arrest|legal action|court case|prosecution)'
                 ],
-                'weight': 30,
+                'weight': self.config["pattern_weights"]["authority_impersonation"],
                 'severity': 'critical'
             },
             
@@ -94,7 +119,7 @@ class FraudDetectionAgent:
                     r'log in to (confirm|verify|check)',
                     r'(full|complete) card number'
                 ],
-                'weight': 35,
+                'weight': self.config["pattern_weights"]["credential_requests"],
                 'severity': 'critical'
             },
             
@@ -106,7 +131,7 @@ class FraudDetectionAgent:
                     r'(forex|crypto|bitcoin|stock) (trading|investment)',
                     r'(profit|return) of (\d+)%'
                 ],
-                'weight': 30,
+                'weight': self.config["pattern_weights"]["investment_fraud"],
                 'severity': 'high'
             },
             
@@ -118,7 +143,7 @@ class FraudDetectionAgent:
                     r'(military|deployed|peacekeeping|doctor)',
                     r'(emergency|medical|visa|travel) (funds|money)'
                 ],
-                'weight': 25,
+                'weight': self.config["pattern_weights"]["romance_exploitation"],
                 'severity': 'high'
             }
         }
@@ -142,8 +167,23 @@ class FraudDetectionAgent:
                 'arrest', 'legal action', 'warrant', 'prosecution'
             ]
         }
+    
+    def process(self, input_data: Any) -> Dict[str, Any]:
+        """
+        Main processing method - analyze text for fraud patterns
         
-        logger.info(f"✅ {self.agent_name} initialized")
+        Args:
+            input_data: Text to analyze for fraud patterns
+            
+        Returns:
+            Dict containing fraud analysis results
+        """
+        if isinstance(input_data, dict):
+            text = input_data.get('text', '')
+        else:
+            text = str(input_data)
+        
+        return self.analyze_fraud_patterns(text)
     
     def analyze_fraud_patterns(self, text: str) -> Dict[str, Any]:
         """
@@ -155,9 +195,11 @@ class FraudDetectionAgent:
         Returns:
             Dict containing risk analysis with score, patterns, and recommendations
         """
-        logger.info(f"🔍 Analyzing text for fraud patterns: {text[:100]}...")
+        start_time = time.time()
         
         try:
+            self.log_activity(f"Analyzing fraud patterns", {"text_length": len(text)})
+            
             text_lower = text.lower()
             risk_score = 0
             detected_patterns = {}
@@ -197,11 +239,14 @@ class FraudDetectionAgent:
             # Recommended action
             recommended_action = self._get_recommended_action(risk_score)
             
+            # Calculate confidence
+            confidence = min(len(detected_patterns) * 0.2 + 0.3, 0.95)
+            
             result = {
                 'risk_score': float(risk_score),
                 'risk_level': risk_level,
                 'scam_type': scam_type,
-                'confidence': min(len(detected_patterns) * 0.2 + 0.3, 0.95),
+                'confidence': confidence,
                 'detected_patterns': detected_patterns,
                 'explanation': explanation,
                 'recommended_action': recommended_action,
@@ -210,12 +255,34 @@ class FraudDetectionAgent:
                 'analysis_timestamp': datetime.now().isoformat()
             }
             
-            logger.info(f"✅ Analysis complete: Risk {risk_score}% - {scam_type}")
+            # Update metrics
+            processing_time = time.time() - start_time
+            self.update_metrics(processing_time, success=True)
+            
+            self.log_activity(
+                f"Analysis complete", 
+                {
+                    "risk_score": risk_score, 
+                    "scam_type": scam_type,
+                    "processing_time": processing_time
+                }
+            )
+            
             return result
             
         except Exception as e:
-            logger.error(f"❌ Fraud analysis failed: {e}")
-            raise
+            processing_time = time.time() - start_time
+            self.update_metrics(processing_time, success=False)
+            self.handle_error(e, "analyze_fraud_patterns")
+            
+            return {
+                'error': str(e),
+                'risk_score': 0,
+                'risk_level': 'UNKNOWN',
+                'scam_type': 'unknown',
+                'analysis_agent': self.agent_id,
+                'analysis_timestamp': datetime.now().isoformat()
+            }
     
     def _classify_scam_type(self, text_lower: str) -> str:
         """Classify the type of scam based on keywords"""
@@ -260,25 +327,32 @@ class FraudDetectionAgent:
         else:
             return "CONTINUE_NORMAL_PROCESSING"
     
-    def get_status(self) -> Dict[str, Any]:
-        """Get agent status"""
+    def update_pattern_weights(self, new_weights: Dict[str, float]):
+        """Update pattern weights for tuning"""
+        for pattern_name, weight in new_weights.items():
+            if pattern_name in self.config["pattern_weights"]:
+                self.config["pattern_weights"][pattern_name] = weight
+                
+                # Update loaded patterns
+                if pattern_name in self.scam_patterns:
+                    self.scam_patterns[pattern_name]["weight"] = weight
+        
+        self.log_activity("Pattern weights updated", new_weights)
+    
+    def get_pattern_statistics(self) -> Dict[str, Any]:
+        """Get statistics about pattern usage"""
         return {
-            "agent_id": self.agent_id,
-            "agent_name": self.agent_name,
-            "status": self.status,
-            "capabilities": [
-                "pattern_recognition",
-                "risk_scoring",
-                "scam_classification"
-            ],
-            "config": self.config,
-            "patterns_loaded": len(self.scam_patterns)
+            "total_patterns": len(self.scam_patterns),
+            "pattern_categories": list(self.scam_patterns.keys()),
+            "current_weights": self.config["pattern_weights"],
+            "scam_types_supported": list(self.scam_classifiers.keys()),
+            "agent_id": self.agent_id
         }
 
 # Create global instance
 fraud_detection_agent = FraudDetectionAgent()
 
-# Export function for system integration
+# Export function for backward compatibility
 def analyze_fraud_patterns(text: str) -> Dict[str, Any]:
     """Main function for fraud pattern analysis"""
     return fraud_detection_agent.analyze_fraud_patterns(text)

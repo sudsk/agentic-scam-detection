@@ -1,7 +1,7 @@
-# agents/policy_guidance/agent.py
+# agents/policy_guidance/agent.py - UPDATED
 """
 Policy Guidance Agent - Provides procedural guidance and escalation recommendations
-Inherits from BaseAgent for consistent interface and common functionality
+UPDATED: Removed wrapper functions, uses centralized config
 """
 
 import time
@@ -9,7 +9,8 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, List
 
-from ..shared.base_agent import BaseAgent, AgentCapability, ProcessingResult, agent_registry
+from ..shared.base_agent import BaseAgent, AgentCapability, agent_registry
+from backend.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,24 +32,9 @@ class PolicyGuidanceAgent(BaseAgent):
         logger.info(f"📚 {self.agent_name} ready with {len(self.policy_database)} policies")
     
     def _get_default_config(self) -> Dict[str, Any]:
-        """Get default configuration for policy guidance"""
-        return {
-            "escalation_thresholds": {
-                "investment_scam": 80,
-                "romance_scam": 75,
-                "impersonation_scam": 85,
-                "authority_scam": 85
-            },
-            "response_teams": {
-                "immediate_escalation": "Financial Crime Team",
-                "enhanced_monitoring": "Fraud Prevention Team",
-                "standard_review": "Customer Service Team"
-            },
-            "guidance_confidence_threshold": 0.7,
-            "max_guidance_items": 10,
-            "include_customer_education": True,
-            "policy_version": "2.1.0"
-        }
+        """Get default configuration from centralized settings"""
+        settings = get_settings()
+        return settings.get_agent_config("policy_guidance")
     
     def _get_capabilities(self) -> List[AgentCapability]:
         """Get policy guidance agent capabilities"""
@@ -59,12 +45,23 @@ class PolicyGuidanceAgent(BaseAgent):
     
     def _load_policy_database(self):
         """Load comprehensive policy database"""
+        settings = get_settings()
+        
+        # Use centralized escalation thresholds
+        escalation_thresholds = {
+            "investment_scam": settings.risk_threshold_critical,
+            "romance_scam": settings.risk_threshold_high + 15,  # 75
+            "impersonation_scam": settings.risk_threshold_critical + 5,  # 85
+            "authority_scam": settings.risk_threshold_critical + 5  # 85
+        }
+        
         self.policy_database = {
             'investment_scam_response': {
                 'policy_id': 'FP-INV-001',
                 'title': 'Investment Scam Detection and Response',
-                'version': '2.1.0',
+                'version': self.config["policy_version"],
                 'last_updated': '2025-01-15',
+                'escalation_threshold': escalation_thresholds["investment_scam"],
                 'procedures': [
                     'Immediately halt any investment-related transfers showing guaranteed return promises',
                     'Ask customer: "Have you been able to withdraw any profits from this investment?"',
@@ -82,12 +79,11 @@ class PolicyGuidanceAgent(BaseAgent):
                 ],
                 'customer_education': [
                     'All legitimate investments carry risk - guaranteed returns are impossible',
-                    'Real investment firms are registered and regulated by financial authorities', 
+                    'Real investment firms are registered and regulated by financial authorities',
                     'High-pressure sales tactics are warning signs of fraud',
                     'Take time to research - legitimate opportunities don\'t require immediate action',
                     'Be wary of unsolicited investment opportunities via phone or email'
                 ],
-                'escalation_threshold': 80,
                 'regulatory_requirements': [
                     'Document all interaction details for potential SAR filing',
                     'Report to Financial Conduct Authority if fraud confirmed',
@@ -100,6 +96,7 @@ class PolicyGuidanceAgent(BaseAgent):
                 'title': 'Romance Scam Detection Procedures',
                 'version': '2.0.3',
                 'last_updated': '2024-12-20',
+                'escalation_threshold': escalation_thresholds["romance_scam"],
                 'procedures': [
                     'Stop transfers to individuals customer has never met in person',
                     'Ask: "Have you met this person face-to-face?" and "Have they asked for money before?"',
@@ -122,7 +119,6 @@ class PolicyGuidanceAgent(BaseAgent):
                     'Video calls can be faked - only meeting in person confirms identity',
                     'Trust your instincts - if something feels wrong, it probably is'
                 ],
-                'escalation_threshold': 75,
                 'vulnerability_considerations': [
                     'Assess customer emotional state and potential vulnerability',
                     'Provide additional support resources if needed',
@@ -135,6 +131,7 @@ class PolicyGuidanceAgent(BaseAgent):
                 'title': 'Authority Impersonation Scam Procedures',
                 'version': '2.2.0',
                 'last_updated': '2025-01-10',
+                'escalation_threshold': escalation_thresholds["impersonation_scam"],
                 'procedures': [
                     'Immediately inform customer: Banks never ask for PINs or passwords over phone',
                     'Instruct customer to hang up and call official number independently',
@@ -157,7 +154,6 @@ class PolicyGuidanceAgent(BaseAgent):
                     'When in doubt, hang up and call the organization\'s official number',
                     'Scammers use fear tactics to pressure immediate action'
                 ],
-                'escalation_threshold': 85,
                 'immediate_actions': [
                     'Block any pending transactions immediately',
                     'Change online banking passwords if potentially compromised',
@@ -169,7 +165,7 @@ class PolicyGuidanceAgent(BaseAgent):
         # Map scam types to policies
         self.scam_policy_map = {
             'investment_scam': 'investment_scam_response',
-            'romance_scam': 'romance_scam_response', 
+            'romance_scam': 'romance_scam_response',
             'impersonation_scam': 'impersonation_scam_response',
             'authority_scam': 'impersonation_scam_response',
             'app_fraud': 'impersonation_scam_response',
@@ -177,43 +173,22 @@ class PolicyGuidanceAgent(BaseAgent):
         }
     
     def process(self, input_data: Any) -> Dict[str, Any]:
-        """
-        Main processing method - retrieve policies and guidance
-        
-        Args:
-            input_data: Dict containing scam_type and risk_score
-            
-        Returns:
-            Dict containing policy guidance
-        """
+        """Main processing method - retrieve policies and guidance"""
         if isinstance(input_data, dict):
             scam_type = input_data.get('scam_type', 'unknown')
             risk_score = input_data.get('risk_score', 0)
         else:
-            # Default processing
             scam_type = 'unknown'
             risk_score = 0
         
         return self.retrieve_fraud_policies(scam_type, risk_score)
     
     def retrieve_fraud_policies(self, scam_type: str, risk_score: float) -> Dict[str, Any]:
-        """
-        Retrieve relevant fraud policies and procedures
-        
-        Args:
-            scam_type: Type of scam detected (investment_scam, romance_scam, etc.)
-            risk_score: Risk score from 0-100
-            
-        Returns:
-            Dict containing relevant policies, procedures, and guidance
-        """
+        """Retrieve relevant fraud policies and procedures"""
         start_time = time.time()
         
         try:
-            self.log_activity(
-                f"Retrieving policies", 
-                {"scam_type": scam_type, "risk_score": risk_score}
-            )
+            self.log_activity(f"Retrieving policies", {"scam_type": scam_type, "risk_score": risk_score})
             
             # Get the appropriate policy
             policy_key = self.scam_policy_map.get(scam_type, 'investment_scam_response')
@@ -222,7 +197,7 @@ class PolicyGuidanceAgent(BaseAgent):
             if not policy:
                 raise ValueError(f"No policy found for scam type: {scam_type}")
             
-            # Generate escalation guidance
+            # Generate escalation guidance using centralized team assignments
             escalation_guidance = self._generate_escalation_guidance(risk_score)
             
             # Generate agent guidance
@@ -231,7 +206,6 @@ class PolicyGuidanceAgent(BaseAgent):
             # Check for regulatory requirements
             regulatory_requirements = policy.get('regulatory_requirements', [])
             
-            # Compile result
             result = {
                 'primary_policy': policy,
                 'escalation_guidance': escalation_guidance,
@@ -251,18 +225,14 @@ class PolicyGuidanceAgent(BaseAgent):
                 'timestamp': datetime.now().isoformat()
             }
             
-            # Update metrics
             processing_time = time.time() - start_time
             self.update_metrics(processing_time, success=True)
             
-            self.log_activity(
-                f"Policy retrieval complete", 
-                {
-                    "policy_id": policy.get('policy_id'),
-                    "escalation_required": result['risk_assessment']['requires_escalation'],
-                    "processing_time": processing_time
-                }
-            )
+            self.log_activity(f"Policy retrieval complete", {
+                "policy_id": policy.get('policy_id'),
+                "escalation_required": result['risk_assessment']['requires_escalation'],
+                "processing_time": processing_time
+            })
             
             return result
             
@@ -280,11 +250,14 @@ class PolicyGuidanceAgent(BaseAgent):
             }
     
     def _generate_escalation_guidance(self, risk_score: float) -> Dict[str, Any]:
-        """Generate escalation guidance based on risk score"""
-        if risk_score >= 80:
+        """Generate escalation guidance using centralized team assignments"""
+        thresholds = self.config["risk_thresholds"]
+        teams = self.config["team_assignments"]
+        
+        if risk_score >= thresholds["critical"]:
             return {
                 'level': 'immediate_escalation',
-                'team': self.config["response_teams"]["immediate_escalation"],
+                'team': teams["critical"],
                 'timeframe': 'immediately',
                 'priority': 'CRITICAL',
                 'procedures': [
@@ -295,10 +268,10 @@ class PolicyGuidanceAgent(BaseAgent):
                     'Consider account security measures'
                 ]
             }
-        elif risk_score >= 60:
+        elif risk_score >= thresholds["high"]:
             return {
                 'level': 'enhanced_monitoring',
-                'team': self.config["response_teams"]["enhanced_monitoring"],
+                'team': teams["high"],
                 'timeframe': 'within 1 hour',
                 'priority': 'HIGH',
                 'procedures': [
@@ -312,7 +285,7 @@ class PolicyGuidanceAgent(BaseAgent):
         else:
             return {
                 'level': 'standard_review',
-                'team': self.config["response_teams"]["standard_review"],
+                'team': teams["medium"],
                 'timeframe': 'within 24 hours',
                 'priority': 'MEDIUM',
                 'procedures': [
@@ -336,21 +309,23 @@ class PolicyGuidanceAgent(BaseAgent):
         if self.config["include_customer_education"]:
             agent_guidance['customer_education'] = policy.get('customer_education', [])
         
-        # Add immediate alerts based on risk level
-        if risk_score >= 80:
+        # Add immediate alerts based on risk level using centralized thresholds
+        thresholds = self.config["risk_thresholds"]
+        
+        if risk_score >= thresholds["critical"]:
             agent_guidance['immediate_alerts'].extend([
                 f"🚨 CRITICAL: {scam_type.replace('_', ' ').title()} detected",
                 "🛑 DO NOT PROCESS ANY PAYMENTS - STOP TRANSACTION",
                 "📞 ESCALATE TO FRAUD TEAM IMMEDIATELY",
                 "🔒 CONSIDER ACCOUNT SECURITY MEASURES"
             ])
-        elif risk_score >= 60:
+        elif risk_score >= thresholds["high"]:
             agent_guidance['immediate_alerts'].extend([
                 f"⚠️ HIGH RISK: {scam_type.replace('_', ' ').title()} suspected",
                 "🔍 ENHANCED VERIFICATION REQUIRED",
                 "📋 DOCUMENT ALL DETAILS THOROUGHLY"
             ])
-        elif risk_score >= 40:
+        elif risk_score >= thresholds["medium"]:
             agent_guidance['immediate_alerts'].extend([
                 f"⚡ MEDIUM RISK: {scam_type.replace('_', ' ').title()} possible",
                 "📋 FOLLOW VERIFICATION PROCEDURES",
@@ -365,71 +340,6 @@ class PolicyGuidanceAgent(BaseAgent):
             agent_guidance['immediate_actions'] = policy['immediate_actions']
         
         return agent_guidance
-    
-    def get_available_policies(self) -> List[Dict[str, str]]:
-        """Get list of available policies"""
-        policies = []
-        for scam_type, policy_key in self.scam_policy_map.items():
-            policy = self.policy_database.get(policy_key, {})
-            if policy:
-                policies.append({
-                    "scam_type": scam_type,
-                    "policy_id": policy.get("policy_id", "unknown"),
-                    "title": policy.get("title", "Unknown Policy"),
-                    "version": policy.get("version", "1.0.0"),
-                    "last_updated": policy.get("last_updated", "unknown")
-                })
-        return policies
-    
-    def update_policy(self, policy_id: str, updates: Dict[str, Any]):
-        """Update an existing policy"""
-        try:
-            # Find policy by ID
-            policy_key = None
-            for key, policy in self.policy_database.items():
-                if policy.get('policy_id') == policy_id:
-                    policy_key = key
-                    break
-            
-            if not policy_key:
-                raise ValueError(f"Policy not found: {policy_id}")
-            
-            # Apply updates
-            policy = self.policy_database[policy_key]
-            for key, value in updates.items():
-                if key in policy:
-                    policy[key] = value
-            
-            # Update timestamp
-            policy['last_updated'] = datetime.now().strftime('%Y-%m-%d')
-            
-            self.log_activity(f"Policy updated", {"policy_id": policy_id, "updates": list(updates.keys())})
-            
-            return {"success": True, "policy_id": policy_id, "updated_fields": list(updates.keys())}
-            
-        except Exception as e:
-            self.handle_error(e, "update_policy")
-            return {"success": False, "error": str(e)}
-    
-    def get_policy_statistics(self) -> Dict[str, Any]:
-        """Get policy usage and effectiveness statistics"""
-        return {
-            "total_policies": len(self.policy_database),
-            "scam_types_covered": len(self.scam_policy_map),
-            "policies_accessed": self.metrics["successful_requests"],
-            "average_retrieval_time": self.metrics["average_processing_time"],
-            "policy_versions": {
-                policy_key: policy.get('version', '1.0.0')
-                for policy_key, policy in self.policy_database.items()
-            },
-            "escalation_thresholds": self.config["escalation_thresholds"],
-            "agent_id": self.agent_id
-        }
 
 # Create global instance
 policy_guidance_agent = PolicyGuidanceAgent()
-
-# Export function for backward compatibility
-def retrieve_fraud_policies(scam_type: str, risk_score: float) -> Dict[str, Any]:
-    """Main function for policy retrieval"""
-    return policy_guidance_agent.retrieve_fraud_policies(scam_type, risk_score)

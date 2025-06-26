@@ -258,24 +258,30 @@ class FraudDetectionSystem:
     
     def get_agent_status(self) -> Dict[str, Any]:
         """Get comprehensive status of all agents"""
+        from .shared.base_agent import agent_registry
+        
+        # Get registry status
+        registry_status = agent_registry.get_system_status()
+        
         return {
             "system_status": "operational",
             "framework": "Modular Multi-Agent Fraud Detection System",
             "agents_count": 4,
             "agents": {
-                "audio_processing": self.audio_processor.status,
-                "fraud_detection": self.fraud_detector.status,
-                "policy_guidance": self.policy_guide.status,
-                "case_management": self.case_manager.status
+                "audio_processing": self.audio_processor.status.value if hasattr(self.audio_processor, 'status') else "active",
+                "fraud_detection": self.fraud_detector.status.value if hasattr(self.fraud_detector, 'status') else "active",
+                "policy_guidance": self.policy_guide.status.value if hasattr(self.policy_guide, 'status') else "active",
+                "case_management": self.case_manager.status.value if hasattr(self.case_manager, 'status') else "active"
             },
             "agent_details": {
-                "audio_processing": self.audio_processor.get_status(),
-                "fraud_detection": self.fraud_detector.get_status(),
-                "policy_guidance": self.policy_guide.get_status(),
-                "case_management": self.case_manager.get_status()
+                "audio_processing": self.audio_processor.get_status() if hasattr(self.audio_processor, 'get_status') else {"status": "active"},
+                "fraud_detection": self.fraud_detector.get_status() if hasattr(self.fraud_detector, 'get_status') else {"status": "active"},
+                "policy_guidance": self.policy_guide.get_status() if hasattr(self.policy_guide, 'get_status') else {"status": "active"},
+                "case_management": self.case_manager.get_status() if hasattr(self.case_manager, 'get_status') else {"status": "active"}
             },
+            "registry_status": registry_status,
             "session_count": len(self.session_data),
-            "case_statistics": self.case_manager.get_case_statistics(),
+            "case_statistics": self.case_manager.get_case_statistics() if hasattr(self.case_manager, 'get_case_statistics') else {},
             "last_updated": datetime.now().isoformat()
         }
     

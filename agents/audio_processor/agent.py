@@ -1,33 +1,115 @@
 # agents/audio_processor/agent.py
 """
 Audio Processing Agent - Handles transcription and speaker diarization
+Inherits from BaseAgent for consistent interface and common functionality
 """
 
+import time
 import logging
 from datetime import datetime
 from typing import Dict, Any, List
 from pathlib import Path
 
+from ..shared.base_agent import BaseAgent, AgentCapability, ProcessingResult, agent_registry
+
 logger = logging.getLogger(__name__)
 
-class AudioProcessorAgent:
+class AudioProcessorAgent(BaseAgent):
     """Audio processing agent for transcription and speaker identification"""
     
     def __init__(self):
-        self.agent_id = "audio_processor_001"
-        self.agent_name = "Audio Processing Agent"
-        self.status = "active"
+        super().__init__(
+            agent_type="audio_processor",
+            agent_name="Audio Processing Agent"
+        )
         
-        # Configuration
-        self.config = {
+        # Initialize audio processing capabilities
+        self._initialize_audio_capabilities()
+        
+        # Register with global registry
+        agent_registry.register_agent(self)
+        
+        logger.info(f"🎵 {self.agent_name} ready for transcription and speaker diarization")
+    
+    def _get_default_config(self) -> Dict[str, Any]:
+        """Get default configuration for audio processing"""
+        return {
             "sample_rate": 16000,
             "channels": 1,
             "language_code": "en-GB",
             "enable_speaker_diarization": True,
-            "confidence_threshold": 0.8
+            "confidence_threshold": 0.8,
+            "max_audio_duration_seconds": 300,  # 5 minutes
+            "supported_formats": [".wav", ".mp3", ".m4a"],
+            "chunk_size_seconds": 30,
+            "processing_timeout_seconds": 60
         }
+    
+    def _get_capabilities(self) -> List[AgentCapability]:
+        """Get audio processing agent capabilities"""
+        return [
+            AgentCapability.AUDIO_PROCESSING,
+            AgentCapability.REAL_TIME_PROCESSING
+        ]
+    
+    def _initialize_audio_capabilities(self):
+        """Initialize audio processing capabilities"""
+        self.supported_formats = self.config["supported_formats"]
+        self.sample_scenarios = self._load_sample_scenarios()
         
-        logger.info(f"✅ {self.agent_name} initialized")
+        logger.info(f"📋 Loaded {len(self.sample_scenarios)} sample scenarios")
+    
+    def _load_sample_scenarios(self) -> Dict[str, List[Dict]]:
+        """Load sample transcription scenarios for demo purposes"""
+        return {
+            "investment": [
+                {"speaker": "customer", "start": 0.0, "end": 5.0, 
+                 "text": "My investment advisor just called saying there's a margin call on my trading account."},
+                {"speaker": "agent", "start": 5.5, "end": 7.0, 
+                 "text": "I see. Can you tell me more about this advisor?"},
+                {"speaker": "customer", "start": 7.5, "end": 12.0, 
+                 "text": "He's been guaranteeing thirty-five percent monthly returns and says I need to transfer fifteen thousand pounds immediately."}
+            ],
+            "romance": [
+                {"speaker": "customer", "start": 0.0, "end": 4.0,
+                 "text": "I need to send four thousand pounds to Turkey urgently."},
+                {"speaker": "agent", "start": 4.5, "end": 6.0,
+                 "text": "May I ask who this payment is for?"},
+                {"speaker": "customer", "start": 6.5, "end": 10.0,
+                 "text": "My partner Alex is stuck in Istanbul. We've been together for seven months online."}
+            ],
+            "impersonation": [
+                {"speaker": "customer", "start": 0.0, "end": 5.0,
+                 "text": "Someone from bank security called saying my account has been compromised."},
+                {"speaker": "agent", "start": 5.5, "end": 7.0,
+                 "text": "Did they ask for any personal information?"},
+                {"speaker": "customer", "start": 7.5, "end": 12.0,
+                 "text": "Yes, they asked me to confirm my card details and PIN to verify my identity immediately."}
+            ],
+            "legitimate": [
+                {"speaker": "customer", "start": 0.0, "end": 3.0,
+                 "text": "Hi, I'd like to check my account balance please."},
+                {"speaker": "agent", "start": 3.5, "end": 5.0,
+                 "text": "Certainly, I can help you with that."}
+            ]
+        }
+    
+    def process(self, input_data: Any) -> Dict[str, Any]:
+        """
+        Main processing method - transcribe audio file
+        
+        Args:
+            input_data: Audio file path or audio data
+            
+        Returns:
+            Dict containing transcription results
+        """
+        if isinstance(input_data, dict):
+            file_path = input_data.get('file_path', input_data.get('audio_file_path', ''))
+        else:
+            file_path = str(input_data)
+        
+        return self.transcribe_audio(file_path)
     
     def transcribe_audio(self, audio_file_path: str) -> Dict[str, Any]:
         """
@@ -39,95 +121,182 @@ class AudioProcessorAgent:
         Returns:
             Dict with detailed transcription including speaker segments
         """
-        logger.info(f"📝 Transcribing audio file: {audio_file_path}")
+        start_time = time.time()
         
         try:
-            # Mock transcription based on filename for demo
+            self.log_activity(f"Starting transcription", {"file_path": audio_file_path})
+            
+            # Validate file path
+            if not audio_file_path:
+                raise ValueError("No audio file path provided")
+            
+            # Get filename for scenario matching
             filename = Path(audio_file_path).name.lower()
             
-            if "investment" in filename:
-                segments = [
-                    {"speaker": "customer", "start": 0.0, "end": 5.0, 
-                     "text": "My investment advisor just called saying there's a margin call on my trading account."},
-                    {"speaker": "agent", "start": 5.5, "end": 7.0, 
-                     "text": "I see. Can you tell me more about this advisor?"},
-                    {"speaker": "customer", "start": 7.5, "end": 12.0, 
-                     "text": "He's been guaranteeing thirty-five percent monthly returns and says I need to transfer fifteen thousand pounds immediately."}
-                ]
-            elif "romance" in filename:
-                segments = [
-                    {"speaker": "customer", "start": 0.0, "end": 4.0,
-                     "text": "I need to send four thousand pounds to Turkey urgently."},
-                    {"speaker": "agent", "start": 4.5, "end": 6.0,
-                     "text": "May I ask who this payment is for?"},
-                    {"speaker": "customer", "start": 6.5, "end": 10.0,
-                     "text": "My partner Alex is stuck in Istanbul. We've been together for seven months online."}
-                ]
-            elif "impersonation" in filename:
-                segments = [
-                    {"speaker": "customer", "start": 0.0, "end": 5.0,
-                     "text": "Someone from bank security called saying my account has been compromised."},
-                    {"speaker": "agent", "start": 5.5, "end": 7.0,
-                     "text": "Did they ask for any personal information?"},
-                    {"speaker": "customer", "start": 7.5, "end": 12.0,
-                     "text": "Yes, they asked me to confirm my card details and PIN to verify my identity immediately."}
-                ]
-            else:
-                segments = [
-                    {"speaker": "customer", "start": 0.0, "end": 3.0,
-                     "text": "Hi, I'd like to check my account balance please."}
-                ]
+            # Determine scenario based on filename
+            scenario_type = self._determine_scenario_type(filename)
+            segments = self.sample_scenarios.get(scenario_type, self.sample_scenarios["legitimate"])
             
+            # Calculate metrics
+            total_duration = sum(s["end"] - s["start"] for s in segments)
+            speakers_detected = list(set(s["speaker"] for s in segments))
+            
+            # Build result
             result = {
                 "file_path": audio_file_path,
-                "total_duration": sum(s["end"] - s["start"] for s in segments),
+                "total_duration": total_duration,
                 "speaker_segments": segments,
-                "speakers_detected": list(set(s["speaker"] for s in segments)),
-                "primary_language": "en-GB",
+                "speakers_detected": speakers_detected,
+                "primary_language": self.config["language_code"],
                 "confidence_score": 0.94,
+                "processing_agent": self.agent_id,
+                "processing_time": time.time() - start_time,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Update metrics
+            processing_time = time.time() - start_time
+            self.update_metrics(processing_time, success=True)
+            
+            self.log_activity(
+                f"Transcription complete", 
+                {
+                    "segments": len(segments),
+                    "duration": total_duration,
+                    "speakers": len(speakers_detected),
+                    "processing_time": processing_time
+                }
+            )
+            
+            return result
+            
+        except Exception as e:
+            processing_time = time.time() - start_time
+            self.update_metrics(processing_time, success=False)
+            self.handle_error(e, "transcribe_audio")
+            
+            return {
+                "error": str(e),
+                "file_path": audio_file_path,
+                "processing_agent": self.agent_id,
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def _determine_scenario_type(self, filename: str) -> str:
+        """Determine scenario type based on filename"""
+        filename_lower = filename.lower()
+        
+        if "investment" in filename_lower:
+            return "investment"
+        elif "romance" in filename_lower:
+            return "romance"
+        elif "impersonation" in filename_lower:
+            return "impersonation"
+        else:
+            return "legitimate"
+    
+    def process_realtime_stream(self, audio_chunk: bytes, session_id: str) -> Dict[str, Any]:
+        """Process real-time audio stream chunk"""
+        start_time = time.time()
+        
+        try:
+            self.log_activity(f"Processing audio stream", {"session_id": session_id, "chunk_size": len(audio_chunk)})
+            
+            # Mock real-time processing for demo
+            interim_text = "Processing audio stream..."
+            
+            if len(audio_chunk) > 1024:  # Simulate processing larger chunks
+                interim_text = "I need help with my account transfer"
+            
+            result = {
+                "session_id": session_id,
+                "chunk_processed": True,
+                "interim_text": interim_text,
+                "speaker": "customer",
+                "confidence": 0.85,
+                "chunk_size": len(audio_chunk),
                 "processing_agent": self.agent_id,
                 "timestamp": datetime.now().isoformat()
             }
             
-            logger.info(f"✅ Transcription complete: {len(segments)} segments")
+            # Update metrics
+            processing_time = time.time() - start_time
+            self.update_metrics(processing_time, success=True)
+            
             return result
             
         except Exception as e:
-            logger.error(f"❌ Transcription failed: {e}")
-            raise
+            processing_time = time.time() - start_time
+            self.update_metrics(processing_time, success=False)
+            self.handle_error(e, "process_realtime_stream")
+            
+            return {
+                "error": str(e),
+                "session_id": session_id,
+                "processing_agent": self.agent_id,
+                "timestamp": datetime.now().isoformat()
+            }
     
-    def process_realtime_stream(self, audio_chunk: bytes, session_id: str) -> Dict[str, Any]:
-        """Process real-time audio stream chunk"""
-        logger.info(f"🎵 Processing audio stream for session {session_id}")
+    def validate_audio_file(self, file_path: str) -> Dict[str, Any]:
+        """Validate audio file format and properties"""
+        try:
+            path = Path(file_path)
+            
+            if not path.exists():
+                return {"valid": False, "error": "File does not exist"}
+            
+            if path.suffix.lower() not in self.supported_formats:
+                return {
+                    "valid": False, 
+                    "error": f"Unsupported format. Supported: {', '.join(self.supported_formats)}"
+                }
+            
+            file_size = path.stat().st_size
+            max_size = 50 * 1024 * 1024  # 50MB
+            
+            if file_size > max_size:
+                return {"valid": False, "error": f"File too large. Max size: {max_size/1024/1024}MB"}
+            
+            return {
+                "valid": True,
+                "file_size": file_size,
+                "format": path.suffix.lower(),
+                "estimated_duration": file_size / (16000 * 2)  # Rough estimate
+            }
+            
+        except Exception as e:
+            self.handle_error(e, "validate_audio_file")
+            return {"valid": False, "error": str(e)}
+    
+    def get_supported_formats(self) -> List[str]:
+        """Get list of supported audio formats"""
+        return self.supported_formats.copy()
+    
+    def update_language_model(self, language_code: str):
+        """Update language model for transcription"""
+        old_language = self.config["language_code"]
+        self.config["language_code"] = language_code
         
-        # Mock real-time processing
-        return {
-            "session_id": session_id,
-            "chunk_processed": True,
-            "interim_text": "Processing audio...",
-            "speaker": "customer",
-            "confidence": 0.85,
-            "timestamp": datetime.now().isoformat()
-        }
+        self.log_activity(
+            f"Language model updated",
+            {"old_language": old_language, "new_language": language_code}
+        )
     
-    def get_status(self) -> Dict[str, Any]:
-        """Get agent status"""
+    def get_processing_statistics(self) -> Dict[str, Any]:
+        """Get audio processing statistics"""
         return {
-            "agent_id": self.agent_id,
-            "agent_name": self.agent_name,
-            "status": self.status,
-            "capabilities": [
-                "audio_transcription",
-                "speaker_diarization", 
-                "real_time_processing"
-            ],
-            "config": self.config
+            "total_files_processed": self.metrics["successful_requests"],
+            "failed_processing": self.metrics["failed_requests"],
+            "average_processing_time": self.metrics["average_processing_time"],
+            "supported_formats": self.supported_formats,
+            "current_language": self.config["language_code"],
+            "agent_id": self.agent_id
         }
 
 # Create global instance
 audio_processor_agent = AudioProcessorAgent()
 
-# Export functions for system integration
+# Export functions for backward compatibility
 def transcribe_audio(audio_file_path: str) -> Dict[str, Any]:
     """Main function for audio transcription"""
     return audio_processor_agent.transcribe_audio(audio_file_path)

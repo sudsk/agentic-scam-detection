@@ -1,401 +1,302 @@
+# agents/shared/base_agent.py
 """
-Shared Base Agent Class for HSBC Scam Detection System
-Provides common functionality for all specialized agents
+Base Agent Class - Common functionality for all fraud detection agents
+Provides standard interface and shared utilities
 """
 
-import asyncio
-import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
-from dataclasses import dataclass, asdict
+from typing import Dict, Any, List, Optional
 from enum import Enum
 
 logger = logging.getLogger(__name__)
 
 class AgentStatus(Enum):
     """Agent status enumeration"""
-    INITIALIZING = "initializing"
-    READY = "ready"
-    PROCESSING = "processing"
+    ACTIVE = "active"
+    INACTIVE = "inactive"
     ERROR = "error"
-    SHUTDOWN = "shutdown"
+    MAINTENANCE = "maintenance"
 
-class MessageType(Enum):
-    """Message type enumeration"""
-    AUDIO_STREAM = "audio_stream"
-    TRANSCRIPT = "transcript"
-    FRAUD_ANALYSIS = "fraud_analysis"
-    RISK_ASSESSMENT = "risk_assessment"
+class AgentCapability(Enum):
+    """Agent capability enumeration"""
+    AUDIO_PROCESSING = "audio_processing"
+    FRAUD_DETECTION = "fraud_detection"
     POLICY_GUIDANCE = "policy_guidance"
-    CASE_UPDATE = "case_update"
-    ALERT = "alert"
-    ERROR = "error"
-    HEARTBEAT = "heartbeat"
-
-@dataclass
-class Message:
-    """Standard message format for inter-agent communication"""
-    message_id: str
-    message_type: str
-    source_agent: str
-    target_agent: Optional[str] = None
-    session_id: Optional[str] = None
-    timestamp: str = None
-    data: Dict[str, Any] = None
-    priority: int = 1  # 1=low, 2=medium, 3=high, 4=critical
-    ttl_seconds: Optional[int] = None
-    correlation_id: Optional[str] = None
-    
-    def __post_init__(self):
-        if self.timestamp is None:
-            self.timestamp = datetime.now().isoformat()
-        if self.data is None:
-            self.data = {}
-    
-    def to_dict(self) -> Dict:
-        """Convert message to dictionary"""
-        return asdict(self)
-    
-    def to_json(self) -> str:
-        """Convert message to JSON string"""
-        return json.dumps(self.to_dict())
-    
-    @classmethod
-    def from_dict(cls, data: Dict) -> 'Message':
-        """Create message from dictionary"""
-        return cls(**data)
-    
-    @classmethod
-    def from_json(cls, json_str: str) -> 'Message':
-        """Create message from JSON string"""
-        return cls.from_dict(json.loads(json_str))
-
-@dataclass
-class AgentCapability:
-    """Agent capability definition"""
-    name: str
-    description: str
-    input_types: List[str]
-    output_types: List[str]
-    processing_time_ms: int
-    confidence_level: float
-
-@dataclass
-class AgentMetrics:
-    """Agent performance metrics"""
-    agent_id: str
-    messages_processed: int = 0
-    messages_failed: int = 0
-    average_processing_time_ms: float = 0.0
-    last_heartbeat: Optional[str] = None
-    uptime_seconds: float = 0.0
-    memory_usage_mb: float = 0.0
-    cpu_usage_percent: float = 0.0
-    error_rate: float = 0.0
-    
-    def update_processing_time(self, processing_time_ms: float):
-        """Update average processing time"""
-        total_processed = self.messages_processed + self.messages_failed
-        if total_processed > 0:
-            self.average_processing_time_ms = (
-                (self.average_processing_time_ms * (total_processed - 1) + processing_time_ms)
-                / total_processed
-            )
-        else:
-            self.average_processing_time_ms = processing_time_ms
-    
-    def calculate_error_rate(self) -> float:
-        """Calculate current error rate"""
-        total = self.messages_processed + self.messages_failed
-        if total > 0:
-            self.error_rate = self.messages_failed / total
-        return self.error_rate
+    CASE_MANAGEMENT = "case_management"
+    REAL_TIME_PROCESSING = "real_time_processing"
+    PATTERN_RECOGNITION = "pattern_recognition"
+    RISK_SCORING = "risk_scoring"
+    ESCALATION_MANAGEMENT = "escalation_management"
 
 class BaseAgent(ABC):
     """
-    Abstract base class for all HSBC Scam Detection agents
-    Provides common functionality and interface
+    Base class for all fraud detection agents
+    Provides common functionality and enforces interface consistency
     """
+    
+    def __init__(self, agent_type: str, agent_name: str):
+        """
+        Initialize base agent
+        
+        Args:
+            agent_type: Type identifier for the agent
+            agent_name: Human-readable name for the agent
+        """
+        self.agent_id = f"{agent_type}_{str(uuid.uuid4())[:8]}"
+        self.agent_type = agent_type
+        self.agent_name = agent_name
+        self.status = AgentStatus.ACTIVE
+        self.created_at = datetime.now()
+        self.last_activity = datetime.now()
+        
+        # Performance metrics
+        self.metrics = {
+            "total_requests": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+            "average_processing_time": 0.0,
+            "last_processing_time": 0.0
+        }
+        
+        # Configuration
+        self.config = self._get_default_config()
+        
+        # Capabilities
+        self.capabilities = self._get_capabilities()
+        
+        logger.info(f"✅ {self.agent_name} ({self.agent_id}) initialized")
+    
+    @abstractmethod
+    def _get_default_config(self) -> Dict[str, Any]:
+        """Get default configuration for the agent"""
+        pass
+    
+    @abstractmethod
+    def _get_capabilities(self) -> List[AgentCapability]:
+        """Get list of agent capabilities"""
+        pass
+    
+    @abstractmethod
+    def process(self, input_data: Any) -> Dict[str, Any]:
+        """
+        Main processing method - must be implemented by each agent
+        
+        Args:
+            input_data: Input data to process
+            
+        Returns:
+            Dict containing processing results
+        """
+        pass
+    
+    def update_metrics(self, processing_time: float, success: bool = True):
+        """Update agent performance metrics"""
+        self.metrics["total_requests"] += 1
+        self.metrics["last_processing_time"] = processing_time
+        
+        if success:
+            self.metrics["successful_requests"] += 1
+        else:
+            self.metrics["failed_requests"] += 1
+        
+        # Update average processing time
+        total_successful = self.metrics["successful_requests"]
+        if total_successful > 0:
+            current_avg = self.metrics["average_processing_time"]
+            self.metrics["average_processing_time"] = (
+                (current_avg * (total_successful - 1) + processing_time) / total_successful
+            )
+        
+        self.last_activity = datetime.now()
+    
+    def set_status(self, status: AgentStatus, reason: Optional[str] = None):
+        """Set agent status"""
+        old_status = self.status
+        self.status = status
+        self.last_activity = datetime.now()
+        
+        logger.info(f"🔄 {self.agent_name} status changed: {old_status.value} → {status.value}")
+        if reason:
+            logger.info(f"   Reason: {reason}")
+    
+    def update_config(self, new_config: Dict[str, Any]):
+        """Update agent configuration"""
+        self.config.update(new_config)
+        self.last_activity = datetime.now()
+        logger.info(f"⚙️ {self.agent_name} configuration updated")
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get comprehensive agent status"""
+        return {
+            "agent_id": self.agent_id,
+            "agent_type": self.agent_type,
+            "agent_name": self.agent_name,
+            "status": self.status.value,
+            "capabilities": [cap.value for cap in self.capabilities],
+            "config": self.config,
+            "metrics": self.metrics,
+            "created_at": self.created_at.isoformat(),
+            "last_activity": self.last_activity.isoformat(),
+            "uptime_seconds": (datetime.now() - self.created_at).total_seconds()
+        }
+    
+    def get_health_check(self) -> Dict[str, Any]:
+        """Get agent health status"""
+        is_healthy = (
+            self.status == AgentStatus.ACTIVE and
+            (datetime.now() - self.last_activity).total_seconds() < 3600  # Active within last hour
+        )
+        
+        return {
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+            "healthy": is_healthy,
+            "status": self.status.value,
+            "last_activity": self.last_activity.isoformat(),
+            "error_rate": (
+                self.metrics["failed_requests"] / max(self.metrics["total_requests"], 1)
+            ),
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def log_activity(self, activity: str, details: Optional[Dict] = None):
+        """Log agent activity"""
+        self.last_activity = datetime.now()
+        
+        log_message = f"🔍 {self.agent_name}: {activity}"
+        if details:
+            log_message += f" - Details: {details}"
+        
+        logger.info(log_message)
+    
+    def handle_error(self, error: Exception, context: Optional[str] = None):
+        """Handle and log errors consistently"""
+        error_msg = f"❌ {self.agent_name} error"
+        if context:
+            error_msg += f" in {context}"
+        error_msg += f": {str(error)}"
+        
+        logger.error(error_msg)
+        self.metrics["failed_requests"] += 1
+        self.last_activity = datetime.now()
+        
+        # Set status to error if too many failures
+        error_rate = self.metrics["failed_requests"] / max(self.metrics["total_requests"], 1)
+        if error_rate > 0.5 and self.metrics["total_requests"] > 10:
+            self.set_status(AgentStatus.ERROR, f"High error rate: {error_rate:.2%}")
+    
+    def reset_metrics(self):
+        """Reset agent metrics"""
+        self.metrics = {
+            "total_requests": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+            "average_processing_time": 0.0,
+            "last_processing_time": 0.0
+        }
+        logger.info(f"📊 {self.agent_name} metrics reset")
+    
+    def __str__(self) -> str:
+        return f"{self.agent_name} ({self.agent_id}) - Status: {self.status.value}"
+    
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}: {self.agent_id}>"
+
+class ProcessingResult:
+    """Standard result class for agent processing"""
     
     def __init__(
         self,
-        agent_id: str,
-        agent_name: str,
-        capabilities: List[AgentCapability],
-        config: Optional[Dict] = None
+        success: bool,
+        data: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+        processing_time: Optional[float] = None,
+        agent_id: Optional[str] = None
     ):
+        self.success = success
+        self.data = data or {}
+        self.error = error
+        self.processing_time = processing_time
         self.agent_id = agent_id
-        self.agent_name = agent_name
-        self.capabilities = capabilities
-        self.config = config or {}
-        
-        # Agent state
-        self.status = AgentStatus.INITIALIZING
-        self.metrics = AgentMetrics(agent_id=agent_id)
-        self.start_time = datetime.now()
-        
-        # Message handling
-        self.message_queue = asyncio.Queue()
-        self.processing_tasks = set()
-        self.heartbeat_interval = self.config.get('heartbeat_interval', 30)
-        
-        # Session management
-        self.active_sessions = {}
-        self.session_data = {}
-        
-        # Error handling
-        self.max_retries = self.config.get('max_retries', 3)
-        self.retry_delay = self.config.get('retry_delay', 1.0)
-        
-        # Initialize logger
-        self.logger = logging.getLogger(f"{__name__}.{agent_id}")
-        
-        self.logger.info(f"🤖 Agent {agent_id} ({agent_name}) initializing...")
+        self.timestamp = datetime.now().isoformat()
     
-    async def initialize(self) -> bool:
-        """Initialize the agent"""
-        try:
-            # Perform agent-specific initialization
-            await self._initialize_agent()
-            
-            # Start heartbeat
-            asyncio.create_task(self._heartbeat_loop())
-            
-            # Start message processing
-            asyncio.create_task(self._process_message_queue())
-            
-            self.status = AgentStatus.READY
-            self.logger.info(f"✅ Agent {self.agent_id} initialized successfully")
-            return True
-            
-        except Exception as e:
-            self.status = AgentStatus.ERROR
-            self.logger.error(f"❌ Failed to initialize agent {self.agent_id}: {e}")
-            return False
-    
-    @abstractmethod
-    async def _initialize_agent(self):
-        """Agent-specific initialization logic"""
-        pass
-    
-    @abstractmethod
-    async def _process_message(self, message: Message) -> Optional[Message]:
-        """Process a single message - implemented by each agent"""
-        pass
-    
-    async def send_message(self, message: Message) -> bool:
-        """Send a message to another agent or external system"""
-        try:
-            # Add message to queue for processing
-            await self.message_queue.put(message)
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to send message: {e}")
-            return False
-    
-    async def process_message(self, message: Message) -> Optional[Message]:
-        """Process an incoming message with error handling and metrics"""
-        start_time = datetime.now()
-        
-        try:
-            # Validate message
-            if not self._validate_message(message):
-                raise ValueError("Invalid message format")
-            
-            # Check if agent can handle this message type
-            if not self._can_handle_message(message):
-                self.logger.warning(f"Cannot handle message type: {message.message_type}")
-                return self._create_error_response(message, "Unsupported message type")
-            
-            # Update session if needed
-            if message.session_id:
-                await self._update_session(message.session_id, message)
-            
-            # Process the message
-            self.status = AgentStatus.PROCESSING
-            response = await self._process_message_with_retry(message)
-            
-            # Update metrics
-            processing_time = (datetime.now() - start_time).total_seconds() * 1000
-            self.metrics.messages_processed += 1
-            self.metrics.update_processing_time(processing_time)
-            
-            self.status = AgentStatus.READY
-            return response
-            
-        except Exception as e:
-            # Update error metrics
-            processing_time = (datetime.now() - start_time).total_seconds() * 1000
-            self.metrics.messages_failed += 1
-            self.metrics.update_processing_time(processing_time)
-            self.metrics.calculate_error_rate()
-            
-            self.logger.error(f"Error processing message {message.message_id}: {e}")
-            self.status = AgentStatus.READY
-            
-            return self._create_error_response(message, str(e))
-    
-    async def _process_message_with_retry(self, message: Message) -> Optional[Message]:
-        """Process message with retry logic"""
-        last_exception = None
-        
-        for attempt in range(self.max_retries + 1):
-            try:
-                return await self._process_message(message)
-            except Exception as e:
-                last_exception = e
-                if attempt < self.max_retries:
-                    wait_time = self.retry_delay * (2 ** attempt)  # Exponential backoff
-                    self.logger.warning(f"Retry {attempt + 1}/{self.max_retries} after {wait_time}s: {e}")
-                    await asyncio.sleep(wait_time)
-                else:
-                    self.logger.error(f"All retry attempts failed for message {message.message_id}")
-        
-        raise last_exception
-    
-    def _validate_message(self, message: Message) -> bool:
-        """Validate message format"""
-        required_fields = ['message_id', 'message_type', 'source_agent', 'timestamp']
-        return all(hasattr(message, field) and getattr(message, field) for field in required_fields)
-    
-    def _can_handle_message(self, message: Message) -> bool:
-        """Check if agent can handle this message type"""
-        # By default, check against capabilities
-        for capability in self.capabilities:
-            if message.message_type in capability.input_types:
-                return True
-        return False
-    
-    def _create_error_response(self, original_message: Message, error: str) -> Message:
-        """Create standardized error response"""
-        return Message(
-            message_id=str(uuid.uuid4()),
-            message_type=MessageType.ERROR.value,
-            source_agent=self.agent_id,
-            target_agent=original_message.source_agent,
-            session_id=original_message.session_id,
-            correlation_id=original_message.message_id,
-            data={
-                'error': error,
-                'original_message_id': original_message.message_id,
-                'agent_id': self.agent_id
-            }
-        )
-    
-    async def _update_session(self, session_id: str, message: Message):
-        """Update session data"""
-        if session_id not in self.session_data:
-            self.session_data[session_id] = {
-                'created_at': datetime.now().isoformat(),
-                'messages': [],
-                'metadata': {}
-            }
-        
-        # Store message reference (not full message to save memory)
-        self.session_data[session_id]['messages'].append({
-            'message_id': message.message_id,
-            'message_type': message.message_type,
-            'timestamp': message.timestamp
-        })
-        
-        # Keep only last 100 messages per session
-        if len(self.session_data[session_id]['messages']) > 100:
-            self.session_data[session_id]['messages'] = self.session_data[session_id]['messages'][-100:]
-    
-    async def _process_message_queue(self):
-        """Process messages from the queue"""
-        while True:
-            try:
-                # Get message from queue
-                message = await self.message_queue.get()
-                
-                # Create task for processing
-                task = asyncio.create_task(self.process_message(message))
-                self.processing_tasks.add(task)
-                
-                # Clean up completed tasks
-                task.add_done_callback(self.processing_tasks.discard)
-                
-            except Exception as e:
-                self.logger.error(f"Error in message queue processing: {e}")
-                await asyncio.sleep(1)  # Brief pause before retrying
-    
-    async def _heartbeat_loop(self):
-        """Send periodic heartbeat"""
-        while self.status != AgentStatus.SHUTDOWN:
-            try:
-                # Update metrics
-                self.metrics.uptime_seconds = (datetime.now() - self.start_time).total_seconds()
-                self.metrics.last_heartbeat = datetime.now().isoformat()
-                
-                # Send heartbeat message
-                heartbeat = Message(
-                    message_id=str(uuid.uuid4()),
-                    message_type=MessageType.HEARTBEAT.value,
-                    source_agent=self.agent_id,
-                    data={
-                        'status': self.status.value,
-                        'metrics': asdict(self.metrics),
-                        'active_sessions': len(self.active_sessions)
-                    }
-                )
-                
-                # In a real implementation, this would be sent to a monitoring service
-                self.logger.debug(f"💓 Heartbeat from {self.agent_id}")
-                
-                await asyncio.sleep(self.heartbeat_interval)
-                
-            except Exception as e:
-                self.logger.error(f"Error in heartbeat: {e}")
-                await asyncio.sleep(self.heartbeat_interval)
-    
-    async def shutdown(self):
-        """Gracefully shutdown the agent"""
-        self.logger.info(f"🔄 Shutting down agent {self.agent_id}...")
-        
-        self.status = AgentStatus.SHUTDOWN
-        
-        # Wait for processing tasks to complete
-        if self.processing_tasks:
-            await asyncio.gather(*self.processing_tasks, return_exceptions=True)
-        
-        # Perform agent-specific cleanup
-        await self._cleanup_agent()
-        
-        self.logger.info(f"✅ Agent {self.agent_id} shutdown complete")
-    
-    async def _cleanup_agent(self):
-        """Agent-specific cleanup logic"""
-        pass
-    
-    def get_status(self) -> Dict:
-        """Get current agent status"""
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert result to dictionary"""
         return {
-            'agent_id': self.agent_id,
-            'agent_name': self.agent_name,
-            'status': self.status.value,
-            'capabilities': [asdict(cap) for cap in self.capabilities],
-            'metrics': asdict(self.metrics),
-            'active_sessions': len(self.active_sessions),
-            'uptime_seconds': (datetime.now() - self.start_time).total_seconds()
+            "success": self.success,
+            "data": self.data,
+            "error": self.error,
+            "processing_time": self.processing_time,
+            "agent_id": self.agent_id,
+            "timestamp": self.timestamp
         }
+
+class AgentRegistry:
+    """Registry for managing all agents in the system"""
     
-    def get_health(self) -> Dict:
-        """Get agent health status"""
-        is_healthy = (
-            self.status in [AgentStatus.READY, AgentStatus.PROCESSING] and
-            self.metrics.error_rate < 0.1 and  # Less than 10% error rate
-            (datetime.now() - self.start_time).total_seconds() > 10  # Running for at least 10 seconds
-        )
+    def __init__(self):
+        self.agents: Dict[str, BaseAgent] = {}
+        self.agent_types: Dict[str, List[str]] = {}
+        
+    def register_agent(self, agent: BaseAgent):
+        """Register an agent"""
+        self.agents[agent.agent_id] = agent
+        
+        if agent.agent_type not in self.agent_types:
+            self.agent_types[agent.agent_type] = []
+        self.agent_types[agent.agent_type].append(agent.agent_id)
+        
+        logger.info(f"📝 Registered agent: {agent.agent_name} ({agent.agent_id})")
+    
+    def unregister_agent(self, agent_id: str):
+        """Unregister an agent"""
+        if agent_id in self.agents:
+            agent = self.agents[agent_id]
+            del self.agents[agent_id]
+            
+            if agent.agent_type in self.agent_types:
+                self.agent_types[agent.agent_type].remove(agent_id)
+                if not self.agent_types[agent.agent_type]:
+                    del self.agent_types[agent.agent_type]
+            
+            logger.info(f"🗑️ Unregistered agent: {agent.agent_name} ({agent_id})")
+    
+    def get_agent(self, agent_id: str) -> Optional[BaseAgent]:
+        """Get agent by ID"""
+        return self.agents.get(agent_id)
+    
+    def get_agents_by_type(self, agent_type: str) -> List[BaseAgent]:
+        """Get all agents of a specific type"""
+        agent_ids = self.agent_types.get(agent_type, [])
+        return [self.agents[agent_id] for agent_id in agent_ids if agent_id in self.agents]
+    
+    def get_all_agents(self) -> List[BaseAgent]:
+        """Get all registered agents"""
+        return list(self.agents.values())
+    
+    def get_healthy_agents(self) -> List[BaseAgent]:
+        """Get all healthy agents"""
+        return [agent for agent in self.agents.values() if agent.get_health_check()["healthy"]]
+    
+    def get_system_status(self) -> Dict[str, Any]:
+        """Get overall system status"""
+        total_agents = len(self.agents)
+        healthy_agents = len(self.get_healthy_agents())
         
         return {
-            'agent_id': self.agent_id,
-            'healthy': is_healthy,
-            'status': self.status.value,
-            'error_rate': self.metrics.error_rate,
-            'last_heartbeat': self.metrics.last_heartbeat,
-            'uptime_seconds': self.metrics.uptime_seconds
+            "total_agents": total_agents,
+            "healthy_agents": healthy_agents,
+            "agent_types": len(self.agent_types),
+            "system_healthy": healthy_agents == total_agents,
+            "agents_by_type": {
+                agent_type: len(agent_ids) 
+                for agent_type, agent_ids in self.agent_types.items()
+            },
+            "timestamp": datetime.now().isoformat()
         }
+
+# Global agent registry
+agent_registry = AgentRegistry()

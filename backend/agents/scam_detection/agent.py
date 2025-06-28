@@ -67,7 +67,9 @@ class FraudDetectionAgent(BaseAgent):
                     r'within (\d+) (hour|minute)s?',
                     r'(deadline|expires|closes) (today|soon|tonight)',
                     r'(limited time|act fast|don\'t wait|hurry)',
-                    r'before (it\'s too late|account frozen|arrested)'
+                    r'before (it\'s too late|account frozen|arrested)',
+                    r'(lose|miss) (this|the) (opportunity|chance)',
+                    r'must (transfer|send|pay|act) .* (immediately|now|today)'
                 ],
                 'weight': settings.pattern_weights["urgency_pressure"],
                 'severity': 'high'
@@ -96,11 +98,14 @@ class FraudDetectionAgent(BaseAgent):
             },
             'investment_fraud': {
                 'patterns': [
-                    r'guaranteed (\d+%|profit|return)',
+                    r'guaranteed? (\d+%|profit|return)',
+                    r'guarantees? (\d+%|\d+\s*percent)',
                     r'(risk-free|no risk|100% safe)',
                     r'(margin call|trading|investment) (account|platform)',
                     r'(forex|crypto|bitcoin|stock) (trading|investment)',
-                    r'(profit|return) of (\d+)%'
+                    r'(profit|return) of (\d+)%',
+                    r'(\d+)% (monthly|daily|weekly) returns?',
+                    r'guarantees? .* returns?'
                 ],
                 'weight': settings.pattern_weights["investment_fraud"],
                 'severity': 'high'

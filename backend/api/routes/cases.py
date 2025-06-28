@@ -19,7 +19,7 @@ from backend.utils import (
     create_error_response, calculate_percentage, get_priority_from_risk_score
 )
 from backend.config.settings import get_settings
-from agents.case_management.agent import case_management_agent
+from ...agents.case_management.agent import case_management_agent
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

@@ -12,7 +12,7 @@ from typing import Dict, Any, List
 from pathlib import Path
 
 from ..shared.base_agent import BaseAgent, AgentCapability, agent_registry
-from backend.config.settings import get_settings
+from ...config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 

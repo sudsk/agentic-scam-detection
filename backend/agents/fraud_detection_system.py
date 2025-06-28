@@ -1,7 +1,7 @@
-# agents/fraud_detection_system.py
+# backend/agents/fraud_detection_system.py - FIXED
 """
 Main Fraud Detection System Coordinator
-Imports and orchestrates all modular agents
+FIXED: Updated to use consolidated agent.process() methods instead of wrapper functions
 """
 
 import asyncio
@@ -9,18 +9,18 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-# Import all modular agents
-from .audio_processor.agent import transcribe_audio, audio_processor_agent
-from .scam_detection.agent import analyze_fraud_patterns, fraud_detection_agent
-from .policy_guidance.agent import retrieve_fraud_policies, policy_guidance_agent
-from .case_management.agent import create_fraud_case, case_management_agent
+# Import all modular agents using consolidated pattern
+from .audio_processor.agent import audio_processor_agent
+from .scam_detection.agent import fraud_detection_agent
+from .policy_guidance.agent import policy_guidance_agent
+from .case_management.agent import case_management_agent
 
 logger = logging.getLogger(__name__)
 
 class FraudDetectionSystem:
     """
     Main system orchestrating all fraud detection agents
-    Coordinates the flow between modular agents
+    Coordinates the flow between modular agents using consolidated architecture
     """
     
     def __init__(self):
@@ -49,9 +49,9 @@ class FraudDetectionSystem:
         try:
             logger.info(f"🔄 Starting multi-agent pipeline for: {file_path}")
             
-            # AGENT 1: Audio Processing - Transcribe audio
+            # AGENT 1: Audio Processing - Transcribe audio using consolidated method
             logger.info("📝 Step 1: Audio Processing Agent")
-            transcription_result = transcribe_audio(file_path)
+            transcription_result = self.audio_processor.process(file_path)
             
             # Extract customer speech segments
             customer_segments = [
@@ -70,30 +70,30 @@ class FraudDetectionSystem:
             # Combine customer text for analysis
             customer_text = " ".join(seg["text"] for seg in customer_segments)
             
-            # AGENT 2: Fraud Detection - Analyze for fraud patterns
+            # AGENT 2: Fraud Detection - Analyze for fraud patterns using consolidated method
             logger.info("🔍 Step 2: Fraud Detection Agent")
-            fraud_analysis = analyze_fraud_patterns(customer_text)
+            fraud_analysis = self.fraud_detector.process(customer_text)
             
-            # AGENT 3: Policy Guidance - Get response procedures (if risk detected)
+            # AGENT 3: Policy Guidance - Get response procedures (if risk detected) using consolidated method
             policy_guidance = {}
             if fraud_analysis["risk_score"] >= 40:
                 logger.info("📚 Step 3: Policy Guidance Agent")
-                policy_guidance = retrieve_fraud_policies(
-                    fraud_analysis["scam_type"],
-                    fraud_analysis["risk_score"]
-                )
+                policy_guidance = self.policy_guide.process({
+                    'scam_type': fraud_analysis["scam_type"],
+                    'risk_score': fraud_analysis["risk_score"]
+                })
             else:
                 logger.info("📚 Step 3: Policy Guidance Agent - Skipped (low risk)")
             
-            # AGENT 4: Case Management - Create case (if high risk)
+            # AGENT 4: Case Management - Create case (if high risk) using consolidated method
             case_info = None
             if fraud_analysis["risk_score"] >= 60:
                 logger.info("📋 Step 4: Case Management Agent")
-                case_info = create_fraud_case(
-                    session_id,
-                    fraud_analysis,
-                    customer_id=None
-                )
+                case_info = self.case_manager.process({
+                    "session_id": session_id,
+                    "fraud_analysis": fraud_analysis,
+                    "customer_id": None
+                })
             else:
                 logger.info("📋 Step 4: Case Management Agent - Skipped (medium/low risk)")
             
@@ -138,7 +138,7 @@ class FraudDetectionSystem:
                 "timestamp": datetime.now().isoformat()
             }
     
-    def _get_agents_involved(self, risk_score: float) -> List[str]:
+    def _get_agents_involved(self, risk_score: float) -> list:
         """Get list of agents involved based on risk score"""
         agents = ["audio_processing", "fraud_detection"]
         
@@ -235,12 +235,15 @@ class FraudDetectionSystem:
     async def process_realtime_stream(self, audio_stream: bytes, session_id: str) -> Dict[str, Any]:
         """Process real-time audio stream through agents"""
         try:
-            # Process through audio agent
-            audio_result = self.audio_processor.process_realtime_stream(audio_stream, session_id)
+            # Process through audio agent using consolidated method
+            audio_result = self.audio_processor.process({
+                'audio_stream': audio_stream,
+                'session_id': session_id
+            })
             
             if audio_result.get("interim_text"):
-                # Quick fraud check on interim text
-                fraud_result = analyze_fraud_patterns(audio_result["interim_text"])
+                # Quick fraud check on interim text using consolidated method
+                fraud_result = self.fraud_detector.process(audio_result["interim_text"])
                 
                 return {
                     "session_id": session_id,
@@ -265,7 +268,7 @@ class FraudDetectionSystem:
         
         return {
             "system_status": "operational",
-            "framework": "Modular Multi-Agent Fraud Detection System",
+            "framework": "Consolidated Multi-Agent Fraud Detection System",
             "agents_count": 4,
             "agents": {
                 "audio_processing": self.audio_processor.status.value if hasattr(self.audio_processor, 'status') else "active",
@@ -281,7 +284,7 @@ class FraudDetectionSystem:
             },
             "registry_status": registry_status,
             "session_count": len(self.session_data),
-            "case_statistics": self.case_manager.get_case_statistics() if hasattr(self.case_manager, 'get_case_statistics') else {},
+            "case_statistics": self.case_manager.case_statistics if hasattr(self.case_manager, 'case_statistics') else {},
             "last_updated": datetime.now().isoformat()
         }
     
@@ -302,7 +305,7 @@ class FraudDetectionSystem:
             "case_management": self.case_manager.get_status(),
             "system_metrics": {
                 "total_sessions": len(self.session_data),
-                "active_cases": len(self.case_manager.active_cases),
+                "active_cases": len(self.case_manager.active_cases) if hasattr(self.case_manager, 'active_cases') else 0,
                 "average_risk_score": self._calculate_average_risk_score(),
                 "pipeline_success_rate": self._calculate_pipeline_success_rate()
             }
@@ -335,10 +338,10 @@ class FraudDetectionSystem:
 # Initialize the global system
 fraud_detection_system = FraudDetectionSystem()
 
-# Main coordination function for API compatibility
+# Main coordination function for API compatibility using consolidated agents
 def coordinate_fraud_analysis(transcript_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Coordinate fraud analysis workflow for API endpoints
+    Coordinate fraud analysis workflow for API endpoints using consolidated agent methods
     
     Args:
         transcript_data: Customer speech data with text, speaker, session_id
@@ -361,25 +364,25 @@ def coordinate_fraud_analysis(transcript_data: Dict[str, Any]) -> Dict[str, Any]
             'timestamp': datetime.now().isoformat()
         }
     
-    # Step 1: Fraud Detection Analysis
-    fraud_analysis = analyze_fraud_patterns(text)
+    # Step 1: Fraud Detection Analysis using consolidated method
+    fraud_analysis = fraud_detection_system.fraud_detector.process(text)
     
-    # Step 2: Policy Retrieval (if risk detected)
+    # Step 2: Policy Retrieval (if risk detected) using consolidated method
     policy_guidance = {}
     if fraud_analysis['risk_score'] >= 40:
-        policy_guidance = retrieve_fraud_policies(
-            fraud_analysis['scam_type'], 
-            fraud_analysis['risk_score']
-        )
+        policy_guidance = fraud_detection_system.policy_guide.process({
+            'scam_type': fraud_analysis['scam_type'],
+            'risk_score': fraud_analysis['risk_score']
+        })
     
-    # Step 3: Case Creation (if high risk)
+    # Step 3: Case Creation (if high risk) using consolidated method
     case_info = None
     if fraud_analysis['risk_score'] >= 60:
-        case_info = create_fraud_case(
-            session_id,
-            fraud_analysis,
-            customer_id=None
-        )
+        case_info = fraud_detection_system.case_manager.process({
+            "session_id": session_id,
+            "fraud_analysis": fraud_analysis,
+            "customer_id": None
+        })
     
     # Step 4: Make Final Decision
     orchestrator_decision = fraud_detection_system._make_orchestrator_decision(
@@ -405,7 +408,7 @@ def coordinate_fraud_analysis(transcript_data: Dict[str, Any]) -> Dict[str, Any]
 async def demo_modular_system():
     """Demo the modular fraud detection system"""
     
-    print("🚀 Fraud Detection System Demo - Modular Architecture")
+    print("🚀 Fraud Detection System Demo - Consolidated Architecture")
     print("=" * 60)
     
     # Test with investment scam

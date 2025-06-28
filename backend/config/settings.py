@@ -1,13 +1,16 @@
 # backend/config/settings.py
 """
-Centralized Configuration for HSBC Scam Detection Agent Backend
 Single source of truth for all configuration values
+FIXED: Updated for Pydantic v2 compatibility
 """
 
 import os
 from functools import lru_cache
 from typing import List, Optional, Dict, Any
-from pydantic import BaseSettings, validator
+
+# Fixed imports for Pydantic v2
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     """Application settings with environment variable support"""
@@ -121,7 +124,6 @@ class Settings(BaseSettings):
     }
     
     # ===== DATABASE CONFIGURATION =====
-    # PostgreSQL
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_db: str = "hsbc_fraud_detection"
@@ -214,31 +216,36 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 3600
     
     # ===== VALIDATION =====
-    @validator('allowed_origins', pre=True)
+    @field_validator('allowed_origins', mode='before')
+    @classmethod
     def parse_cors_origins(cls, v):
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(',')]
         return v
     
-    @validator('supported_audio_formats', pre=True)
+    @field_validator('supported_audio_formats', mode='before')
+    @classmethod
     def parse_audio_formats(cls, v):
         if isinstance(v, str):
             return [fmt.strip() for fmt in v.split(',')]
         return v
     
-    @validator('google_application_credentials')
+    @field_validator('google_application_credentials')
+    @classmethod
     def validate_gcp_credentials(cls, v):
         if v and not os.path.exists(v):
             raise ValueError(f"Google Application Credentials file not found: {v}")
         return v
     
-    @validator('max_audio_file_size_mb')
+    @field_validator('max_audio_file_size_mb')
+    @classmethod
     def validate_max_file_size(cls, v):
         if v <= 0 or v > 1000:
             raise ValueError("Max audio file size must be between 1 and 1000 MB")
         return v
     
-    @validator('risk_threshold_critical', 'risk_threshold_high', 'risk_threshold_medium', 'risk_threshold_low')
+    @field_validator('risk_threshold_critical', 'risk_threshold_high', 'risk_threshold_medium', 'risk_threshold_low')
+    @classmethod
     def validate_risk_thresholds(cls, v):
         if v < 0 or v > 100:
             raise ValueError("Risk thresholds must be between 0 and 100")
@@ -303,10 +310,13 @@ class Settings(BaseSettings):
         
         return agent_configs.get(agent_type, base_config)
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    # Model configuration for Pydantic v2
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False,
+        "extra": "ignore"  # Ignore extra fields
+    }
 
 # ===== ENVIRONMENT-SPECIFIC SETTINGS =====
 
@@ -342,11 +352,11 @@ class ProductionSettings(Settings):
     rate_limit_requests_per_minute: int = 100
     
     # Required in production
-    gcp_project_id: str
-    google_application_credentials: str
-    quantexa_api_url: str
-    quantexa_api_key: str
-    hsbc_core_banking_url: str
+    gcp_project_id: str = Field(..., description="GCP Project ID is required in production")
+    google_application_credentials: str = Field(..., description="GCP credentials required in production")
+    quantexa_api_url: str = Field(..., description="Quantexa API URL required in production")
+    quantexa_api_key: str = Field(..., description="Quantexa API key required in production")
+    hsbc_core_banking_url: str = Field(..., description="HSBC Core Banking URL required in production")
 
 class TestingSettings(Settings):
     """Testing-specific settings"""

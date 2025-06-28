@@ -1,6 +1,6 @@
-# backend/api/routes/fraud.py - CLEAN APPROACH
+# backend/api/routes/fraud.py - ALL IMPORTS FIXED
 """
-Fraud detection API routes - CLEAN VERSION
+Fraud detection API routes - CLEAN VERSION with FIXED IMPORTS
 Only uses models that are actually needed and exist
 """
 
@@ -8,19 +8,21 @@ import logging
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
-from ..middleware.error_handling import handle_api_errors, validate_input, require_session_id
-from ..services.mock_database import mock_db, session_service
-from ..api.models import (
+
+# FIXED: Correct relative import paths from api/routes/ to backend/
+from ...middleware.error_handling import handle_api_errors, validate_input, require_session_id
+from ...services.mock_database import mock_db, session_service
+from ..models import (
     FraudAnalysisRequest, 
     FraudAnalysisResult, 
     SuccessResponse
 )
-from ..utils import (
+from ...utils import (
     get_current_timestamp, generate_session_id, create_success_response,
     create_error_response, calculate_percentage
 )
-from ..config.settings import get_settings
-from ..agents.scam_detection.agent import fraud_detection_agent
+from ...config.settings import get_settings
+from ...agents.scam_detection.agent import fraud_detection_agent
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

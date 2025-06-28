@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse
 import aiofiles
 
 # Import consolidated components
-from agents.fraud_detection_system import fraud_detection_system
+from .agents.fraud_detection_system import fraud_detection_system
 from websocket.connection_manager import ConnectionManager
 from api.routes import audio, fraud, cases
 from config.settings import get_settings

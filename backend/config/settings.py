@@ -1,5 +1,6 @@
 # backend/config/settings.py
 """
+Centralized Configuration for HSBC Scam Detection Agent Backend
 Single source of truth for all configuration values
 FIXED: Updated for Pydantic v2 compatibility
 """
@@ -45,10 +46,10 @@ class Settings(BaseSettings):
     pattern_weights: Dict[str, float] = {
         "authority_impersonation": 35,
         "credential_requests": 40,
-        "investment_fraud": 30,
-        "romance_exploitation": 25,
-        "urgency_pressure": 20,
-        "third_party_instructions": 25,
+        "investment_fraud": 40,  # Increased from 30
+        "romance_exploitation": 30,  # Increased from 25
+        "urgency_pressure": 25,  # Increased from 20
+        "third_party_instructions": 30,  # Increased from 25
         "financial_pressure": 25
     }
     

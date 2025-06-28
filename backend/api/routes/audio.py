@@ -4,11 +4,11 @@ Audio processing API routes - UPDATED to use centralized patterns
 """
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from backend.middleware.error_handling import handle_api_errors, validate_input
-from backend.services.mock_database import audio_service
-from backend.api.models import AudioUploadResponse, SuccessResponse
-from backend.utils import get_current_timestamp, validate_file_extension, get_file_size_mb
-from backend.config.settings import get_settings
+from ...middleware.error_handling import handle_api_errors, validate_input
+from ...services.mock_database import audio_service
+from ..models import AudioUploadResponse, SuccessResponse
+from ...utils import get_current_timestamp, validate_file_extension, get_file_size_mb
+from ...config.settings import get_settings
 
 router = APIRouter()
 

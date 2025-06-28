@@ -1,7 +1,7 @@
-# agents/scam_detection/agent.py - UPDATED
+# backend/agents/scam_detection/agent.py - FIXED OUTPUT FORMAT
 """
 Fraud Detection Agent - Analyzes text for fraud patterns and risk scoring
-UPDATED: Removed wrapper functions, uses centralized config
+FIXED: Returns proper DetectedPattern objects for API compatibility
 """
 
 import re
@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, List
 
 from ..shared.base_agent import BaseAgent, AgentCapability, agent_registry
-from backend.config.settings import get_settings
+from ...config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,9 @@ class FraudDetectionAgent(BaseAgent):
                         matches.extend([match.group() for match in pattern_matches])
                 
                 if matches:
+                    # Create proper DetectedPattern object format
                     detected_patterns[category] = {
+                        'pattern_name': category,
                         'matches': matches,
                         'count': len(matches),
                         'weight': config['weight'],

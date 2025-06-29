@@ -14,6 +14,12 @@ from ..models import AudioUploadResponse, SuccessResponse
 from ...utils import get_current_timestamp, validate_file_extension, get_file_size_mb
 from ...config.settings import get_settings
 
+from pydantic import BaseModel
+
+class AudioProcessRequest(BaseModel):
+    filename: str
+    session_id: str = None
+    
 router = APIRouter()
 
 @router.post("/upload", response_model=AudioUploadResponse)
@@ -164,10 +170,9 @@ def determine_call_info(filename: str) -> Dict[str, Any]:
         }
 
 @router.post("/process-audio-realtime")
-async def process_audio_realtime(
-    filename: str,
-    session_id: str = None
-):
+async def process_audio_realtime(request: AudioProcessRequest):
+    filename = request.filename
+    session_id = request.session_id or generate_session_id("realtime_audio")
     """Process audio file through the real-time multi-agent pipeline"""
     
     from ...agents.fraud_detection_system import fraud_detection_system

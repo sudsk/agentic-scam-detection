@@ -1,5 +1,5 @@
 {
-  "name": "hsbc-fraud-detection-frontend",
+  "name": "fraud-detection-frontend",
   "version": "2.0.0",
   "private": true,
   "dependencies": {
@@ -40,6 +40,5 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  },
-  "proxy": "http://localhost:8000"
+  }
 }

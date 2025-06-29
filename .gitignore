@@ -1,1 +1,108 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Environment Variables - CRITICAL FOR SECURITY
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+frontend/.env
+backend/.env
+
+# NEVER COMMIT ENVIRONMENT FILES WITH SENSITIVE DATA!
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Uploads
+uploads/
+!uploads/.gitkeep
+
+# Credentials - NEVER COMMIT THESE
+credentials/
+*.json
+*.pem
+*.key
+service-account*.json
+gcp-credentials*.json
+
+# Database
+*.db
+*.sqlite3
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+build/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# Temporary files
+tmp/
+temp/
+
+# Coverage reports
+.coverage
+htmlcov/
+
+# Pytest
+.pytest_cache/
+
+# MyPy
+.mypy_cache/
+
+# Local configuration files (add any local config files here)
+config.local.json
+settings.local.py
+
+# Production deployment files
+docker-compose.prod.yml
+deployment.yml
+
+# Security - IP addresses and sensitive configs
+ip-config.txt
+server-config.txt

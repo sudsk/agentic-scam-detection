@@ -19,9 +19,15 @@ import {
   WifiOff
 } from 'lucide-react';
 
-// Environment configuration - FIXED for external IP
+// Environment configuration - FIXED: No hardcoded IPs, pure environment variables
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
+
+// Log configuration for debugging (will be removed in production)
+console.log('🔧 Frontend Configuration:');
+console.log('  API_BASE_URL:', API_BASE_URL);
+console.log('  WS_BASE_URL:', WS_BASE_URL);
+console.log('  Environment:', process.env.REACT_APP_ENVIRONMENT || 'development');
 
 // Type definitions
 interface AudioSegment {

@@ -391,13 +391,17 @@ async def upload_audio(file: UploadFile = File(...)):
         message="File uploaded successfully using consolidated system"
     )
 
-# FIXED: WebSocket endpoints with proper handler integration
+# backend/app.py - FIXED WebSocket endpoints
 
 @app.websocket("/ws/fraud-detection/{client_id}")
 async def fraud_detection_websocket(websocket: WebSocket, client_id: str):
     """
-    Dedicated WebSocket endpoint for fraud detection with full handler integration
+    Dedicated WebSocket endpoint for fraud detection - FIXED: Proper connection handling
     """
+    # FIXED: Accept the WebSocket connection first
+    await websocket.accept()
+    
+    # Then connect through the manager (without accepting again)
     await connection_manager.connect(websocket, client_id)
     logger.info(f"🔌 Fraud detection WebSocket connected: {client_id}")
     
@@ -422,8 +426,12 @@ async def fraud_detection_websocket(websocket: WebSocket, client_id: str):
 @app.websocket("/ws/{client_id}")
 async def general_websocket_endpoint(websocket: WebSocket, client_id: str):
     """
-    General WebSocket endpoint with basic functionality
+    General WebSocket endpoint - FIXED: Proper connection handling
     """
+    # FIXED: Accept the WebSocket connection first
+    await websocket.accept()
+    
+    # Then connect through the manager
     await connection_manager.connect(websocket, client_id)
     logger.info(f"🔌 General WebSocket connected: {client_id}")
     

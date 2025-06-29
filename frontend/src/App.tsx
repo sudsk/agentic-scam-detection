@@ -879,8 +879,6 @@ return (
               
               <div className="text-center p-4 bg-green-50 rounded-lg">
                 <div className="text-2xl font-bold text-green-600">{showingSegments.length}</div>
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                <div className="text-2xl font-bold text-green-600">{showingSegments.length}</div>
                 <div className="text-sm text-green-800">Segments Processed</div>
               </div>
               

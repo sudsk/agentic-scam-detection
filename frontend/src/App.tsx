@@ -318,6 +318,10 @@ function App() {
   const [selectedAudioFile, setSelectedAudioFile] = useState<RealAudioFile | null>(null);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState<boolean>(true);
+
+  // NEW: WebSocket state and connection
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
   
   // Reset state when new call is selected
   const resetState = (): void => {
@@ -521,6 +525,120 @@ function App() {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // NEW: WebSocket connection effect
+  useEffect(() => {
+    // Connect to WebSocket for real-time updates
+    const connectWebSocket = () => {
+      const websocket = new WebSocket('ws://localhost:8000/ws/fraud-detection-client');
+      
+      websocket.onopen = () => {
+        console.log('✅ WebSocket connected');
+        setIsConnected(true);
+        setWs(websocket);
+      };
+      
+      websocket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          handleWebSocketMessage(message);
+        } catch (error) {
+          console.error('❌ Error parsing WebSocket message:', error);
+        }
+      };
+      
+      websocket.onclose = () => {
+        console.log('🔌 WebSocket disconnected');
+        setIsConnected(false);
+        setWs(null);
+        
+        // Attempt to reconnect after 3 seconds
+        setTimeout(connectWebSocket, 3000);
+      };
+      
+      websocket.onerror = (error) => {
+        console.error('❌ WebSocket error:', error);
+      };
+    };
+    
+    connectWebSocket();
+    
+    // Cleanup on unmount
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+    };
+  }, []);
+
+  // NEW: Handle real-time WebSocket messages from backend
+  const handleWebSocketMessage = (message: any): void => {
+    console.log('📨 WebSocket message received:', message);
+    
+    switch (message.type) {
+      case 'transcription_segment':
+        // Real-time transcription update
+        const segment = message.data;
+        setShowingSegments(prev => [...prev, {
+          speaker: segment.speaker,
+          start: segment.start,
+          duration: segment.duration,
+          text: segment.text
+        }]);
+        
+        setTranscription(prev => prev + (prev ? ' ' : '') + segment.text);
+        setProcessingStage('🎵 Live transcription streaming...');
+        break;
+        
+      case 'fraud_analysis_update':
+        // Real-time fraud analysis update
+        const analysis = message.data;
+        setRiskScore(analysis.risk_score);
+        setRiskLevel(analysis.risk_level);
+        setDetectedPatterns(analysis.detected_patterns || {});
+        setProcessingStage('🔍 Fraud patterns detected...');
+        break;
+        
+      case 'policy_guidance_ready':
+        // Policy guidance from backend
+        const guidance = message.data;
+        setPolicyGuidance(guidance);
+        setProcessingStage('📚 Policy guidance retrieved...');
+        break;
+        
+      case 'processing_complete':
+        // Final results
+        setProcessingStage('✅ All agents completed analysis');
+        break;
+        
+      case 'error':
+        setProcessingStage(`❌ Error: ${message.data.error}`);
+        break;
+        
+      default:
+        console.log('Unknown message type:', message.type);
+    }
+  };
+  
+  // NEW: Send audio processing request via WebSocket
+  const startWebSocketProcessing = (audioFile: RealAudioFile): void => {
+    if (ws && isConnected) {
+      const message = {
+        type: 'process_audio',
+        data: {
+          filename: audioFile.filename,
+          session_id: `session_${Date.now()}`,
+          client_id: 'fraud-detection-client'
+        }
+      };
+      
+      ws.send(JSON.stringify(message));
+      setProcessingStage('📡 Sent to backend agents via WebSocket...');
+    } else {
+      console.error('❌ WebSocket not connected');
+      setProcessingStage('❌ WebSocket connection required');
+    }
   };
   
 return (

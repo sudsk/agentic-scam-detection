@@ -22,4 +22,9 @@ cryptography>=3.0.0
 pytest>=7.0.0
 pytest-asyncio>=0.20.0
 
+# ===== WEBSOCKET DEPENDENCIES =====
+# Already included: websockets>=10.0 (above)
+# FastAPI includes WebSocket support through Starlette
+
+# ===== PYDANTIC SETTINGS =====
 pydantic-settings>=2.10.1

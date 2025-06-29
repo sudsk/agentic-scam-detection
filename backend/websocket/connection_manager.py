@@ -1,4 +1,4 @@
-# backend/websocket/connection_manager.py 
+# backend/websocket/connection_manager.py - FIXED WebSocket accept issue
 
 import logging
 import json
@@ -23,8 +23,7 @@ class WebSocketConnection:
 
 class ConnectionManager:
     """
-    WebSocket connection manager for handling multiple client connections
-    Supports broadcasting, personal messaging, and connection lifecycle management
+    WebSocket connection manager - FIXED: Proper async handling
     """
     
     def __init__(self):
@@ -37,24 +36,16 @@ class ConnectionManager:
     
     async def connect(self, websocket: WebSocket, client_id: str, metadata: Optional[Dict] = None) -> bool:
         """
-        Connect a new WebSocket client
-        
-        Args:
-            websocket: WebSocket instance
-            client_id: Unique client identifier
-            metadata: Optional client metadata
-            
-        Returns:
-            bool: True if connection successful, False otherwise
+        Connect a new WebSocket client - FIXED: Proper async handling
         """
         try:
-            # Accept the WebSocket connection
-            await websocket.accept()
+            # FIXED: Don't await accept here - it should be handled in the endpoint
+            # The WebSocket is already accepted by FastAPI when this is called
             
             # Check if client is already connected
             if client_id in self.client_connections:
                 logger.warning(f"⚠️ Client {client_id} already connected, replacing connection")
-                await self.disconnect(client_id)
+                self.disconnect(client_id)
             
             # Create connection object
             connection = WebSocketConnection(
@@ -82,12 +73,6 @@ class ConnectionManager:
     def disconnect(self, client_id: str) -> bool:
         """
         Disconnect a WebSocket client
-        
-        Args:
-            client_id: Client identifier to disconnect
-            
-        Returns:
-            bool: True if disconnection successful, False if client not found
         """
         try:
             if client_id not in self.client_connections:
@@ -116,9 +101,6 @@ class ConnectionManager:
     async def disconnect_all(self) -> int:
         """
         Disconnect all active WebSocket connections
-        
-        Returns:
-            int: Number of connections that were disconnected
         """
         disconnected_count = 0
         
@@ -140,13 +122,6 @@ class ConnectionManager:
     async def send_personal_message(self, message: str, client_id: str) -> bool:
         """
         Send a personal message to a specific client
-        
-        Args:
-            message: Message to send
-            client_id: Target client identifier
-            
-        Returns:
-            bool: True if message sent successfully, False otherwise
         """
         try:
             if client_id not in self.client_connections:
@@ -170,13 +145,6 @@ class ConnectionManager:
     async def send_personal_json(self, data: Dict, client_id: str) -> bool:
         """
         Send JSON data to a specific client
-        
-        Args:
-            data: Dictionary to send as JSON
-            client_id: Target client identifier
-            
-        Returns:
-            bool: True if data sent successfully, False otherwise
         """
         try:
             message = json.dumps(data)
@@ -188,13 +156,6 @@ class ConnectionManager:
     async def broadcast(self, message: str, exclude_clients: Optional[Set[str]] = None) -> int:
         """
         Broadcast a message to all connected clients
-        
-        Args:
-            message: Message to broadcast
-            exclude_clients: Set of client IDs to exclude from broadcast
-            
-        Returns:
-            int: Number of clients that received the message
         """
         exclude_clients = exclude_clients or set()
         sent_count = 0
@@ -224,13 +185,6 @@ class ConnectionManager:
     async def broadcast_json(self, data: Dict, exclude_clients: Optional[Set[str]] = None) -> int:
         """
         Broadcast JSON data to all connected clients
-        
-        Args:
-            data: Dictionary to broadcast as JSON
-            exclude_clients: Set of client IDs to exclude from broadcast
-            
-        Returns:
-            int: Number of clients that received the data
         """
         try:
             message = json.dumps(data)
@@ -258,12 +212,6 @@ class ConnectionManager:
     def get_client_info(self, client_id: str) -> Optional[Dict]:
         """
         Get information about a specific client
-        
-        Args:
-            client_id: Client identifier
-            
-        Returns:
-            Dict with client information or None if not found
         """
         if client_id not in self.client_connections:
             return None
@@ -289,9 +237,6 @@ class ConnectionManager:
     async def ping_all_clients(self) -> Dict[str, bool]:
         """
         Send ping to all connected clients to check connection health
-        
-        Returns:
-            Dict mapping client_id to ping success status
         """
         ping_results = {}
         ping_message = json.dumps({
@@ -318,12 +263,6 @@ class ConnectionManager:
     async def cleanup_stale_connections(self, max_age_minutes: int = 60) -> int:
         """
         Clean up stale connections that haven't been active
-        
-        Args:
-            max_age_minutes: Maximum age in minutes before connection is considered stale
-            
-        Returns:
-            int: Number of connections cleaned up
         """
         cleanup_count = 0
         current_time = datetime.now()

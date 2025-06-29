@@ -19,6 +19,10 @@ import {
   WifiOff
 } from 'lucide-react';
 
+// Environment configuration - FIXED for external IP
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
+
 // Type definitions
 interface AudioSegment {
   speaker: 'agent' | 'customer';
@@ -175,7 +179,7 @@ function App() {
   const loadAudioFiles = async (): Promise<void> => {
     try {
       setIsLoadingFiles(true);
-      const response = await fetch('/api/v1/audio/sample-files');
+      const response = await fetch(`${API_BASE_URL}/api/v1/audio/sample-files`);
       const data = await response.json();
       
       if (data.status === 'success') {
@@ -196,7 +200,7 @@ function App() {
   // WebSocket connection with auto-reconnect
   const connectWebSocket = (): void => {
     try {
-      const websocket = new WebSocket(`ws://localhost:8000/ws/fraud-detection-${Date.now()}`);
+      const websocket = new WebSocket(`${WS_BASE_URL}/ws/fraud-detection-${Date.now()}`);
       
       websocket.onopen = () => {
         console.log('✅ WebSocket connected');
@@ -318,7 +322,7 @@ function App() {
       await processAudioWithBackend(audioFile, newSessionId);
       
       // Start audio playback
-      const audio = new Audio(`/api/v1/audio/sample-files/${audioFile.filename}`);
+      const audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
       setAudioElement(audio);
       
       // Set up audio event listeners
@@ -352,7 +356,7 @@ function App() {
     try {
       setProcessingStage('🔍 Sending to backend multi-agent system...');
       
-      const response = await fetch('/api/v1/audio/process-audio-realtime', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/audio/process-audio-realtime`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

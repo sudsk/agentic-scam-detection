@@ -17,8 +17,43 @@ import {
   Brain
 } from 'lucide-react';
 
+// Type definitions
+interface AudioSegment {
+  speaker: 'agent' | 'customer';
+  start: number;
+  duration: number;
+  text: string;
+}
+
+interface SampleCall {
+  id: string;
+  title: string;
+  description: string;
+  duration: number;
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  expectedRisk: number;
+  scamType: 'investment_scam' | 'romance_scam' | 'impersonation_scam' | 'none';
+  icon: string;
+  segments: AudioSegment[];
+}
+
+interface DetectedPattern {
+  pattern_name: string;
+  matches: string[];
+  count: number;
+  weight: number;
+  severity: 'critical' | 'high' | 'medium';
+}
+
+interface PolicyGuidance {
+  immediate_alerts: string[];
+  recommended_actions: string[];
+  key_questions: string[];
+  customer_education: string[];
+}
+
 // Sample audio calls data
-const SAMPLE_CALLS = [
+const SAMPLE_CALLS: SampleCall[] = [
   {
     id: 'investment_scam_1',
     title: 'Investment Scam Call',
@@ -92,14 +127,14 @@ const SAMPLE_CALLS = [
 ];
 
 // Risk level colors
-const getRiskColor = (riskScore) => {
+const getRiskColor = (riskScore: number): string => {
   if (riskScore >= 80) return 'bg-red-100 text-red-800 border-red-300';
   if (riskScore >= 60) return 'bg-orange-100 text-orange-800 border-orange-300';
   if (riskScore >= 40) return 'bg-yellow-100 text-yellow-800 border-yellow-300';
   return 'bg-green-100 text-green-800 border-green-300';
 };
 
-const getRiskColorRaw = (riskScore) => {
+const getRiskColorRaw = (riskScore: number): string => {
   if (riskScore >= 80) return 'rgb(239, 68, 68)';
   if (riskScore >= 60) return 'rgb(245, 101, 39)';
   if (riskScore >= 40) return 'rgb(245, 158, 11)';
@@ -107,8 +142,8 @@ const getRiskColorRaw = (riskScore) => {
 };
 
 // Pattern detection simulation
-const detectPatterns = (text, scamType) => {
-  const patterns = {
+const detectPatterns = (text: string, scamType: string): Record<string, DetectedPattern> => {
+  const patterns: Record<string, Record<string, string[]>> = {
     investment_scam: {
       'guaranteed_returns': ['guaranteed', 'guarantee', 'thirty-five percent', 'monthly returns'],
       'urgency_pressure': ['urgent', 'immediately', 'margin call', 'lose all'],
@@ -126,7 +161,7 @@ const detectPatterns = (text, scamType) => {
     }
   };
 
-  const detected = {};
+  const detected: Record<string, DetectedPattern> = {};
   const scamPatterns = patterns[scamType] || {};
   
   Object.entries(scamPatterns).forEach(([patternName, keywords]) => {
@@ -151,8 +186,8 @@ const detectPatterns = (text, scamType) => {
 };
 
 // Policy guidance based on detected patterns and scam type
-const getPolicyGuidance = (scamType, riskScore, detectedPatterns) => {
-  const guidanceMap = {
+const getPolicyGuidance = (scamType: string, riskScore: number, detectedPatterns: Record<string, DetectedPattern>): PolicyGuidance => {
+  const guidanceMap: Record<string, PolicyGuidance> = {
     investment_scam: {
       immediate_alerts: [
         "🚨 INVESTMENT SCAM DETECTED - Guaranteed returns claim",
@@ -243,7 +278,7 @@ const getPolicyGuidance = (scamType, riskScore, detectedPatterns) => {
   };
 
   // Add escalation if high risk
-  if (riskScore >= 80 && !guidance.immediate_alerts.some(alert => alert.includes('ESCALATE'))) {
+  if (riskScore >= 80 && !guidance.immediate_alerts.some((alert: string) => alert.includes('ESCALATE'))) {
     guidance.immediate_alerts.push("📞 ESCALATE TO FRAUD TEAM IMMEDIATELY");
   }
 
@@ -251,23 +286,23 @@ const getPolicyGuidance = (scamType, riskScore, detectedPatterns) => {
 };
 
 function App() {
-  const [selectedCall, setSelectedCall] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [currentSegment, setCurrentSegment] = useState(0);
-  const [transcription, setTranscription] = useState('');
-  const [riskScore, setRiskScore] = useState(0);
-  const [riskLevel, setRiskLevel] = useState('MINIMAL');
-  const [detectedPatterns, setDetectedPatterns] = useState({});
-  const [policyGuidance, setPolicyGuidance] = useState(null);
-  const [processingStage, setProcessingStage] = useState('');
-  const [showingSegments, setShowingSegments] = useState([]);
+  const [selectedCall, setSelectedCall] = useState<SampleCall | null>(null);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [currentSegment, setCurrentSegment] = useState<number>(0);
+  const [transcription, setTranscription] = useState<string>('');
+  const [riskScore, setRiskScore] = useState<number>(0);
+  const [riskLevel, setRiskLevel] = useState<string>('MINIMAL');
+  const [detectedPatterns, setDetectedPatterns] = useState<Record<string, DetectedPattern>>({});
+  const [policyGuidance, setPolicyGuidance] = useState<PolicyGuidance | null>(null);
+  const [processingStage, setProcessingStage] = useState<string>('');
+  const [showingSegments, setShowingSegments] = useState<AudioSegment[]>([]);
   
-  const intervalRef = useRef(null);
-  const hasProcessedSegments = useRef(new Set());
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const hasProcessedSegments = useRef<Set<number>>(new Set());
 
   // Reset state when new call is selected
-  const resetState = () => {
+  const resetState = (): void => {
     setCurrentTime(0);
     setCurrentSegment(0);
     setTranscription('');
@@ -280,8 +315,32 @@ function App() {
     hasProcessedSegments.current.clear();
   };
 
-  // Start playing audio simulation
-  const startPlaying = (call) => {
+  // Stop playing
+  const stopPlaying = (): void => {
+    setIsPlaying(false);
+    setProcessingStage('⏸️ Paused');
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+  };
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+// Start playing audio simulation
+  const startPlaying = (call: SampleCall): void => {
     if (selectedCall?.id !== call.id) {
       setSelectedCall(call);
       resetState();
@@ -296,7 +355,7 @@ function App() {
         
         // Check if we should show a new segment
         const activeSegment = call.segments.find(
-          seg => newTime >= seg.start && newTime < (seg.start + seg.duration)
+          (seg: AudioSegment) => newTime >= seg.start && newTime < (seg.start + seg.duration)
         );
         
         if (activeSegment && !hasProcessedSegments.current.has(activeSegment.start)) {
@@ -363,31 +422,7 @@ function App() {
     }, 100);
   };
 
-  // Stop playing
-  const stopPlaying = () => {
-    setIsPlaying(false);
-    setProcessingStage('⏸️ Paused');
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-  };
-
-  // Cleanup interval on unmount
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, []);
-
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  return (
+return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
@@ -640,7 +675,7 @@ function App() {
                             {data.count} matches detected (Weight: {data.weight})
                           </p>
                           <div className="mt-2">
-                            {data.matches.map((match, index) => (
+                            {data.matches.map((match: string, index: number) => (
                               <span key={index} className="inline-block bg-red-50 text-red-700 px-2 py-1 rounded text-xs mr-1 mb-1">
                                 "{match}"
                               </span>
@@ -667,7 +702,7 @@ function App() {
                         <span>Immediate Alerts</span>
                       </h3>
                       <ul className="space-y-2">
-                        {policyGuidance.immediate_alerts.map((alert, index) => (
+                        {policyGuidance.immediate_alerts.map((alert: string, index: number) => (
                           <li key={index} className="text-sm text-red-800 font-medium flex items-start space-x-2">
                             <span className="text-red-600 mt-0.5">•</span>
                             <span>{alert}</span>
@@ -685,7 +720,7 @@ function App() {
                         <span>Recommended Actions</span>
                       </h3>
                       <ol className="space-y-3">
-                        {policyGuidance.recommended_actions.map((action, index) => (
+                        {policyGuidance.recommended_actions.map((action: string, index: number) => (
                           <li key={index} className="text-sm text-gray-700 flex items-start space-x-3">
                             <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
                               {index + 1}
@@ -705,7 +740,7 @@ function App() {
                         <span>Key Questions to Ask</span>
                       </h3>
                       <div className="space-y-2">
-                        {policyGuidance.key_questions.map((question, index) => (
+                        {policyGuidance.key_questions.map((question: string, index: number) => (
                           <div key={index} className="p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors cursor-pointer">
                             <p className="text-sm text-blue-900 font-medium">"{question}"</p>
                           </div>
@@ -722,7 +757,7 @@ function App() {
                         <span>Customer Education</span>
                       </h3>
                       <div className="space-y-2">
-                        {policyGuidance.customer_education.map((point, index) => (
+                        {policyGuidance.customer_education.map((point: string, index: number) => (
                           <div key={index} className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                             <p className="text-sm text-yellow-900">"{point}"</p>
                           </div>
@@ -743,7 +778,6 @@ function App() {
             </div>
           </div>
         )}
-
         {/* Agent Status Dashboard */}
         <div className="mt-12 bg-white rounded-lg shadow p-6">
           <div className="flex items-center space-x-2 mb-6">
@@ -844,6 +878,8 @@ function App() {
               </div>
               
               <div className="text-center p-4 bg-green-50 rounded-lg">
+                <div className="text-2xl font-bold text-green-600">{showingSegments.length}</div>
+                <div className="text-center p-4 bg-green-50 rounded-lg">
                 <div className="text-2xl font-bold text-green-600">{showingSegments.length}</div>
                 <div className="text-sm text-green-800">Segments Processed</div>
               </div>

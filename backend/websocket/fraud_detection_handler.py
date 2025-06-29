@@ -1,10 +1,10 @@
-# backend/websocket/fraud_detection_handler.py - FIXED for Real-time Audio Streaming
+# backend/websocket/fraud_detection_handler.py - FIXED IMPORTS
 
 import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional, Set, List  # FIXED: Added List import
 from fastapi import WebSocket, WebSocketDisconnect
 import uuid
 

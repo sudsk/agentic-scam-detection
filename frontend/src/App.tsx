@@ -25,6 +25,18 @@ interface AudioSegment {
   text: string;
 }
 
+interface RealAudioFile {
+  id: string;
+  filename: string;
+  title: string;
+  description: string;
+  icon: string;
+  file_path: string;
+  size_bytes: number;
+  duration: number;
+  scam_type?: string;
+}
+
 interface SampleCall {
   id: string;
   title: string;
@@ -301,6 +313,12 @@ function App() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const hasProcessedSegments = useRef<Set<number>>(new Set());
 
+  // NEW: Real audio files from backend
+  const [audioFiles, setAudioFiles] = useState<RealAudioFile[]>([]);
+  const [selectedAudioFile, setSelectedAudioFile] = useState<RealAudioFile | null>(null);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [isLoadingFiles, setIsLoadingFiles] = useState<boolean>(true);
+  
   // Reset state when new call is selected
   const resetState = (): void => {
     setCurrentTime(0);
@@ -339,89 +357,172 @@ function App() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-// Start playing audio simulation
-  const startPlaying = (call: SampleCall): void => {
-    if (selectedCall?.id !== call.id) {
-      setSelectedCall(call);
-      resetState();
+  // NEW: Load audio files from backend on component mount
+  useEffect(() => {
+    loadAudioFiles();
+  }, []);
+
+  // NEW: Function to load real audio files from backend
+  const loadAudioFiles = async () => {
+    try {
+      setIsLoadingFiles(true);
+      const response = await fetch('/api/v1/audio/sample-files');
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        setAudioFiles(data.files);
+        console.log('✅ Loaded audio files:', data.files);
+      } else {
+        console.error('❌ Failed to load audio files:', data);
+      }
+    } catch (error) {
+      console.error('❌ Error loading audio files:', error);
+    } finally {
+      setIsLoadingFiles(false);
     }
-    
-    setIsPlaying(true);
-    setProcessingStage('🎵 Audio Processing Agent - Streaming audio...');
-    
-    intervalRef.current = setInterval(() => {
-      setCurrentTime(prevTime => {
-        const newTime = prevTime + 0.1;
-        
-        // Check if we should show a new segment
-        const activeSegment = call.segments.find(
-          (seg: AudioSegment) => newTime >= seg.start && newTime < (seg.start + seg.duration)
-        );
-        
-        if (activeSegment && !hasProcessedSegments.current.has(activeSegment.start)) {
-          hasProcessedSegments.current.add(activeSegment.start);
-          
-          // Add to showing segments
-          setTimeout(() => {
-            setShowingSegments(prev => [...prev, activeSegment]);
-            
-            // Update transcription
-            setTranscription(prev => {
-              const newText = prev + (prev ? ' ' : '') + activeSegment.text;
-              
-              // Only process customer speech for fraud detection
-              if (activeSegment.speaker === 'customer') {
-                setProcessingStage('🔍 Fraud Detection Agent - Analyzing patterns...');
-                
-                // Simulate fraud detection processing
-                setTimeout(() => {
-                  const patterns = detectPatterns(newText, call.scamType);
-                  setDetectedPatterns(patterns);
-                  
-                  // Calculate risk score based on patterns and progress
-                  const progressFactor = Math.min(newTime / call.duration, 1);
-                  const targetRisk = call.expectedRisk;
-                  const newRisk = Math.floor(targetRisk * progressFactor);
-                  
-                  setRiskScore(newRisk);
-                  
-                  if (newRisk >= 80) setRiskLevel('CRITICAL');
-                  else if (newRisk >= 60) setRiskLevel('HIGH');
-                  else if (newRisk >= 40) setRiskLevel('MEDIUM');
-                  else if (newRisk >= 20) setRiskLevel('LOW');
-                  else setRiskLevel('MINIMAL');
-                  
-                  setProcessingStage('📚 Policy Guidance Agent - Retrieving procedures...');
-                  
-                  // Get policy guidance
-                  setTimeout(() => {
-                    const guidance = getPolicyGuidance(call.scamType, newRisk, patterns);
-                    setPolicyGuidance(guidance);
-                    setProcessingStage('🎭 Master Orchestrator - Coordinating response...');
-                  }, 500);
-                }, 300);
-              }
-              
-              return newText;
-            });
-          }, 100);
-        }
-        
-        // Stop at end of call
-        if (newTime >= call.duration) {
-          setIsPlaying(false);
-          setProcessingStage('✅ Analysis Complete - All agents processed');
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-          }
-          return call.duration;
-        }
-        
-        return newTime;
-      });
-    }, 100);
   };
 
+  // UPDATED: Real audio playing function
+  const startPlayingReal = async (audioFile: RealAudioFile): Promise<void> => {
+    try {
+      if (selectedAudioFile?.id !== audioFile.id) {
+        setSelectedAudioFile(audioFile);
+        resetState();
+      }
+      
+      // Create audio element for real audio playback
+      const audio = new Audio(`/api/v1/audio/sample-files/${audioFile.filename}`);
+      setAudioElement(audio);
+      
+      setIsPlaying(true);
+      setProcessingStage('🎵 Audio Processing Agent - Loading audio...');
+      
+      // Start backend processing
+      await processAudioWithBackend(audioFile);
+      
+      // Play actual audio
+      audio.play();
+      
+      // Set up audio event listeners
+      audio.addEventListener('timeupdate', () => {
+        setCurrentTime(audio.currentTime);
+      });
+      
+      audio.addEventListener('ended', () => {
+        setIsPlaying(false);
+        setProcessingStage('✅ Audio playback complete');
+      });
+      
+      audio.addEventListener('loadedmetadata', () => {
+        console.log('🎵 Audio loaded, duration:', audio.duration);
+      });
+      
+    } catch (error) {
+      console.error('❌ Error playing audio:', error);
+      setProcessingStage('❌ Error loading audio');
+    }
+  };
+
+  // NEW: Process audio with backend agents
+  const processAudioWithBackend = async (audioFile: RealAudioFile): Promise<void> => {
+    try {
+      setProcessingStage('🔍 Sending to backend agents...');
+      
+      const response = await fetch('/api/v1/audio/process-audio-realtime', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filename: audioFile.filename,
+          session_id: `session_${Date.now()}`
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        setProcessingStage('✅ Backend processing complete');
+        
+        // Update UI with real results from backend
+        const analysis = result.analysis;
+        
+        if (analysis.fraud_analysis) {
+          setRiskScore(analysis.fraud_analysis.risk_score);
+          setRiskLevel(analysis.fraud_analysis.risk_level);
+          setDetectedPatterns(analysis.fraud_analysis.detected_patterns);
+        }
+        
+        if (analysis.policy_guidance) {
+          setPolicyGuidance(analysis.policy_guidance);
+        }
+        
+        if (analysis.transcription?.speaker_segments) {
+          // Simulate streaming transcription from real results
+          simulateStreamingFromReal(analysis.transcription.speaker_segments);
+        }
+        
+      } else {
+        setProcessingStage('❌ Backend processing failed');
+        console.error('Backend processing error:', result.error);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error processing with backend:', error);
+      setProcessingStage('❌ Backend connection error');
+    }
+  };
+
+  // NEW: Simulate streaming effect from real transcription results
+  const simulateStreamingFromReal = (segments: any[]): void => {
+    let segmentIndex = 0;
+    
+    const showNextSegment = () => {
+      if (segmentIndex < segments.length && isPlaying) {
+        const segment = segments[segmentIndex];
+        
+        setShowingSegments(prev => [...prev, {
+          speaker: segment.speaker,
+          start: segment.start,
+          duration: segment.end - segment.start,
+          text: segment.text
+        }]);
+        
+        setTranscription(prev => 
+          prev + (prev ? ' ' : '') + segment.text
+        );
+        
+        segmentIndex++;
+        
+        // Schedule next segment (simulate real-time)
+        setTimeout(showNextSegment, 2000 + Math.random() * 1000);
+      }
+    };
+    
+    // Start showing segments
+    setTimeout(showNextSegment, 1000);
+  };
+
+  // UPDATED: Stop playing function
+  const stopPlayingReal = (): void => {
+    setIsPlaying(false);
+    setProcessingStage('⏸️ Paused');
+    
+    if (audioElement) {
+      audioElement.pause();
+    }
+    
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+  };
+
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+  
 return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -451,89 +552,94 @@ return (
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {/* Sample Calls Section */}
+
+        {/* UPDATED: Real Audio Files Section */}
         <div className="mb-8">
           <div className="flex items-center space-x-2 mb-6">
             <PhoneCall className="w-6 h-6 text-blue-600" />
-            <h2 className="text-2xl font-bold text-gray-900">Demo Call Recordings</h2>
-            <span className="text-sm text-gray-500">Click to analyze in real-time</span>
+            <h2 className="text-2xl font-bold text-gray-900">Real Call Recordings</h2>
+            <span className="text-sm text-gray-500">Click to analyze with backend agents</span>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {SAMPLE_CALLS.map((call) => (
-              <div
-                key={call.id}
-                className={`bg-white rounded-lg shadow-md p-6 cursor-pointer border-2 transition-all hover:shadow-lg ${
-                  selectedCall?.id === call.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-                }`}
-                onClick={() => !isPlaying ? startPlaying(call) : null}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-2xl">{call.icon}</span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    call.riskLevel === 'CRITICAL' ? 'bg-red-100 text-red-800' :
-                    call.riskLevel === 'HIGH' ? 'bg-orange-100 text-orange-800' :
-                    call.riskLevel === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-green-100 text-green-800'
-                  }`}>
-                    {call.riskLevel}
-                  </span>
-                </div>
-                
-                <h3 className="font-semibold text-gray-900 mb-2">{call.title}</h3>
-                <p className="text-sm text-gray-600 mb-3">{call.description}</p>
-                
-                <div className="flex items-center justify-between text-sm text-gray-500">
-                  <span>{formatTime(call.duration)}</span>
-                  <span>Risk: {call.expectedRisk}%</span>
-                </div>
-                
-                {selectedCall?.id === call.id && (
-                  <div className="mt-3 pt-3 border-t border-gray-200">
-                    <div className="flex items-center justify-between">
-                      {!isPlaying ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startPlaying(call);
-                          }}
-                          className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
-                        >
-                          <Play className="w-4 h-4" />
-                          <span>Play</span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            stopPlaying();
-                          }}
-                          className="flex items-center space-x-2 px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
-                        >
-                          <Pause className="w-4 h-4" />
-                          <span>Pause</span>
-                        </button>
-                      )}
-                      <span className="text-xs text-gray-600">
-                        {formatTime(currentTime)} / {formatTime(call.duration)}
-                      </span>
-                    </div>
-                    
-                    {/* Progress bar */}
-                    <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-100"
-                        style={{ width: `${(currentTime / call.duration) * 100}%` }}
-                      />
-                    </div>
+          {isLoadingFiles ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <span className="ml-3 text-gray-600">Loading audio files...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {audioFiles.map((audioFile) => (
+                <div
+                  key={audioFile.id}
+                  className={`bg-white rounded-lg shadow-md p-6 cursor-pointer border-2 transition-all hover:shadow-lg ${
+                    selectedAudioFile?.id === audioFile.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                  }`}
+                  onClick={() => !isPlaying ? startPlayingReal(audioFile) : null}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-2xl">{audioFile.icon}</span>
+                    {/* REMOVED: Risk level indicator - will show after analysis */}
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                      Ready
+                    </span>
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
+                  
+                  <h3 className="font-semibold text-gray-900 mb-2">{audioFile.title}</h3>
+                  <p className="text-sm text-gray-600 mb-3">{audioFile.description}</p>
+                  
+                  <div className="flex items-center justify-between text-sm text-gray-500">
+                    <span>{formatTime(audioFile.duration)}</span>
+                    <span>{(audioFile.size_bytes / 1024 / 1024).toFixed(1)} MB</span>
+                  </div>
+                  
+                  {selectedAudioFile?.id === audioFile.id && (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="flex items-center justify-between">
+                        {!isPlaying ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startPlayingReal(audioFile);
+                            }}
+                            className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                          >
+                            <Play className="w-4 h-4" />
+                            <span>Analyze</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              stopPlayingReal();
+                            }}
+                            className="flex items-center space-x-2 px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+                          >
+                            <Pause className="w-4 h-4" />
+                            <span>Stop</span>
+                          </button>
+                        )}
+                        <span className="text-xs text-gray-600">
+                          {audioElement ? formatTime(currentTime) : '0:00'} / {formatTime(audioFile.duration)}
+                        </span>
+                      </div>
+                      
+                      {/* Progress bar */}
+                      {audioElement && (
+                        <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-100"
+                            style={{ width: `${(currentTime / audioFile.duration) * 100}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-
+        
         {/* Processing Status */}
         {processingStage && (
           <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">

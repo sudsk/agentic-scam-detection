@@ -14,7 +14,9 @@ import {
   TrendingUp,
   AlertTriangle,
   Eye,
-  Brain
+  Brain,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 
 // Type definitions
@@ -23,6 +25,7 @@ interface AudioSegment {
   start: number;
   duration: number;
   text: string;
+  confidence?: number;
 }
 
 interface RealAudioFile {
@@ -35,18 +38,6 @@ interface RealAudioFile {
   size_bytes: number;
   duration: number;
   scam_type?: string;
-}
-
-interface SampleCall {
-  id: string;
-  title: string;
-  description: string;
-  duration: number;
-  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  expectedRisk: number;
-  scamType: 'investment_scam' | 'romance_scam' | 'impersonation_scam' | 'none';
-  icon: string;
-  segments: AudioSegment[];
 }
 
 interface DetectedPattern {
@@ -64,79 +55,30 @@ interface PolicyGuidance {
   customer_education: string[];
 }
 
-// Sample audio calls data
-const SAMPLE_CALLS: SampleCall[] = [
-  {
-    id: 'investment_scam_1',
-    title: 'Investment Scam Call',
-    description: 'Guaranteed returns promise with margin call urgency',
-    duration: 45,
-    riskLevel: 'HIGH',
-    expectedRisk: 87,
-    scamType: 'investment_scam',
-    icon: '💰',
-    segments: [
-      { speaker: 'agent', start: 0, duration: 5, text: "Good afternoon, HSBC customer service. This is Sarah, how can I help you today?" },
-      { speaker: 'customer', start: 5, duration: 8, text: "Hi Sarah, I need to make an urgent transfer. My investment advisor called this morning saying I need to add more funds to my trading account to cover a margin call." },
-      { speaker: 'agent', start: 13, duration: 4, text: "I understand. Can you tell me more about this trading account and how much you need to transfer?" },
-      { speaker: 'customer', start: 17, duration: 12, text: "They said I need to transfer fifteen thousand pounds immediately or I'll lose all my previous investments. The advisor, James, has been guaranteeing thirty-five percent monthly returns and said this is just a temporary margin requirement." },
-      { speaker: 'agent', start: 29, duration: 6, text: "I see. Have you been able to withdraw any profits from this investment previously?" },
-      { speaker: 'customer', start: 35, duration: 10, text: "Well, no, not yet. But James said all successful traders go through this and I just need to be brave and trust the process. He said the returns are guaranteed." }
-    ]
-  },
-  {
-    id: 'romance_scam_1',
-    title: 'Romance Scam Call',
-    description: 'Online relationship emergency payment request',
-    duration: 38,
-    riskLevel: 'MEDIUM',
-    expectedRisk: 72,
-    scamType: 'romance_scam',
-    icon: '💕',
-    segments: [
-      { speaker: 'agent', start: 0, duration: 3, text: "Good morning, HSBC. How can I assist you today?" },
-      { speaker: 'customer', start: 3, duration: 7, text: "I need to send four thousand pounds to Turkey urgently. It's for my partner Alex who is stuck in Istanbul." },
-      { speaker: 'agent', start: 10, duration: 3, text: "May I ask who this payment is for and how you know them?" },
-      { speaker: 'customer', start: 13, duration: 10, text: "We've been together for seven months. We met online and have been talking every day. Alex is a doctor working overseas and needs emergency funds for a visa issue." },
-      { speaker: 'agent', start: 23, duration: 4, text: "Have you met Alex in person, and why can't they get help from their employer?" },
-      { speaker: 'customer', start: 27, duration: 11, text: "We haven't met in person yet, but we video call all the time. Alex said the hospital won't help with personal visa problems and family can't send money from their country. This is really urgent." }
-    ]
-  },
-  {
-    id: 'impersonation_scam_1',
-    title: 'Bank Impersonation Scam',
-    description: 'Fake HSBC security team requesting credentials',
-    duration: 35,
-    riskLevel: 'CRITICAL',
-    expectedRisk: 94,
-    scamType: 'impersonation_scam',
-    icon: '🎭',
-    segments: [
-      { speaker: 'agent', start: 0, duration: 4, text: "Good afternoon, HSBC customer service. This is Mike, how can I help?" },
-      { speaker: 'customer', start: 4, duration: 9, text: "Someone from bank security called saying my account has been compromised. They asked me to confirm my card details and PIN to verify my identity immediately." },
-      { speaker: 'agent', start: 13, duration: 5, text: "I see. Did they ask for your PIN or online banking password over the phone?" },
-      { speaker: 'customer', start: 18, duration: 8, text: "Yes, they said they needed my full card number, expiry date, and PIN to secure my account before it gets frozen." },
-      { speaker: 'agent', start: 26, duration: 9, text: "I need to stop you there. HSBC will never ask for your PIN or full card details over the phone. This sounds like a scam. Have you given them any information?" }
-    ]
-  },
-  {
-    id: 'legitimate_call_1',
-    title: 'Legitimate Banking Inquiry',
-    description: 'Normal account balance and transaction query',
-    duration: 25,
-    riskLevel: 'LOW',
-    expectedRisk: 8,
-    scamType: 'none',
-    icon: '✅',
-    segments: [
-      { speaker: 'agent', start: 0, duration: 4, text: "Good morning, HSBC customer service. This is Emma, how can I help you today?" },
-      { speaker: 'customer', start: 4, duration: 4, text: "Hi Emma, I'd like to check my current account balance please." },
-      { speaker: 'agent', start: 8, duration: 5, text: "Certainly, I can help you with that. Can I take you through security verification first?" },
-      { speaker: 'customer', start: 13, duration: 6, text: "Of course. I also wanted to ask about setting up a standing order for my rent payment." },
-      { speaker: 'agent', start: 19, duration: 6, text: "No problem at all. Let me help you with both the balance inquiry and setting up that standing order." }
-    ]
-  }
-];
+interface WebSocketMessage {
+  type: string;
+  data: any;
+}
+
+interface BackendAnalysisResult {
+  session_id: string;
+  fraud_analysis?: {
+    risk_score: number;
+    risk_level: string;
+    scam_type: string;
+    detected_patterns: Record<string, DetectedPattern>;
+    confidence: number;
+  };
+  policy_guidance?: PolicyGuidance;
+  transcription?: {
+    speaker_segments: any[];
+  };
+  orchestrator_decision?: {
+    decision: string;
+    reasoning: string;
+    actions: string[];
+  };
+}
 
 // Risk level colors
 const getRiskColor = (riskScore: number): string => {
@@ -153,155 +95,20 @@ const getRiskColorRaw = (riskScore: number): string => {
   return 'rgb(34, 197, 94)';
 };
 
-// Pattern detection simulation
-const detectPatterns = (text: string, scamType: string): Record<string, DetectedPattern> => {
-  const patterns: Record<string, Record<string, string[]>> = {
-    investment_scam: {
-      'guaranteed_returns': ['guaranteed', 'guarantee', 'thirty-five percent', 'monthly returns'],
-      'urgency_pressure': ['urgent', 'immediately', 'margin call', 'lose all'],
-      'third_party_instructions': ['advisor', 'James', 'called', 'said']
-    },
-    romance_scam: {
-      'romance_exploitation': ['partner', 'together', 'online', 'seven months'],
-      'urgency_pressure': ['urgent', 'emergency', 'stuck'],
-      'overseas_story': ['Turkey', 'Istanbul', 'doctor', 'visa issue']
-    },
-    impersonation_scam: {
-      'authority_impersonation': ['bank security', 'account compromised', 'verify'],
-      'credential_requests': ['card details', 'PIN', 'card number', 'expiry date'],
-      'urgency_pressure': ['immediately', 'frozen', 'secure']
-    }
-  };
-
-  const detected: Record<string, DetectedPattern> = {};
-  const scamPatterns = patterns[scamType] || {};
-  
-  Object.entries(scamPatterns).forEach(([patternName, keywords]) => {
-    const matches = keywords.filter(keyword => 
-      text.toLowerCase().includes(keyword.toLowerCase())
-    );
-    
-    if (matches.length > 0) {
-      detected[patternName] = {
-        pattern_name: patternName,
-        matches: matches,
-        count: matches.length,
-        weight: patternName === 'credential_requests' ? 40 : 
-                patternName === 'authority_impersonation' ? 35 : 
-                patternName === 'guaranteed_returns' ? 30 : 25,
-        severity: patternName === 'credential_requests' ? 'critical' : 'high'
-      };
-    }
-  });
-  
-  return detected;
-};
-
-// Policy guidance based on detected patterns and scam type
-const getPolicyGuidance = (scamType: string, riskScore: number, detectedPatterns: Record<string, DetectedPattern>): PolicyGuidance => {
-  const guidanceMap: Record<string, PolicyGuidance> = {
-    investment_scam: {
-      immediate_alerts: [
-        "🚨 INVESTMENT SCAM DETECTED - Guaranteed returns claim",
-        "🛑 DO NOT PROCESS TRANSFER - High fraud risk",
-        "📞 ESCALATE TO FRAUD TEAM IMMEDIATELY"
-      ],
-      recommended_actions: [
-        "Immediately halt any investment-related transfers",
-        "Ask: 'Have you been able to withdraw any profits from this investment?'",
-        "Verify investment company against regulatory register",
-        "Explain: All legitimate investments carry risk - guarantees indicate fraud",
-        "Document company name and promised returns for investigation"
-      ],
-      key_questions: [
-        "Have you been able to withdraw any money from this investment?",
-        "Did they guarantee specific percentage returns?",
-        "How did this investment company first contact you?",
-        "Can you check if they are regulated by financial authorities?"
-      ],
-      customer_education: [
-        "All legitimate investments carry risk - guaranteed returns are impossible",
-        "Real investment firms are registered and regulated by financial authorities",
-        "High-pressure sales tactics are warning signs of fraud",
-        "Take time to research - legitimate opportunities don't require immediate action"
-      ]
-    },
-    romance_scam: {
-      immediate_alerts: [
-        "⚠️ ROMANCE SCAM SUSPECTED - Online relationship money request",
-        "🔍 ENHANCED VERIFICATION REQUIRED",
-        "📋 DOCUMENT ALL DETAILS THOROUGHLY"
-      ],
-      recommended_actions: [
-        "Stop transfers to individuals customer has never met in person",
-        "Ask: 'Have you met this person face-to-face?'",
-        "Explain romance scam patterns: relationship building followed by emergency requests",
-        "Check customer's transfer history for previous payments",
-        "Advise customer to discuss with family/friends before proceeding"
-      ],
-      key_questions: [
-        "Have you met this person in person?",
-        "Have they asked for money before?",
-        "Why can't they get help from family or their employer?",
-        "How long have you known them?",
-        "What platform did you meet them on?"
-      ],
-      customer_education: [
-        "Romance scammers build relationships over months to gain trust",
-        "They often claim to be overseas, in military, or traveling for work",
-        "Real partners don't repeatedly ask for money, especially for emergencies",
-        "Video calls can be faked - only meeting in person confirms identity"
-      ]
-    },
-    impersonation_scam: {
-      immediate_alerts: [
-        "🚨 CRITICAL: Bank impersonation scam detected",
-        "🛑 DO NOT PROCESS ANY PAYMENTS - STOP TRANSACTION",
-        "📞 ESCALATE TO FRAUD TEAM IMMEDIATELY",
-        "🔒 CONSIDER ACCOUNT SECURITY MEASURES"
-      ],
-      recommended_actions: [
-        "Immediately inform customer: Banks never ask for PINs over phone",
-        "Instruct customer to hang up and call official number independently",
-        "Explain: Legitimate authorities send official letters before taking action",
-        "Document all impersonation details including claimed authority",
-        "Report incident to relevant authority fraud departments"
-      ],
-      key_questions: [
-        "What number did they call you from?",
-        "Did they ask for your PIN or online banking password?",
-        "Have you received any official letters about this matter?",
-        "Why do they claim payment is needed immediately?"
-      ],
-      customer_education: [
-        "Banks will never ask for your PIN, password, or full card details over the phone",
-        "Legitimate authorities send official letters before taking any action",
-        "Government agencies don't accept payments via bank transfer or gift cards",
-        "When in doubt, hang up and call the organization's official number"
-      ]
-    }
-  };
-
-  const guidance = guidanceMap[scamType] || {
-    immediate_alerts: [],
-    recommended_actions: ["Continue standard customer service procedures"],
-    key_questions: [],
-    customer_education: []
-  };
-
-  // Add escalation if high risk
-  if (riskScore >= 80 && !guidance.immediate_alerts.some((alert: string) => alert.includes('ESCALATE'))) {
-    guidance.immediate_alerts.push("📞 ESCALATE TO FRAUD TEAM IMMEDIATELY");
-  }
-
-  return guidance;
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
 function App() {
-  const [selectedCall, setSelectedCall] = useState<SampleCall | null>(null);
+  // Core state
+  const [selectedAudioFile, setSelectedAudioFile] = useState<RealAudioFile | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
-  const [currentSegment, setCurrentSegment] = useState<number>(0);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  
+  // Analysis state
   const [transcription, setTranscription] = useState<string>('');
   const [riskScore, setRiskScore] = useState<number>(0);
   const [riskLevel, setRiskLevel] = useState<string>('MINIMAL');
@@ -310,23 +117,22 @@ function App() {
   const [processingStage, setProcessingStage] = useState<string>('');
   const [showingSegments, setShowingSegments] = useState<AudioSegment[]>([]);
   
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const hasProcessedSegments = useRef<Set<number>>(new Set());
-
-  // NEW: Real audio files from backend
+  // Backend integration state
   const [audioFiles, setAudioFiles] = useState<RealAudioFile[]>([]);
-  const [selectedAudioFile, setSelectedAudioFile] = useState<RealAudioFile | null>(null);
-  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState<boolean>(true);
-
-  // NEW: WebSocket state and connection
+  const [sessionId, setSessionId] = useState<string>('');
+  
+  // WebSocket state
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   
-  // Reset state when new call is selected
+  // Refs
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Reset state when new analysis starts
   const resetState = (): void => {
     setCurrentTime(0);
-    setCurrentSegment(0);
     setTranscription('');
     setRiskScore(0);
     setRiskLevel('MINIMAL');
@@ -334,17 +140,27 @@ function App() {
     setPolicyGuidance(null);
     setProcessingStage('');
     setShowingSegments([]);
-    hasProcessedSegments.current.clear();
+    setSessionId('');
   };
 
-  // Stop playing
-  const stopPlaying = (): void => {
-    setIsPlaying(false);
-    setProcessingStage('⏸️ Paused');
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-  };
+  // Load audio files from backend on component mount
+  useEffect(() => {
+    loadAudioFiles();
+  }, []);
+
+  // WebSocket connection management
+  useEffect(() => {
+    connectWebSocket();
+    
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Cleanup interval on unmount
   useEffect(() => {
@@ -355,19 +171,8 @@ function App() {
     };
   }, []);
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // NEW: Load audio files from backend on component mount
-  useEffect(() => {
-    loadAudioFiles();
-  }, []);
-
-  // NEW: Function to load real audio files from backend
-  const loadAudioFiles = async () => {
+  // Load real audio files from backend
+  const loadAudioFiles = async (): Promise<void> => {
     try {
       setIsLoadingFiles(true);
       const response = await fetch('/api/v1/audio/sample-files');
@@ -378,34 +183,143 @@ function App() {
         console.log('✅ Loaded audio files:', data.files);
       } else {
         console.error('❌ Failed to load audio files:', data);
+        setProcessingStage('❌ Failed to load audio files from backend');
       }
     } catch (error) {
       console.error('❌ Error loading audio files:', error);
+      setProcessingStage('❌ Backend connection error - check if server is running');
     } finally {
       setIsLoadingFiles(false);
     }
   };
 
-  // UPDATED: Real audio playing function
-  const startPlayingReal = async (audioFile: RealAudioFile): Promise<void> => {
+  // WebSocket connection with auto-reconnect
+  const connectWebSocket = (): void => {
     try {
+      const websocket = new WebSocket(`ws://localhost:8000/ws/fraud-detection-${Date.now()}`);
+      
+      websocket.onopen = () => {
+        console.log('✅ WebSocket connected');
+        setIsConnected(true);
+        setWs(websocket);
+        
+        // Clear any pending reconnection attempts
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+        }
+      };
+      
+      websocket.onmessage = (event) => {
+        try {
+          const message: WebSocketMessage = JSON.parse(event.data);
+          handleWebSocketMessage(message);
+        } catch (error) {
+          console.error('❌ Error parsing WebSocket message:', error);
+        }
+      };
+      
+      websocket.onclose = (event) => {
+        console.log('🔌 WebSocket disconnected:', event.code, event.reason);
+        setIsConnected(false);
+        setWs(null);
+        
+        // Attempt to reconnect after 3 seconds if not manually closed
+        if (event.code !== 1000) {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log('🔄 Attempting to reconnect WebSocket...');
+            connectWebSocket();
+          }, 3000);
+        }
+      };
+      
+      websocket.onerror = (error) => {
+        console.error('❌ WebSocket error:', error);
+        setProcessingStage('❌ WebSocket connection error');
+      };
+      
+    } catch (error) {
+      console.error('❌ Error creating WebSocket connection:', error);
+    }
+  };
+
+  // Handle real-time WebSocket messages from backend
+  const handleWebSocketMessage = (message: WebSocketMessage): void => {
+    console.log('📨 WebSocket message received:', message);
+    
+    switch (message.type) {
+      case 'transcription_segment':
+        const segment = message.data;
+        setShowingSegments(prev => [...prev, {
+          speaker: segment.speaker,
+          start: segment.start,
+          duration: segment.duration,
+          text: segment.text,
+          confidence: segment.confidence
+        }]);
+        
+        setTranscription(prev => prev + (prev ? ' ' : '') + segment.text);
+        setProcessingStage('🎵 Live transcription streaming...');
+        break;
+        
+      case 'fraud_analysis_update':
+        const analysis = message.data;
+        setRiskScore(analysis.risk_score || 0);
+        setRiskLevel(analysis.risk_level || 'MINIMAL');
+        setDetectedPatterns(analysis.detected_patterns || {});
+        setProcessingStage('🔍 Fraud patterns detected...');
+        break;
+        
+      case 'policy_guidance_ready':
+        setPolicyGuidance(message.data);
+        setProcessingStage('📚 Policy guidance retrieved...');
+        break;
+        
+      case 'case_created':
+        setProcessingStage(`📋 Case created: ${message.data.case_id}`);
+        break;
+        
+      case 'processing_complete':
+        setProcessingStage('✅ All agents completed analysis');
+        break;
+        
+      case 'processing_started':
+        setProcessingStage(`🤖 ${message.data.agent}: ${message.data.stage}`);
+        break;
+        
+      case 'error':
+        setProcessingStage(`❌ Error: ${message.data.error}`);
+        break;
+        
+      case 'pong':
+        // Handle ping/pong for connection health
+        console.log('📡 WebSocket pong received');
+        break;
+        
+      default:
+        console.log('Unknown message type:', message.type);
+    }
+  };
+
+  // Start audio analysis with backend integration
+  const startAnalysis = async (audioFile: RealAudioFile): Promise<void> => {
+    try {
+      // Reset state for new analysis
       if (selectedAudioFile?.id !== audioFile.id) {
         setSelectedAudioFile(audioFile);
         resetState();
       }
       
-      // Create audio element for real audio playback
+      const newSessionId = `session_${Date.now()}`;
+      setSessionId(newSessionId);
+      setIsPlaying(true);
+      setProcessingStage('🎵 Loading audio and starting analysis...');
+      
+      // Start backend processing via REST API
+      await processAudioWithBackend(audioFile, newSessionId);
+      
+      // Start audio playback
       const audio = new Audio(`/api/v1/audio/sample-files/${audioFile.filename}`);
       setAudioElement(audio);
-      
-      setIsPlaying(true);
-      setProcessingStage('🎵 Audio Processing Agent - Loading audio...');
-      
-      // Start backend processing
-      await processAudioWithBackend(audioFile);
-      
-      // Play actual audio
-      audio.play();
       
       // Set up audio event listeners
       audio.addEventListener('timeupdate', () => {
@@ -417,20 +331,26 @@ function App() {
         setProcessingStage('✅ Audio playback complete');
       });
       
-      audio.addEventListener('loadedmetadata', () => {
-        console.log('🎵 Audio loaded, duration:', audio.duration);
+      audio.addEventListener('error', (e) => {
+        console.error('❌ Audio playback error:', e);
+        setProcessingStage('❌ Error playing audio file');
+        setIsPlaying(false);
       });
       
+      // Start playback
+      await audio.play();
+      
     } catch (error) {
-      console.error('❌ Error playing audio:', error);
-      setProcessingStage('❌ Error loading audio');
+      console.error('❌ Error starting analysis:', error);
+      setProcessingStage('❌ Failed to start analysis');
+      setIsPlaying(false);
     }
   };
 
-  // NEW: Process audio with backend agents
-  const processAudioWithBackend = async (audioFile: RealAudioFile): Promise<void> => {
+  // Process audio with backend agents via REST API
+  const processAudioWithBackend = async (audioFile: RealAudioFile, sessionId: string): Promise<void> => {
     try {
-      setProcessingStage('🔍 Sending to backend agents...');
+      setProcessingStage('🔍 Sending to backend multi-agent system...');
       
       const response = await fetch('/api/v1/audio/process-audio-realtime', {
         method: 'POST',
@@ -439,13 +359,17 @@ function App() {
         },
         body: JSON.stringify({
           filename: audioFile.filename,
-          session_id: `session_${Date.now()}`
+          session_id: sessionId
         })
       });
       
-      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(`Backend responded with status: ${response.status}`);
+      }
       
-      if (result.status === 'success') {
+      const result: { status: string; analysis?: BackendAnalysisResult; error?: string } = await response.json();
+      
+      if (result.status === 'success' && result.analysis) {
         setProcessingStage('✅ Backend processing complete');
         
         // Update UI with real results from backend
@@ -467,17 +391,16 @@ function App() {
         }
         
       } else {
-        setProcessingStage('❌ Backend processing failed');
-        console.error('Backend processing error:', result.error);
+        throw new Error(result.error || 'Backend processing failed');
       }
       
     } catch (error) {
       console.error('❌ Error processing with backend:', error);
-      setProcessingStage('❌ Backend connection error');
+      setProcessingStage(`❌ Backend error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
-  // NEW: Simulate streaming effect from real transcription results
+  // Simulate streaming effect from real transcription results
   const simulateStreamingFromReal = (segments: any[]): void => {
     let segmentIndex = 0;
     
@@ -489,7 +412,8 @@ function App() {
           speaker: segment.speaker,
           start: segment.start,
           duration: segment.end - segment.start,
-          text: segment.text
+          text: segment.text,
+          confidence: segment.confidence || 0.9
         }]);
         
         setTranscription(prev => 
@@ -498,22 +422,25 @@ function App() {
         
         segmentIndex++;
         
-        // Schedule next segment (simulate real-time)
-        setTimeout(showNextSegment, 2000 + Math.random() * 1000);
+        // Schedule next segment with realistic timing
+        if (segmentIndex < segments.length) {
+          setTimeout(showNextSegment, 2000 + Math.random() * 1000);
+        }
       }
     };
     
-    // Start showing segments
+    // Start showing segments after a brief delay
     setTimeout(showNextSegment, 1000);
   };
 
-  // UPDATED: Stop playing function
-  const stopPlayingReal = (): void => {
+  // Stop analysis and audio playback
+  const stopAnalysis = (): void => {
     setIsPlaying(false);
-    setProcessingStage('⏸️ Paused');
+    setProcessingStage('⏸️ Analysis stopped');
     
     if (audioElement) {
       audioElement.pause();
+      audioElement.currentTime = 0;
     }
     
     if (intervalRef.current) {
@@ -521,127 +448,20 @@ function App() {
     }
   };
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // NEW: WebSocket connection effect
-  useEffect(() => {
-    // Connect to WebSocket for real-time updates
-    const connectWebSocket = () => {
-      const websocket = new WebSocket('ws://localhost:8000/ws/fraud-detection-client');
-      
-      websocket.onopen = () => {
-        console.log('✅ WebSocket connected');
-        setIsConnected(true);
-        setWs(websocket);
-      };
-      
-      websocket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          handleWebSocketMessage(message);
-        } catch (error) {
-          console.error('❌ Error parsing WebSocket message:', error);
-        }
-      };
-      
-      websocket.onclose = () => {
-        console.log('🔌 WebSocket disconnected');
-        setIsConnected(false);
-        setWs(null);
-        
-        // Attempt to reconnect after 3 seconds
-        setTimeout(connectWebSocket, 3000);
-      };
-      
-      websocket.onerror = (error) => {
-        console.error('❌ WebSocket error:', error);
-      };
-    };
-    
-    connectWebSocket();
-    
-    // Cleanup on unmount
-    return () => {
-      if (ws) {
-        ws.close();
-      }
-    };
-  }, []);
-
-  // NEW: Handle real-time WebSocket messages from backend
-  const handleWebSocketMessage = (message: any): void => {
-    console.log('📨 WebSocket message received:', message);
-    
-    switch (message.type) {
-      case 'transcription_segment':
-        // Real-time transcription update
-        const segment = message.data;
-        setShowingSegments(prev => [...prev, {
-          speaker: segment.speaker,
-          start: segment.start,
-          duration: segment.duration,
-          text: segment.text
-        }]);
-        
-        setTranscription(prev => prev + (prev ? ' ' : '') + segment.text);
-        setProcessingStage('🎵 Live transcription streaming...');
-        break;
-        
-      case 'fraud_analysis_update':
-        // Real-time fraud analysis update
-        const analysis = message.data;
-        setRiskScore(analysis.risk_score);
-        setRiskLevel(analysis.risk_level);
-        setDetectedPatterns(analysis.detected_patterns || {});
-        setProcessingStage('🔍 Fraud patterns detected...');
-        break;
-        
-      case 'policy_guidance_ready':
-        // Policy guidance from backend
-        const guidance = message.data;
-        setPolicyGuidance(guidance);
-        setProcessingStage('📚 Policy guidance retrieved...');
-        break;
-        
-      case 'processing_complete':
-        // Final results
-        setProcessingStage('✅ All agents completed analysis');
-        break;
-        
-      case 'error':
-        setProcessingStage(`❌ Error: ${message.data.error}`);
-        break;
-        
-      default:
-        console.log('Unknown message type:', message.type);
-    }
-  };
-  
-  // NEW: Send audio processing request via WebSocket
-  const startWebSocketProcessing = (audioFile: RealAudioFile): void => {
+  // Send ping to keep WebSocket alive
+  const sendPing = (): void => {
     if (ws && isConnected) {
-      const message = {
-        type: 'process_audio',
-        data: {
-          filename: audioFile.filename,
-          session_id: `session_${Date.now()}`,
-          client_id: 'fraud-detection-client'
-        }
-      };
-      
-      ws.send(JSON.stringify(message));
-      setProcessingStage('📡 Sent to backend agents via WebSocket...');
-    } else {
-      console.error('❌ WebSocket not connected');
-      setProcessingStage('❌ WebSocket connection required');
+      ws.send(JSON.stringify({ type: 'ping', data: { timestamp: new Date().toISOString() } }));
     }
   };
-  
-return (
+
+  // Ping WebSocket every 30 seconds to keep connection alive
+  useEffect(() => {
+    const pingInterval = setInterval(sendPing, 30000);
+    return () => clearInterval(pingInterval);
+  }, [ws, isConnected]);
+
+  return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
@@ -659,8 +479,17 @@ return (
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <div className="px-3 py-1 rounded-full text-sm bg-green-100 text-green-800">
-                System: Operational
+              <div className="flex items-center space-x-2">
+                {isConnected ? (
+                  <Wifi className="w-4 h-4 text-green-600" />
+                ) : (
+                  <WifiOff className="w-4 h-4 text-red-600" />
+                )}
+                <span className={`px-3 py-1 rounded-full text-sm ${
+                  isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                }`}>
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
               </div>
               <div className="text-sm text-gray-600">6 Agents Active</div>
             </div>
@@ -671,7 +500,7 @@ return (
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-        {/* UPDATED: Real Audio Files Section */}
+        {/* Real Audio Files Section */}
         <div className="mb-8">
           <div className="flex items-center space-x-2 mb-6">
             <PhoneCall className="w-6 h-6 text-blue-600" />
@@ -684,6 +513,14 @@ return (
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               <span className="ml-3 text-gray-600">Loading audio files...</span>
             </div>
+          ) : audioFiles.length === 0 ? (
+            <div className="flex items-center justify-center py-12 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <AlertTriangle className="w-8 h-8 text-yellow-600 mr-3" />
+              <div>
+                <p className="text-yellow-800 font-medium">No audio files available</p>
+                <p className="text-yellow-600 text-sm">Make sure the backend server is running and has sample files</p>
+              </div>
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {audioFiles.map((audioFile) => (
@@ -692,11 +529,10 @@ return (
                   className={`bg-white rounded-lg shadow-md p-6 cursor-pointer border-2 transition-all hover:shadow-lg ${
                     selectedAudioFile?.id === audioFile.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
                   }`}
-                  onClick={() => !isPlaying ? startPlayingReal(audioFile) : null}
+                  onClick={() => !isPlaying ? startAnalysis(audioFile) : null}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-2xl">{audioFile.icon}</span>
-                    {/* REMOVED: Risk level indicator - will show after analysis */}
                     <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                       Ready
                     </span>
@@ -717,9 +553,9 @@ return (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              startPlayingReal(audioFile);
+                              startAnalysis(audioFile);
                             }}
-                            className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                            className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
                           >
                             <Play className="w-4 h-4" />
                             <span>Analyze</span>
@@ -728,9 +564,9 @@ return (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              stopPlayingReal();
+                              stopAnalysis();
                             }}
-                            className="flex items-center space-x-2 px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+                            className="flex items-center space-x-2 px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors"
                           >
                             <Pause className="w-4 h-4" />
                             <span>Stop</span>
@@ -764,12 +600,15 @@ return (
             <div className="flex items-center space-x-3">
               <Brain className="w-5 h-5 text-blue-600 animate-pulse" />
               <span className="text-blue-800 font-medium">{processingStage}</span>
+              {sessionId && (
+                <span className="text-blue-600 text-sm">Session: {sessionId}</span>
+              )}
             </div>
           </div>
         )}
 
         {/* Main Analysis Grid */}
-        {selectedCall && (
+        {selectedAudioFile && (riskScore > 0 || showingSegments.length > 0) && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
             {/* Left Column - Live Transcription */}
@@ -798,6 +637,11 @@ return (
                         <span className="text-xs text-gray-500 mt-1">
                           {formatTime(segment.start)}
                         </span>
+                        {segment.confidence && (
+                          <span className="text-xs text-gray-400 mt-1">
+                            {Math.round(segment.confidence * 100)}%
+                          </span>
+                        )}
                       </div>
                       <div className="mt-1 p-3 bg-gray-50 rounded-lg border-l-4 border-blue-400">
                         <p className="text-sm text-gray-800">{segment.text}</p>
@@ -865,9 +709,6 @@ return (
                       <h3 className="text-lg font-semibold text-gray-900">
                         {riskLevel} RISK
                       </h3>
-                      <p className="text-sm text-gray-600 mt-1 capitalize">
-                        {selectedCall.scamType.replace('_', ' ')}
-                      </p>
                     </div>
                   </div>
                 </div>
@@ -1002,6 +843,7 @@ return (
             </div>
           </div>
         )}
+
         {/* Agent Status Dashboard */}
         <div className="mt-12 bg-white rounded-lg shadow p-6">
           <div className="flex items-center space-x-2 mb-6">
@@ -1081,14 +923,13 @@ return (
           <div className="mt-6 p-4 bg-blue-100 rounded-lg">
             <p className="text-sm text-blue-800">
               <strong>💡 Pro Tip:</strong> Try different call types to see how the system adapts its response. 
-              Notice how <strong>Investment Scam</strong> calls trigger immediate escalation, while 
-              <strong>Romance Scam</strong> calls focus on education and verification questions.
+              The system now uses <strong>real backend agents</strong> for authentic fraud detection results.
             </p>
           </div>
         </div>
 
         {/* System Performance Metrics */}
-        {selectedCall && riskScore > 0 && (
+        {selectedAudioFile && riskScore > 0 && (
           <div className="mt-8 bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
               <TrendingUp className="w-5 h-5" />

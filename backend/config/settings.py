@@ -332,6 +332,9 @@ class DevelopmentSettings(Settings):
     
     # Relaxed security for development
     allowed_origins: List[str] = ["*"]
+
+    # Development networking
+    api_host: str = "0.0.0.0"  # Listen on all interfaces    
     
     # Lower thresholds for testing
     max_concurrent_sessions: int = 10

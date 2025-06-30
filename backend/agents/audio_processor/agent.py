@@ -1,7 +1,6 @@
-# backend/agents/audio_processor/server_realtime_processor.py - FORCE GOOGLE STT
+# backend/agents/audio_processor/agent.py 
 """
-Server-side Real-time Audio File Processor - FORCED TO USE GOOGLE STT
-FIXED: Force Google STT usage to see debug statements and real API calls
+Audio Processing Agent with Google Speech-to-Text Streaming API
 """
 
 import asyncio
@@ -22,22 +21,22 @@ from ...utils import get_current_timestamp
 
 logger = logging.getLogger(__name__)
 
-class ServerRealtimeAudioProcessor(BaseAgent):
+class AudioProcessorAgent(BaseAgent):
     """
-    Server-side audio processor with FORCED GOOGLE STT usage
-    FIXED: Always attempt Google STT first, with comprehensive debug logging
+    Audio Processing Agent with REAL Google Speech-to-Text Streaming API
+    RENAMED: This is now the main audio processor (was ServerRealtimeAudioProcessor)
     """
     
     def __init__(self):
         super().__init__(
-            agent_type="server_realtime_audio",
-            agent_name="Real Server Audio Processor with FORCED GOOGLE STT"
+            agent_type="audio_processor",
+            agent_name="Audio Processing Agent with Google STT"
         )
         
         self.active_sessions: Dict[str, Dict] = {}
         self.processing_tasks: Dict[str, asyncio.Task] = {}
         
-        # ENHANCED: Add debug tracking
+        # Enhanced debug tracking
         self.debug_mode = True
         self.transcription_source = "unknown"
         self.force_google_stt = True  # FORCE GOOGLE STT USAGE
@@ -55,7 +54,7 @@ class ServerRealtimeAudioProcessor(BaseAgent):
         logger.info(f"🐛 DEBUG MODE: {self.debug_mode}")
         logger.info(f"🔧 TRANSCRIPTION SOURCE: {self.transcription_source}")
         logger.info(f"🚀 FORCE GOOGLE STT: {self.force_google_stt}")
-        logger.info(f"🌊 STREAMING API: Enabled (handles large files)"))
+        logger.info(f"🌊 STREAMING API: Enabled (handles large files)")
     
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration with debug enhancements"""
@@ -72,7 +71,7 @@ class ServerRealtimeAudioProcessor(BaseAgent):
             "min_speech_duration": 0.5,
             "silence_threshold": 0.01,
             
-            # ENHANCED: Debug specific settings
+            # Enhanced debug settings
             "debug_transcription": True,
             "log_transcription_attempts": True,
             "force_google_stt": True,  # FORCE GOOGLE STT
@@ -81,7 +80,7 @@ class ServerRealtimeAudioProcessor(BaseAgent):
             "mock_fallback_enabled": False  # NO FALLBACK
         }
         
-        # ENHANCED: Log the configuration being used
+        # Enhanced: Log the configuration being used
         logger.info(f"🔧 Audio Processor Config: {json.dumps(base_config, indent=2)}")
         
         return base_config
@@ -151,16 +150,60 @@ class ServerRealtimeAudioProcessor(BaseAgent):
     # REMOVED _load_scenario_transcriptions() - NO FALLBACK ALLOWED
     # System will only use Google Speech-to-Text API
     
+    def process(self, input_data: Any) -> Dict[str, Any]:
+        """
+        Main processing method - transcribe audio file using Google STT
+        UPDATED: Now uses Google STT instead of mock data
+        """
+        if isinstance(input_data, dict):
+            file_path = input_data.get('file_path', input_data.get('audio_file_path', ''))
+        else:
+            file_path = str(input_data)
+        
+        # For the basic process method, we'll use a simplified approach
+        # This maintains compatibility with the existing agent interface
+        try:
+            if not self.google_client:
+                return {
+                    "error": "Google Speech-to-Text not available",
+                    "agent_id": self.agent_id,
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            logger.info(f"🎯 Processing audio file via basic agent interface: {file_path}")
+            
+            # For now, return a compatible response
+            # The real processing happens via start_realtime_processing()
+            return {
+                "agent_type": self.agent_type,
+                "status": "ready_for_real_processing",
+                "file_path": file_path,
+                "google_client_available": self.google_client is not None,
+                "transcription_source": self.transcription_source,
+                "processing_mode": "google_stt_streaming",
+                "note": "Use start_realtime_processing() for full Google STT transcription",
+                "agent_id": self.agent_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.handle_error(e, "process")
+            return {
+                "error": str(e),
+                "agent_id": self.agent_id,
+                "timestamp": datetime.now().isoformat()
+            }
+    
     async def start_realtime_processing(
         self, 
         session_id: str, 
         audio_filename: str,
         websocket_callback: Callable[[Dict], None]
     ) -> Dict[str, Any]:
-        """Start real-time processing with FORCED GOOGLE STT"""
+        """Start real-time processing with GOOGLE STT STREAMING"""
         
         try:
-            logger.info(f"🎵 STARTING FORCED GOOGLE STT TRANSCRIPTION")
+            logger.info(f"🎵 STARTING GOOGLE STT STREAMING TRANSCRIPTION")
             logger.info(f"🎯 Session ID: {session_id}")
             logger.info(f"📁 Audio File: {audio_filename}")
             logger.info(f"🔧 Transcription Source: {self.transcription_source}")
@@ -191,7 +234,7 @@ class ServerRealtimeAudioProcessor(BaseAgent):
                 logger.error(f"❌ {error_msg}")
                 raise Exception(error_msg)
             
-            logger.info("🎯 ATTEMPTING REAL GOOGLE SPEECH-TO-TEXT")
+            logger.info("🎯 ATTEMPTING REAL GOOGLE SPEECH-TO-TEXT STREAMING")
             transcription_segments = await self._get_google_stt_transcription(audio_path, audio_filename)
             logger.info(f"📝 Google STT returned {len(transcription_segments)} segments")
             
@@ -233,7 +276,7 @@ class ServerRealtimeAudioProcessor(BaseAgent):
                     "session_id": session_id,
                     "filename": audio_filename,
                     "audio_info": audio_info,
-                    "processing_mode": "forced_google_stt",
+                    "processing_mode": "google_stt_streaming",
                     "transcription_engine": self.transcription_source,
                     "forced_google": self.force_google_stt,
                     "expected_segments": len(transcription_segments),
@@ -252,13 +295,13 @@ class ServerRealtimeAudioProcessor(BaseAgent):
             }
             
         except Exception as e:
-            logger.error(f"❌ Error starting FORCED Google STT: {e}")
+            logger.error(f"❌ Error starting Google STT: {e}")
             logger.error(f"🔍 Exception details: {type(e).__name__}: {str(e)}")
             return {"error": str(e)}
     
     async def _get_google_stt_transcription(self, audio_path: Path, filename: str) -> List[Dict]:
-        """Get transcription from Google Speech-to-Text API - FORCED REAL IMPLEMENTATION"""
-        logger.info(f"🎯 CALLING FORCED GOOGLE STT FOR: {filename}")
+        """Get transcription from Google Speech-to-Text STREAMING API - HANDLES LARGE FILES"""
+        logger.info(f"🎯 CALLING GOOGLE STT STREAMING API FOR: {filename}")
         logger.info(f"📁 Audio path: {audio_path}")
         logger.info(f"🔧 Google client available: {self.google_client is not None}")
         
@@ -272,9 +315,11 @@ class ServerRealtimeAudioProcessor(BaseAgent):
             with open(audio_path, 'rb') as audio_file:
                 audio_content = audio_file.read()
             
-            logger.info(f"📁 Audio file size: {len(audio_content)} bytes")
+            file_size_bytes = len(audio_content)
+            file_size_mb = file_size_bytes / (1024 * 1024)
+            logger.info(f"📁 Audio file size: {file_size_bytes} bytes ({file_size_mb:.2f} MB)")
             
-            if len(audio_content) == 0:
+            if file_size_bytes == 0:
                 logger.error("❌ Audio file is empty")
                 raise Exception("Audio file is empty")
             
@@ -282,97 +327,164 @@ class ServerRealtimeAudioProcessor(BaseAgent):
             logger.info("🔄 Importing Google Cloud Speech module...")
             from google.cloud import speech
             
-            # Create the audio object
-            logger.info("🔄 Creating Google STT audio object...")
-            audio = speech.RecognitionAudio(content=audio_content)
-            
-            # Create the configuration
-            logger.info("🔄 Creating Google STT configuration...")
+            # Create streaming configuration
+            logger.info("🔄 Creating Google STT STREAMING configuration...")
             config = speech.RecognitionConfig(
                 encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
                 sample_rate_hertz=16000,
                 language_code="en-GB",
                 enable_automatic_punctuation=True,
-                enable_word_time_offsets=True,
-                enable_word_confidence=True
+                enable_word_confidence=True,
+                use_enhanced=True,
+                model="latest_long",  # Better for longer audio
+                # Enable speaker diarization for better speaker separation
+                enable_speaker_diarization=True,
+                diarization_speaker_count=2,  # Assume 2 speakers (agent + customer)
+                max_alternatives=1
             )
             
-            logger.info("🔄 Sending audio to Google STT API...")
+            streaming_config = speech.StreamingRecognitionConfig(
+                config=config,
+                interim_results=True,  # Get partial results
+                single_utterance=False  # Don't stop after first utterance
+            )
+            
+            logger.info("🔄 Setting up STREAMING transcription...")
             logger.info(f"🔧 Config: language={config.language_code}, sample_rate={config.sample_rate_hertz}")
+            logger.info(f"🔧 Speaker diarization: {config.enable_speaker_diarization}")
+            logger.info(f"🔧 Audio size: {file_size_mb:.2f} MB (streaming can handle large files)")
             
-            # Make the request - THIS IS WHERE THE REAL API CALL HAPPENS
-            response = self.google_client.recognize(config=config, audio=audio)
-            
-            logger.info(f"📤 Google STT API response received!")
-            logger.info(f"🔍 Results count: {len(response.results)}")
-            
-            # Log the raw response for debugging
-            logger.info("🔍 Raw Google STT response:")
-            for i, result in enumerate(response.results):
-                logger.info(f"  Result {i}: {result.alternatives[0].transcript if result.alternatives else 'No alternatives'}")
-            
-            # Convert response to our format
-            segments = []
-            current_time = 0.0
-            speaker = "customer"  # Since we don't have diarization, alternate speakers
-            
-            for i, result in enumerate(response.results):
-                if result.alternatives:
-                    transcript = result.alternatives[0].transcript
-                    confidence = result.alternatives[0].confidence
-                    
-                    logger.info(f"📝 Processing result {i}: '{transcript}' (confidence: {confidence:.2f})")
-                    
-                    # Estimate timing (since we don't have word-level timing)
-                    words = transcript.split()
-                    duration = max(len(words) * 0.5, 2.0)  # At least 2 seconds per segment
-                    
-                    segment = {
-                        "speaker": speaker,
-                        "start": current_time,
-                        "end": current_time + duration,
-                        "text": transcript.strip(),
-                        "confidence": confidence,
-                        "source": "google_stt_real"
-                    }
-                    
-                    segments.append(segment)
-                    logger.info(f"📝 Created segment: {speaker} - '{transcript[:50]}...' (confidence: {confidence:.2f})")
-                    
-                    current_time += duration + 1.0  # 1 second gap between segments
-                    # Alternate speaker (simple simulation)
-                    speaker = "agent" if speaker == "customer" else "customer"
+            # Use streaming API
+            segments = await self._process_streaming_audio(audio_content, streaming_config, filename)
             
             if segments:
-                logger.info(f"✅ REAL GOOGLE STT SUCCESS: {len(segments)} segments transcribed")
-                logger.info(f"🎯 This was a REAL API call to Google Speech-to-Text!")
+                logger.info(f"✅ REAL GOOGLE STT STREAMING SUCCESS: {len(segments)} segments transcribed")
+                logger.info(f"🎯 This was a REAL STREAMING API call to Google Speech-to-Text!")
+                logger.info(f"📊 Total duration estimated: {segments[-1]['end']:.1f} seconds")
                 return segments
             else:
-                logger.error("❌ Google STT returned no results")
+                logger.error("❌ Google STT Streaming returned no results")
                 logger.error("🔄 Audio may contain no speech or is not recognized")
-                # Return error instead of empty list
-                raise Exception("Google STT returned no transcription results")
+                raise Exception("Google STT Streaming returned no transcription results")
             
         except Exception as e:
-            logger.error(f"❌ FORCED Google STT transcription failed: {e}")
+            error_str = str(e)
+            logger.error(f"❌ Google STT STREAMING transcription failed: {e}")
             logger.error(f"🔍 Error details: {type(e).__name__}: {str(e)}")
-            logger.error(f"🔧 Error occurred during Google STT API call")
             
             # Log the specific error for debugging
             import traceback
             logger.error(f"🔍 Full traceback: {traceback.format_exc()}")
             
-            # Since we're forcing Google STT, raise error on failure
-            logger.error(f"❌ GOOGLE STT TRANSCRIPTION FAILED: {e}")
-            logger.error(f"🔍 Error details: {type(e).__name__}: {str(e)}")
-            logger.error(f"🔧 Error occurred during Google STT API call")
+            # Re-raise with cleaner message
+            raise Exception(f"Google Speech-to-Text Streaming failed: {str(e)}")
+    
+    async def _process_streaming_audio(self, audio_content: bytes, streaming_config, filename: str) -> List[Dict]:
+        """Process audio using Google STT Streaming API"""
+        logger.info(f"🌊 Starting STREAMING transcription for {filename}")
+        
+        from google.cloud import speech
+        import asyncio
+        
+        # Chunk the audio data for streaming
+        chunk_size = 4096  # 4KB chunks
+        audio_chunks = [audio_content[i:i + chunk_size] for i in range(0, len(audio_content), chunk_size)]
+        
+        logger.info(f"📦 Split audio into {len(audio_chunks)} chunks of {chunk_size} bytes each")
+        
+        def generate_audio_chunks():
+            """Generator for audio chunks"""
+            for i, chunk in enumerate(audio_chunks):
+                if i == 0:
+                    logger.info(f"📤 Sending first chunk ({len(chunk)} bytes)")
+                elif i == len(audio_chunks) - 1:
+                    logger.info(f"📤 Sending final chunk ({len(chunk)} bytes)")
+                elif i % 50 == 0:  # Log every 50th chunk
+                    logger.info(f"📤 Sending chunk {i}/{len(audio_chunks)} ({len(chunk)} bytes)")
+                
+                yield speech.StreamingRecognizeRequest(audio_content=chunk)
+        
+        # Create the streaming request generator
+        def request_generator():
+            # First request with configuration
+            yield speech.StreamingRecognizeRequest(streaming_config=streaming_config)
+            # Then yield audio chunks
+            yield from generate_audio_chunks()
+        
+        try:
+            logger.info("🔄 Calling Google STT streaming_recognize...")
             
-            # Log the specific error for debugging
-            import traceback
-            logger.error(f"🔍 Full traceback: {traceback.format_exc()}")
+            # Make the streaming request
+            responses = self.google_client.streaming_recognize(request_generator())
             
-            # No fallback - raise the error
-            raise Exception(f"Google Speech-to-Text failed: {str(e)}")
+            logger.info("📥 Processing streaming responses...")
+            
+            segments = []
+            current_speaker = "customer"
+            segment_start_time = 0.0
+            
+            # Process streaming responses
+            for i, response in enumerate(responses):
+                logger.info(f"📥 Processing response {i}")
+                
+                # Check for errors
+                if response.error:
+                    logger.error(f"❌ Streaming error: {response.error}")
+                    raise Exception(f"Google STT streaming error: {response.error}")
+                
+                # Process results
+                for result in response.results:
+                    if result.is_final:
+                        # Final result - add to segments
+                        if result.alternatives:
+                            alternative = result.alternatives[0]
+                            transcript = alternative.transcript.strip()
+                            confidence = alternative.confidence
+                            
+                            logger.info(f"📝 Final result: '{transcript}' (confidence: {confidence:.2f})")
+                            
+                            if transcript:
+                                # Determine speaker from diarization if available
+                                speaker = current_speaker
+                                if hasattr(result, 'speaker_tag'):
+                                    speaker = "agent" if result.speaker_tag == 1 else "customer"
+                                
+                                # Calculate duration based on words (rough estimate)
+                                words = transcript.split()
+                                duration = max(len(words) / 2.5, 1.0)  # ~2.5 words per second
+                                
+                                segment = {
+                                    "speaker": speaker,
+                                    "start": segment_start_time,
+                                    "end": segment_start_time + duration,
+                                    "text": transcript,
+                                    "confidence": confidence,
+                                    "source": "google_stt_streaming",
+                                    "is_final": True,
+                                    "word_count": len(words)
+                                }
+                                
+                                segments.append(segment)
+                                logger.info(f"✅ Added segment: {speaker} - '{transcript[:50]}...' ({duration:.1f}s)")
+                                
+                                segment_start_time += duration + 0.5  # Small gap between segments
+                                # Alternate speaker for demo (in real app, use diarization)
+                                current_speaker = "agent" if current_speaker == "customer" else "customer"
+                    
+                    else:
+                        # Interim result - just log for debugging
+                        if result.alternatives:
+                            interim_text = result.alternatives[0].transcript
+                            logger.debug(f"📝 Interim: '{interim_text[:30]}...'")
+            
+            logger.info(f"🌊 Streaming transcription complete: {len(segments)} final segments")
+            return segments
+            
+        except Exception as e:
+            logger.error(f"❌ Streaming processing failed: {e}")
+            raise Exception(f"Streaming transcription failed: {str(e)}")
+    
+    # ... (rest of the methods remain the same as server_realtime_processor)
     
     async def _process_audio_with_real_transcription(self, session_id: str) -> None:
         """Core processing loop with enhanced debug logging"""
@@ -383,7 +495,7 @@ class ServerRealtimeAudioProcessor(BaseAgent):
         audio_info = session["audio_info"]
         
         try:
-            logger.info(f"🔄 STARTING FORCED GOOGLE STT TRANSCRIPTION LOOP")
+            logger.info(f"🔄 STARTING GOOGLE STT TRANSCRIPTION LOOP")
             logger.info(f"🎯 Session: {session_id}")
             logger.info(f"📝 Segments: {len(transcription_segments)}")
             logger.info(f"🔧 Source: {session.get('transcription_source', 'unknown')}")
@@ -423,7 +535,7 @@ class ServerRealtimeAudioProcessor(BaseAgent):
                     "text": segment["text"],
                     "confidence": segment.get("confidence", 0.92),
                     "segment_index": segment_index,
-                    "processing_mode": "forced_google_stt",
+                    "processing_mode": "google_stt_streaming",
                     "transcription_source": session.get('transcription_source', 'unknown'),
                     "forced_google": session.get('forced_google_stt', False),
                     "segment_source": segment.get("source", "unknown"),
@@ -439,7 +551,7 @@ class ServerRealtimeAudioProcessor(BaseAgent):
                     "data": transcription_result
                 })
                 
-                logger.info(f"📤 FORCED Google STT segment {segment_index}: {segment['speaker']} - {segment['text'][:50]}...")
+                logger.info(f"📤 Google STT segment {segment_index}: {segment['speaker']} - {segment['text'][:50]}...")
                 logger.info(f"🔧 Source: {session.get('transcription_source', 'unknown')}")
                 logger.info(f"🎯 Segment source: {segment.get('source', 'unknown')}")
                 segment_index += 1
@@ -464,14 +576,14 @@ class ServerRealtimeAudioProcessor(BaseAgent):
                 }
             })
             
-            logger.info(f"✅ FORCED Google STT transcription completed for {session_id} - {session['filename']}")
+            logger.info(f"✅ Google STT transcription completed for {session_id} - {session['filename']}")
             logger.info(f"🔧 Final source: {session.get('transcription_source', 'unknown')}")
             logger.info(f"🎯 Forced Google STT: {session.get('forced_google_stt', False)}")
             
         except asyncio.CancelledError:
-            logger.info(f"🛑 FORCED Google STT transcription cancelled for {session_id}")
+            logger.info(f"🛑 Google STT transcription cancelled for {session_id}")
         except Exception as e:
-            logger.error(f"❌ Error in FORCED Google STT transcription loop: {e}")
+            logger.error(f"❌ Error in Google STT transcription loop: {e}")
             await websocket_callback({
                 "type": "error",
                 "data": {
@@ -492,7 +604,7 @@ class ServerRealtimeAudioProcessor(BaseAgent):
             logger.info(f"🎵 Getting audio info for: {filename}")
             logger.info(f"📁 File size: {file_size} bytes")
             
-            # For forced Google STT, estimate duration from file size
+            # For streaming STT, estimate duration from file size
             estimated_duration = max(20.0, min(60.0, file_size / 50000))
             
             audio_info = {
@@ -542,7 +654,7 @@ class ServerRealtimeAudioProcessor(BaseAgent):
             # Cleanup session
             del self.active_sessions[session_id]
             
-            logger.info(f"🛑 Stopped FORCED Google STT transcription for session {session_id}")
+            logger.info(f"🛑 Stopped Google STT transcription for session {session_id}")
             
             return {
                 "session_id": session_id,
@@ -568,20 +680,6 @@ class ServerRealtimeAudioProcessor(BaseAgent):
             "debug_mode": self.debug_mode,
             "google_client_available": self.google_client is not None
         }
-    
-    def process(self, input_data: Any) -> Dict[str, Any]:
-        """Standard process method for compatibility"""
-        return {
-            "agent_type": self.agent_type,
-            "status": "ready",
-            "active_sessions": len(self.active_sessions),
-            "capabilities": [cap.value for cap in self.capabilities],
-            "processing_mode": "forced_google_stt",
-            "transcription_engine": self.transcription_source,
-            "forced_google_stt": self.force_google_stt,
-            "debug_mode": self.debug_mode,
-            "google_client_available": self.google_client is not None
-        }
 
-# Create global instance
-server_realtime_processor = ServerRealtimeAudioProcessor()
+# Create global instance - NOW THE MAIN AUDIO AGENT
+audio_processor_agent = AudioProcessorAgent()

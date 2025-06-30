@@ -17,12 +17,13 @@ class Settings:
         self.api_host = os.getenv("API_HOST", "0.0.0.0")
         self.api_port = int(os.getenv("API_PORT", "8000"))
         
-        # CORS settings
+        # CORS settings - FIXED: Added wildcard for development like original
         self.allowed_origins = [
             "http://localhost:3000",
             "http://localhost:3001", 
             "http://127.0.0.1:3000",
-            "http://127.0.0.1:3001"
+            "http://127.0.0.1:3001",
+            "*"  # FIXED: Allow all origins for development (like original settings)
         ]
         
         # FIXED: Add missing pattern_weights that the fraud detection agent needs
@@ -285,6 +286,12 @@ class Settings:
     def is_audio_format_supported(self, filename: str) -> bool:
         """Check if audio file format is supported"""
         return any(filename.lower().endswith(fmt) for fmt in self.supported_audio_formats)
+    
+    def parse_cors_origins(self, origins_input) -> List[str]:
+        """Parse CORS origins from string or list (like original settings)"""
+        if isinstance(origins_input, str):
+            return [origin.strip() for origin in origins_input.split(',')]
+        return origins_input
     
     def validate_transcription_setup(self) -> Dict[str, Any]:
         """Validate Google Speech-to-Text setup"""

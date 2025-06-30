@@ -28,7 +28,7 @@ import {
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
 
-// Type definitions (same as before)
+// Type definitions
 interface AudioSegment {
   speaker: 'agent' | 'customer';
   start: number;
@@ -69,7 +69,7 @@ interface WebSocketMessage {
   data: any;
 }
 
-// Risk level colors
+// Utility functions
 const getRiskColor = (riskScore: number): string => {
   if (riskScore >= 80) return 'bg-red-100 text-red-800 border-red-300';
   if (riskScore >= 60) return 'bg-orange-100 text-orange-800 border-orange-300';
@@ -108,29 +108,40 @@ function App() {
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   
-  // Refs
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Add these state variables to your component
+  // Real-time audio capture state
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [isCapturingAudio, setIsCapturingAudio] = useState<boolean>(false);
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [isRealTimeMode, setIsRealTimeMode] = useState<boolean>(false);
+  
+  // Refs
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Audio capture and streaming functions
+  // Mock customer data
+  const customerData = {
+    name: "Michael Thompson",
+    account: "****5678",
+    status: "Active",
+    segment: "Personal Banking",
+    riskProfile: "Medium"
+  };
+
+  // ===== REAL-TIME AUDIO CAPTURE FUNCTIONS =====
+
   const initializeAudioCapture = async (): Promise<boolean> => {
     try {
-        // Request microphone access
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            sampleRate: 16000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true
-          } 
-        });
-  
+      // Request microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true
+        } 
+      });
+
       // Create audio context
       const context = new (window.AudioContext || (window as any).webkitAudioContext)({
         sampleRate: 16000
@@ -174,7 +185,7 @@ function App() {
   };
 
   const sendAudioChunkToBackend = async (audioBlob: Blob): Promise<void> => {
-    if (!ws || !isConnected) return;
+    if (!ws || !isConnected || !isRealTimeMode) return;
     
     try {
       // Convert blob to base64 for WebSocket transmission
@@ -199,7 +210,163 @@ function App() {
     }
   };
 
-  // Modified startAnalysis function with real-time audio capture
+  const stopRealTimeCapture = (): void => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      
+      // Stop all tracks to release microphone
+      if (mediaRecorder.stream) {
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      }
+    }
+    
+    if (ws && isConnected && sessionId && isRealTimeMode) {
+      // Stop real-time session
+      const message = {
+        type: 'stop_realtime_session',
+        data: {
+          session_id: sessionId
+        }
+      };
+      ws.send(JSON.stringify(message));
+    }
+    
+    setIsCapturingAudio(false);
+    setIsRealTimeMode(false);
+    setAudioChunks([]);
+  };
+
+  // ===== WEBSOCKET FUNCTIONS =====
+
+  const connectWebSocket = (): void => {
+    try {
+      const websocket = new WebSocket(`${WS_BASE_URL}/ws/fraud-detection/agent-${Date.now()}`);
+      
+      websocket.onopen = () => {
+        console.log('✅ WebSocket connected');
+        setIsConnected(true);
+        setWs(websocket);
+        
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+        }
+      };
+      
+      websocket.onmessage = (event) => {
+        try {
+          const message: WebSocketMessage = JSON.parse(event.data);
+          handleWebSocketMessage(message);
+        } catch (error) {
+          console.error('❌ Error parsing WebSocket message:', error);
+        }
+      };
+      
+      websocket.onclose = (event) => {
+        console.log('🔌 WebSocket disconnected:', event.code, event.reason);
+        setIsConnected(false);
+        setWs(null);
+        
+        if (event.code !== 1000) {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log('🔄 Attempting to reconnect WebSocket...');
+            connectWebSocket();
+          }, 3000);
+        }
+      };
+      
+      websocket.onerror = (error) => {
+        console.error('❌ WebSocket error:', error);
+      };
+      
+    } catch (error) {
+      console.error('❌ Error creating WebSocket connection:', error);
+    }
+  };
+
+  const handleWebSocketMessage = (message: WebSocketMessage): void => {
+    console.log('📨 WebSocket message received:', message);
+    
+    switch (message.type) {
+      case 'realtime_session_started':
+        setProcessingStage('🎙️ Real-time transcription session started');
+        setIsRealTimeMode(true);
+        break;
+        
+      case 'realtime_transcription':
+      case 'transcription_segment':
+        const transcriptData = message.data;
+        
+        // Add real-time transcription segment
+        setShowingSegments(prev => [...prev, {
+          speaker: transcriptData.speaker,
+          start: transcriptData.start_time || transcriptData.start,
+          duration: transcriptData.duration,
+          text: transcriptData.text,
+          confidence: transcriptData.confidence
+        }]);
+        
+        // Update full transcription text
+        setTranscription(prev => prev + (prev ? ' ' : '') + transcriptData.text);
+        
+        // If it's customer speech and we're in real-time mode, trigger fraud analysis
+        if (transcriptData.speaker === 'customer' && isRealTimeMode) {
+          const customerSegments = showingSegments.filter(seg => seg.speaker === 'customer');
+          if (customerSegments.length >= 1) {
+            requestFraudAnalysis(customerSegments.map(seg => seg.text).join(' '));
+          }
+        }
+        
+        setProcessingStage(`🎙️ Live: ${transcriptData.speaker} speaking...`);
+        break;
+        
+      case 'fraud_analysis_update':
+        const analysis = message.data;
+        setRiskScore(analysis.risk_score || 0);
+        setRiskLevel(analysis.risk_level || 'MINIMAL');
+        setDetectedPatterns(analysis.detected_patterns || {});
+        setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
+        break;
+        
+      case 'policy_guidance_ready':
+        setPolicyGuidance(message.data);
+        setProcessingStage('📚 Policy guidance updated');
+        break;
+        
+      case 'realtime_session_stopped':
+        setProcessingStage('🛑 Real-time session ended');
+        setIsRealTimeMode(false);
+        stopRealTimeCapture();
+        break;
+        
+      case 'processing_complete':
+        setProcessingStage('✅ Analysis complete');
+        break;
+        
+      case 'error':
+        setProcessingStage(`❌ Error: ${message.data.error || message.data.message}`);
+        break;
+        
+      default:
+        console.log('Unknown message type:', message.type);
+    }
+  };
+
+  const requestFraudAnalysis = (customerText: string): void => {
+    if (ws && isConnected && sessionId) {
+      const message = {
+        type: 'analyze_fraud',
+        data: {
+          session_id: sessionId,
+          text: customerText,
+          speaker: 'customer'
+        }
+      };
+      ws.send(JSON.stringify(message));
+    }
+  };
+
+  // ===== AUDIO ANALYSIS FUNCTIONS =====
+
   const startAnalysisWithRealTimeAudio = async (audioFile: RealAudioFile): Promise<void> => {
     try {
       // Check WebSocket connection
@@ -307,305 +474,6 @@ function App() {
     }
   };
 
-  const stopRealTimeCapture = (): void => {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-    }
-    
-    if (ws && isConnected && sessionId) {
-      // Stop real-time session
-      const message = {
-        type: 'stop_realtime_session',
-        data: {
-          session_id: sessionId
-        }
-      };
-      ws.send(JSON.stringify(message));
-    }
-    
-    setIsCapturingAudio(false);
-    setAudioChunks([]);
-  };
-
-// Enhanced WebSocket message handler for real-time audio
-const handleWebSocketMessageWithAudio = (message: WebSocketMessage): void => {
-  console.log('📨 WebSocket message received:', message);
-  
-  switch (message.type) {
-    case 'realtime_session_started':
-      setProcessingStage('🎙️ Real-time transcription session started');
-      break;
-      
-    case 'realtime_transcription':
-      const transcriptData = message.data;
-      
-      // Add real-time transcription segment
-      setShowingSegments(prev => [...prev, {
-        speaker: transcriptData.speaker,
-        start: transcriptData.start_time,
-        duration: transcriptData.duration,
-        text: transcriptData.text,
-        confidence: transcriptData.confidence
-      }]);
-      
-      // Update full transcription text
-      setTranscription(prev => prev + (prev ? ' ' : '') + transcriptData.text);
-      
-      // If it's customer speech, trigger fraud analysis
-      if (transcriptData.speaker === 'customer') {
-        // Request fraud analysis for the latest customer speech
-        const customerSegments = showingSegments.filter(seg => seg.speaker === 'customer');
-        if (customerSegments.length >= 1) {
-          requestFraudAnalysis(customerSegments.map(seg => seg.text).join(' '));
-        }
-      }
-      
-      setProcessingStage(`🎙️ Live: ${transcriptData.speaker} speaking...`);
-      break;
-      
-    case 'fraud_analysis_update':
-      const analysis = message.data;
-      setRiskScore(analysis.risk_score || 0);
-      setRiskLevel(analysis.risk_level || 'MINIMAL');
-      setDetectedPatterns(analysis.detected_patterns || {});
-      setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
-      break;
-      
-    case 'policy_guidance_ready':
-      setPolicyGuidance(message.data);
-      setProcessingStage('📚 Policy guidance updated');
-      break;
-      
-    case 'realtime_session_stopped':
-      setProcessingStage('🛑 Real-time session ended');
-      stopRealTimeCapture();
-      break;
-      
-    case 'processing_complete':
-      setProcessingStage('✅ Analysis complete');
-      break;
-      
-    case 'error':
-      setProcessingStage(`❌ Error: ${message.data.error || message.data.message}`);
-      break;
-      
-    default:
-      // Handle other message types from the original handler
-      handleWebSocketMessage(message);
-  }
-};
-
-const requestFraudAnalysis = (customerText: string): void => {
-  if (ws && isConnected && sessionId) {
-    const message = {
-      type: 'analyze_fraud',
-      data: {
-        session_id: sessionId,
-        text: customerText,
-        speaker: 'customer'
-      }
-    };
-    ws.send(JSON.stringify(message));
-  }
-};
-
-// Update the demo call buttons to use real-time analysis
-const DemoCallButton = ({ audioFile }: { audioFile: RealAudioFile }) => (
-  <button
-    onClick={() => !isPlaying ? startAnalysisWithRealTimeAudio(audioFile) : null}
-    disabled={isPlaying}
-    className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-      selectedAudioFile?.id === audioFile.id 
-        ? 'bg-blue-100 text-blue-800 border-2 border-blue-300' 
-        : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-2 border-transparent'
-    } ${isPlaying ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-  >
-    <span className="text-lg">{audioFile.icon}</span>
-    {!isPlaying ? (
-      <Play className="w-4 h-4" />
-    ) : selectedAudioFile?.id === audioFile.id ? (
-      <Pause className="w-4 h-4" />
-    ) : (
-      <Play className="w-4 h-4" />
-    )}
-    <span className="font-medium">{audioFile.title}</span>
-    {selectedAudioFile?.id === audioFile.id && isPlaying && (
-      <div className="flex items-center space-x-1">
-        <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
-          LIVE
-        </span>
-        {isCapturingAudio && (
-          <span className="text-xs bg-green-500 text-white px-2 py-1 rounded-full">
-            MIC
-          </span>
-        )}
-      </div>
-    )}
-  </button>
-);
-
-// Add microphone permission status indicator
-const MicrophoneStatus = () => (
-  <div className="flex items-center space-x-2 text-xs">
-    {isCapturingAudio ? (
-      <div className="flex items-center space-x-1 text-green-600">
-        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-        <span>Microphone Active</span>
-      </div>
-    ) : (
-      <div className="flex items-center space-x-1 text-gray-500">
-        <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-        <span>Microphone Standby</span>
-      </div>
-    )}
-  </div>
-);
-  
-  // Mock customer data
-  const customerData = {
-    name: "Michael Thompson",
-    account: "****5678",
-    status: "Active",
-    segment: "Personal Banking",
-    riskProfile: "Medium"
-  };
-
-  // Reset state when new analysis starts
-  const resetState = (): void => {
-    setCurrentTime(0);
-    setTranscription('');
-    setRiskScore(0);
-    setRiskLevel('MINIMAL');
-    setDetectedPatterns({});
-    setPolicyGuidance(null);
-    setProcessingStage('');
-    setShowingSegments([]);
-    setSessionId('');
-  };
-
-  // Load audio files from backend on component mount
-  useEffect(() => {
-    loadAudioFiles();
-  }, []);
-
-  // WebSocket connection management
-  useEffect(() => {
-    connectWebSocket();
-    
-    return () => {
-      if (ws) {
-        ws.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Load real audio files from backend
-  const loadAudioFiles = async (): Promise<void> => {
-    try {
-      setIsLoadingFiles(true);
-      const response = await fetch(`${API_BASE_URL}/api/v1/audio/sample-files`);
-      const data = await response.json();
-      
-      if (data.status === 'success') {
-        setAudioFiles(data.files);
-      } else {
-        console.error('Failed to load audio files:', data);
-      }
-    } catch (error) {
-      console.error('Error loading audio files:', error);
-    } finally {
-      setIsLoadingFiles(false);
-    }
-  };
-
-  // WebSocket connection with auto-reconnect
-  const connectWebSocket = (): void => {
-    try {
-      const websocket = new WebSocket(`${WS_BASE_URL}/ws/fraud-detection/agent-${Date.now()}`);
-      
-      websocket.onopen = () => {
-        console.log('✅ WebSocket connected');
-        setIsConnected(true);
-        setWs(websocket);
-        
-        if (reconnectTimeoutRef.current) {
-          clearTimeout(reconnectTimeoutRef.current);
-        }
-      };
-      
-      websocket.onmessage = (event) => {
-        try {
-          const message: WebSocketMessage = JSON.parse(event.data);
-          handleWebSocketMessage(message);
-        } catch (error) {
-          console.error('❌ Error parsing WebSocket message:', error);
-        }
-      };
-      
-      websocket.onclose = (event) => {
-        console.log('🔌 WebSocket disconnected:', event.code, event.reason);
-        setIsConnected(false);
-        setWs(null);
-        
-        if (event.code !== 1000) {
-          reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('🔄 Attempting to reconnect WebSocket...');
-            connectWebSocket();
-          }, 3000);
-        }
-      };
-      
-      websocket.onerror = (error) => {
-        console.error('❌ WebSocket error:', error);
-      };
-      
-    } catch (error) {
-      console.error('❌ Error creating WebSocket connection:', error);
-    }
-  };
-
-  // Handle real-time WebSocket messages from backend
-  const handleWebSocketMessage = (message: WebSocketMessage): void => {
-    console.log('📨 WebSocket message received:', message);
-    
-    switch (message.type) {
-      case 'transcription_segment':
-        const segment = message.data;
-        setShowingSegments(prev => [...prev, {
-          speaker: segment.speaker,
-          start: segment.start,
-          duration: segment.duration,
-          text: segment.text,
-          confidence: segment.confidence
-        }]);
-        
-        setTranscription(prev => prev + (prev ? ' ' : '') + segment.text);
-        break;
-        
-      case 'fraud_analysis_update':
-        const analysis = message.data;
-        setRiskScore(analysis.risk_score || 0);
-        setRiskLevel(analysis.risk_level || 'MINIMAL');
-        setDetectedPatterns(analysis.detected_patterns || {});
-        break;
-        
-      case 'policy_guidance_ready':
-        setPolicyGuidance(message.data);
-        break;
-        
-      case 'processing_complete':
-        setProcessingStage('Analysis Complete');
-        break;
-        
-      default:
-        console.log('Unknown message type:', message.type);
-    }
-  };
-
-  // Start audio analysis with backend integration
   const startAnalysis = async (audioFile: RealAudioFile): Promise<void> => {
     try {
       if (selectedAudioFile?.id !== audioFile.id) {
@@ -618,7 +486,7 @@ const MicrophoneStatus = () => (
       setIsPlaying(true);
       setProcessingStage('Starting Analysis...');
       
-      // Send WebSocket message for real-time processing
+      // Send WebSocket message for demo processing
       if (ws && isConnected) {
         const message = {
           type: 'process_audio',
@@ -650,7 +518,6 @@ const MicrophoneStatus = () => (
     }
   };
 
-  // Stop analysis and audio playback
   const stopAnalysis = (): void => {
     setIsPlaying(false);
     setProcessingStage('Analysis Stopped');
@@ -659,7 +526,117 @@ const MicrophoneStatus = () => (
       audioElement.pause();
       audioElement.currentTime = 0;
     }
+    
+    stopRealTimeCapture();
   };
+
+  // ===== UTILITY FUNCTIONS =====
+
+  const resetState = (): void => {
+    setCurrentTime(0);
+    setTranscription('');
+    setRiskScore(0);
+    setRiskLevel('MINIMAL');
+    setDetectedPatterns({});
+    setPolicyGuidance(null);
+    setProcessingStage('');
+    setShowingSegments([]);
+    setSessionId('');
+    setIsRealTimeMode(false);
+    stopRealTimeCapture();
+  };
+
+  const loadAudioFiles = async (): Promise<void> => {
+    try {
+      setIsLoadingFiles(true);
+      const response = await fetch(`${API_BASE_URL}/api/v1/audio/sample-files`);
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        setAudioFiles(data.files);
+      } else {
+        console.error('Failed to load audio files:', data);
+      }
+    } catch (error) {
+      console.error('Error loading audio files:', error);
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  };
+
+  // ===== COMPONENT FUNCTIONS =====
+
+  const DemoCallButton = ({ audioFile }: { audioFile: RealAudioFile }) => (
+    <button
+      onClick={() => !isPlaying ? startAnalysisWithRealTimeAudio(audioFile) : null}
+      disabled={isPlaying}
+      className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+        selectedAudioFile?.id === audioFile.id 
+          ? 'bg-blue-100 text-blue-800 border-2 border-blue-300' 
+          : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-2 border-transparent'
+      } ${isPlaying ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      <span className="text-lg">{audioFile.icon}</span>
+      {!isPlaying ? (
+        <Play className="w-4 h-4" />
+      ) : selectedAudioFile?.id === audioFile.id ? (
+        <Pause className="w-4 h-4" />
+      ) : (
+        <Play className="w-4 h-4" />
+      )}
+      <span className="font-medium">{audioFile.title}</span>
+      {selectedAudioFile?.id === audioFile.id && isPlaying && (
+        <div className="flex items-center space-x-1">
+          <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
+            LIVE
+          </span>
+          {isCapturingAudio && (
+            <span className="text-xs bg-green-500 text-white px-2 py-1 rounded-full">
+              MIC
+            </span>
+          )}
+        </div>
+      )}
+    </button>
+  );
+
+  const MicrophoneStatus = () => (
+    <div className="flex items-center space-x-2 text-xs">
+      {isCapturingAudio ? (
+        <div className="flex items-center space-x-1 text-green-600">
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+          <span>Microphone Active</span>
+        </div>
+      ) : (
+        <div className="flex items-center space-x-1 text-gray-500">
+          <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+          <span>Microphone Standby</span>
+        </div>
+      )}
+    </div>
+  );
+
+  // ===== EFFECTS =====
+
+  useEffect(() => {
+    loadAudioFiles();
+  }, []);
+
+  useEffect(() => {
+    connectWebSocket();
+    
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      stopRealTimeCapture();
+    };
+  }, []);
+
+  // ===== RENDER =====
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -680,6 +657,7 @@ const MicrophoneStatus = () => (
             <span>Agent: Sarah Mitchell</span>
             <span>ID: SM2024</span>
             <span>Shift: 09:00-17:00</span>
+            <MicrophoneStatus />
             <Settings className="w-4 h-4" />
           </div>
         </div>
@@ -691,31 +669,7 @@ const MicrophoneStatus = () => (
           <span className="text-sm font-medium text-gray-700">Demo Calls:</span>
           <div className="flex space-x-2">
             {audioFiles.map((audioFile) => (
-              <button
-                key={audioFile.id}
-                onClick={() => !isPlaying ? startAnalysis(audioFile) : null}
-                disabled={isPlaying}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  selectedAudioFile?.id === audioFile.id 
-                    ? 'bg-blue-100 text-blue-800 border-2 border-blue-300' 
-                    : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-2 border-transparent'
-                } ${isPlaying ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-              >
-                <span className="text-lg">{audioFile.icon}</span>
-                {!isPlaying ? (
-                  <Play className="w-4 h-4" />
-                ) : selectedAudioFile?.id === audioFile.id ? (
-                  <Pause className="w-4 h-4" />
-                ) : (
-                  <Play className="w-4 h-4" />
-                )}
-                <span className="font-medium">{audioFile.title}</span>
-                {selectedAudioFile?.id === audioFile.id && isPlaying && (
-                  <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
-                    LIVE
-                  </span>
-                )}
-              </button>
+              <DemoCallButton key={audioFile.id} audioFile={audioFile} />
             ))}
           </div>
           
@@ -727,6 +681,20 @@ const MicrophoneStatus = () => (
               Stop Call
             </button>
           )}
+          
+          <div className="flex items-center space-x-2 ml-4">
+            {isConnected ? (
+              <div className="flex items-center space-x-1 text-green-600">
+                <Wifi className="w-4 h-4" />
+                <span className="text-xs">Connected</span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-1 text-red-600">
+                <WifiOff className="w-4 h-4" />
+                <span className="text-xs">Disconnected</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -839,6 +807,11 @@ const MicrophoneStatus = () => (
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
               <span className="text-sm text-red-600 font-medium">Recording</span>
               <span className="text-sm text-gray-500">Confidence: 94%</span>
+              {isRealTimeMode && (
+                <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">
+                  REAL-TIME
+                </span>
+              )}
             </div>
           </div>
           
@@ -848,6 +821,9 @@ const MicrophoneStatus = () => (
                 <div className="text-center">
                   <Mic className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p>Select a demo call to see live transcription</p>
+                  {processingStage && (
+                    <p className="text-sm text-blue-600 mt-2">{processingStage}</p>
+                  )}
                 </div>
               </div>
             ) : (
@@ -890,7 +866,9 @@ const MicrophoneStatus = () => (
                 {isPlaying && (
                   <div className="flex items-center space-x-2 text-gray-500 ml-3">
                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-                    <span className="text-sm">Listening...</span>
+                    <span className="text-sm">
+                      {isRealTimeMode ? "Listening to microphone..." : "Processing..."}
+                    </span>
                   </div>
                 )}
               </div>
@@ -1118,6 +1096,11 @@ const MicrophoneStatus = () => (
                     <span>6 Agents Ready</span>
                   </div>
                   <div className="text-gray-400">Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
+                  {processingStage && (
+                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                      <p className="text-blue-700">{processingStage}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

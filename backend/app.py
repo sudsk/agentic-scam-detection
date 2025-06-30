@@ -149,34 +149,19 @@ async def root():
         </head>
         <body>
             <div class="container">
-                <h1 class="header">🏦 Fraud Detection Agent API - CONSOLIDATED + WEBSOCKET ✨</h1>
+                <h1 class="header">🏦 Fraud Detection Agent API ✨</h1>
                 <p><strong>Real-time Multi-Agent System with WebSocket Support!</strong></p>
                 
                 <div class="websocket">
                     <h3>🔌 WebSocket Integration Status</h3>
-                    <p>✅ <strong>WebSocket Handler:</strong> Integrated and Ready</p>
-                    <p>✅ <strong>Connection Manager:</strong> Active</p>
-                    <p>✅ <strong>Real-time Processing:</strong> Enabled</p>
                     <div class="status">
                         <p><strong>WebSocket Status:</strong> {ws_status}</p>
                         <p><strong>Active Connections:</strong> {connection_manager.get_connection_count()}</p>
                         <p><strong>Processing Sessions:</strong> {active_sessions}</p>
                     </div>
                 </div>
-                
-                <div class="consolidation">
-                    <h3>🎯 Consolidation Achievements</h3>
-                    <p>✅ <strong>500+ lines of redundant code removed</strong></p>
-                    <p>✅ <strong>Centralized configuration</strong> - Single source of truth</p>
-                    <p>✅ <strong>Unified error handling</strong> - Consistent across all routes</p>
-                    <p>✅ <strong>Shared utilities</strong> - No more duplicate functions</p>
-                    <p>✅ <strong>Consolidated database</strong> - One service for all CRUD</p>
-                    <p>✅ <strong>Shared API models</strong> - Consistent validation</p>
-                    <p>✅ <strong>WebSocket Handler</strong> - Real-time communication</p>
-                </div>
-                
                 <div class="feature">
-                    <h3>🤖 Modular Agents (No Wrapper Functions)</h3>
+                    <h3>🤖 Modular Agents</h3>
                     <p>All agents now use <code>agent.process()</code> directly:</p>
                     <ul>
                         <li>🎵 Audio Processing Agent</li>
@@ -205,8 +190,6 @@ async def root():
                         <li><a href="/api/v1/websocket/status">🔌 WebSocket Status</a></li>
                     </ul>
                 </div>
-                
-                <p><em>🚀 Zero redundancy, maximum efficiency, real-time communication!</em></p>
             </div>
         </body>
     </html>

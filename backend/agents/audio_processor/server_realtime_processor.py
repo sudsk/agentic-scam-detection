@@ -51,10 +51,11 @@ class ServerRealtimeAudioProcessor(BaseAgent):
         # Register with global registry
         agent_registry.register_agent(self)
         
-        logger.info(f"🎵 {self.agent_name} ready for FORCED GOOGLE STT transcription")
+        logger.info(f"🎵 {self.agent_name} ready for GOOGLE STT STREAMING API")
         logger.info(f"🐛 DEBUG MODE: {self.debug_mode}")
         logger.info(f"🔧 TRANSCRIPTION SOURCE: {self.transcription_source}")
         logger.info(f"🚀 FORCE GOOGLE STT: {self.force_google_stt}")
+        logger.info(f"🌊 STREAMING API: Enabled (handles large files)"))
     
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration with debug enhancements"""
@@ -75,7 +76,9 @@ class ServerRealtimeAudioProcessor(BaseAgent):
             "debug_transcription": True,
             "log_transcription_attempts": True,
             "force_google_stt": True,  # FORCE GOOGLE STT
-            "mock_fallback_enabled": True
+            "use_streaming_api": True,  # USE STREAMING API
+            "streaming_chunk_size": 4096,  # 4KB chunks for streaming
+            "mock_fallback_enabled": False  # NO FALLBACK
         }
         
         # ENHANCED: Log the configuration being used
@@ -242,9 +245,10 @@ class ServerRealtimeAudioProcessor(BaseAgent):
                 "session_id": session_id,
                 "status": "started",
                 "audio_duration": audio_info["duration"],
-                "processing_mode": "forced_google_stt",
+                "processing_mode": "google_stt_streaming",
                 "transcription_source": self.transcription_source,
-                "transcription_file": audio_filename
+                "transcription_file": audio_filename,
+                "streaming_enabled": True
             }
             
         except Exception as e:

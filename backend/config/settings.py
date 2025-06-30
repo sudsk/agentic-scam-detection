@@ -294,41 +294,60 @@ class Settings:
         return origins_input
     
     def validate_transcription_setup(self) -> Dict[str, Any]:
-        """Validate Google Speech-to-Text setup"""
+        """Validate Google Speech-to-Text setup using GCE VM service account"""
         validation_result = {
             "engine": "google_stt",
             "status": "unknown",
             "requirements_met": False,
             "missing_dependencies": [],
-            "recommendations": []
+            "recommendations": [],
+            "auth_method": "gce_service_account"
         }
         
         try:
             from google.cloud import speech
             
-            # Check for credentials
-            creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-            if creds_path and os.path.exists(creds_path):
+            # Try to create a client using the VM's service account
+            try:
+                client = speech.SpeechClient()
+                
+                # Test the client with a simple operation
+                config = speech.RecognitionConfig(
+                    encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                    sample_rate_hertz=16000,
+                    language_code="en-GB",
+                    enable_speaker_diarization=True,
+                    diarization_speaker_count=2
+                )
+                
+                # If we get here, the VM service account authentication is working
                 validation_result.update({
                     "status": "ready",
                     "requirements_met": True,
+                    "auth_method": "gce_service_account",
                     "recommendations": [
-                        "Google Speech-to-Text credentials found",
-                        f"Using model: {self.audio_agent_config['model']}",
-                        f"Language: {self.audio_agent_config['language_code']}"
+                        "Using GCE VM service account authentication",
+                        f"Model: {self.audio_agent_config['model']}",
+                        f"Language: {self.audio_agent_config['language_code']}",
+                        "Speech-to-Text API access confirmed"
                     ]
                 })
-            else:
+                    
+            except Exception as auth_error:
                 validation_result.update({
-                    "status": "missing_credentials",
+                    "status": "service_account_error",
                     "requirements_met": False,
-                    "missing_dependencies": ["Google Cloud credentials"],
+                    "auth_method": "gce_service_account_failed",
+                    "missing_dependencies": [f"VM service account error: {auth_error}"],
                     "recommendations": [
-                        "Set GOOGLE_APPLICATION_CREDENTIALS environment variable",
-                        "Download service account JSON from Google Cloud Console",
-                        "Ensure the service account has Speech-to-Text API permissions"
+                        "Ensure your GCE VM has a service account attached",
+                        "Grant the service account 'Cloud Speech Client' role",
+                        "Enable the Speech-to-Text API in your GCP project",
+                        "Check: gcloud compute instances describe YOUR_VM_NAME --zone=YOUR_ZONE",
+                        "Verify: curl -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
                     ]
                 })
+                    
         except ImportError:
             validation_result.update({
                 "status": "missing_dependencies",

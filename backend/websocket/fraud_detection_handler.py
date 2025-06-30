@@ -13,7 +13,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 import uuid
 
 from ..agents.fraud_detection_system import fraud_detection_system
-from ..agents.audio_processor.server_realtime_processor import server_realtime_processor
+from ..agents.audio_processor.agent import audio_processor_agent 
 from ..websocket.connection_manager import ConnectionManager
 from ..utils import get_current_timestamp, log_agent_activity, create_error_response
 
@@ -31,7 +31,8 @@ class FraudDetectionWebSocketHandler:
         self.customer_speech_buffer: Dict[str, List[str]] = {}
         self.processing_sessions: Dict[str, bool] = {}
         
-        logger.info("🔌 Server-side Fraud Detection WebSocket handler initialized")
+        logger.info("🔌 UNIFIED Fraud Detection WebSocket handler initialized")
+        logger.info(f"🎯 Using unified audio agent: {audio_processor_agent.agent_name}")
     
     async def handle_message(self, websocket: WebSocket, client_id: str, message: Dict[str, Any]) -> None:
         """Handle incoming WebSocket messages"""
@@ -100,7 +101,7 @@ class FraudDetectionWebSocketHandler:
                 await self.handle_server_message(websocket, client_id, session_id, message_data)
             
             # Start server-side audio processing
-            result = await server_realtime_processor.start_realtime_processing(
+            result = await audio_processor_agent.start_realtime_processing(
                 session_id=session_id,
                 audio_filename=filename,
                 websocket_callback=websocket_callback
@@ -400,7 +401,7 @@ class FraudDetectionWebSocketHandler:
         
         try:
             # Stop server processing
-            stop_result = await server_realtime_processor.stop_realtime_processing(session_id)
+            stop_result = await audio_processor_agent.stop_realtime_processing(session_id)
             
             # Send confirmation to client
             await self.send_message(websocket, client_id, {
@@ -427,7 +428,7 @@ class FraudDetectionWebSocketHandler:
         try:
             # Get system status
             system_status = fraud_detection_system.get_agent_status()
-            server_status = server_realtime_processor.get_all_sessions_status()
+            server_status = audio_processor_agent.get_all_sessions_status()
             
             status_data = {
                 'system_status': system_status,
@@ -475,7 +476,7 @@ class FraudDetectionWebSocketHandler:
         for session_id in sessions_to_cleanup:
             try:
                 # Stop server processing
-                asyncio.create_task(server_realtime_processor.stop_realtime_processing(session_id))
+                asyncio.create_task(audio_processor_agent.stop_realtime_processing(session_id))
                 
                 # Clean up WebSocket session
                 asyncio.create_task(self.cleanup_session(session_id))
@@ -522,7 +523,7 @@ class FraudDetectionWebSocketHandler:
         return {
             'handler_type': 'ServerSide_FraudDetectionHandler',
             'active_websocket_sessions': len(self.active_sessions),
-            'server_processor_sessions': len(server_realtime_processor.active_sessions),
+            'server_processor_sessions': len(audio_processor_agent.active_sessions),
             'customer_speech_buffers': len(self.customer_speech_buffer),
             'processing_sessions': len([s for s in self.processing_sessions.values() if s]),
             'system_status': 'operational',

@@ -36,6 +36,17 @@ class Settings:
             "financial_pressure": 25
         }
         
+        # FIXED: Add missing confidence thresholds that agents need
+        self.confidence_threshold_high = 0.9
+        self.confidence_threshold_medium = 0.7
+        self.confidence_threshold_low = 0.5
+        
+        # FIXED: Add missing agent configuration attributes
+        self.max_concurrent_sessions = 500
+        self.agent_timeout_seconds = 30
+        self.agent_retry_attempts = 3
+        self.agent_processing_timeout = 60
+        
         # FIXED: Add missing risk thresholds that agents need
         self.risk_threshold_critical = 80
         self.risk_threshold_high = 60
@@ -213,14 +224,26 @@ class Settings:
     
     def get_agent_config(self, agent_type: str) -> Dict[str, Any]:
         """Get configuration for specific agent type"""
-        configs = {
-            "audio_processor": self.audio_agent_config,
-            "fraud_detection": self.fraud_agent_config,
-            "policy_guidance": self.policy_agent_config,
-            "case_management": self.case_agent_config,
-            "orchestrator": self.orchestrator_config
+        # Base configuration that all agents need
+        base_config = {
+            "risk_thresholds": self.risk_thresholds,
+            "confidence_thresholds": self.confidence_thresholds,
+            "pattern_weights": self.pattern_weights,
+            "team_assignments": self.team_assignments,
+            "processing_timeout": self.agent_processing_timeout,
+            "retry_attempts": self.agent_retry_attempts,
+            "timeout_seconds": self.agent_timeout_seconds,
+            "max_concurrent_sessions": self.max_concurrent_sessions
         }
-        return configs.get(agent_type, {})
+        
+        configs = {
+            "audio_processor": {**base_config, **self.audio_agent_config},
+            "fraud_detection": {**base_config, **self.fraud_agent_config},
+            "policy_guidance": {**base_config, **self.policy_agent_config},
+            "case_management": {**base_config, **self.case_agent_config},
+            "orchestrator": {**base_config, **self.orchestrator_config}
+        }
+        return configs.get(agent_type, base_config)
     
     def get_transcription_config(self) -> Dict[str, Any]:
         """Get transcription-specific configuration for Google STT"""
@@ -244,6 +267,15 @@ class Settings:
             "high": self.risk_threshold_high,
             "medium": self.risk_threshold_medium,
             "low": self.risk_threshold_low
+        }
+    
+    @property
+    def confidence_thresholds(self) -> Dict[str, float]:
+        """Get confidence thresholds as dictionary"""
+        return {
+            "high": self.confidence_threshold_high,
+            "medium": self.confidence_threshold_medium,
+            "low": self.confidence_threshold_low
         }
     
     def get_max_file_size_bytes(self) -> int:

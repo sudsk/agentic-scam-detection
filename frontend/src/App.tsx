@@ -112,6 +112,355 @@ function App() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Add these state variables to your component
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [isCapturingAudio, setIsCapturingAudio] = useState<boolean>(false);
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+
+  // Audio capture and streaming functions
+  const initializeAudioCapture = async (): Promise<boolean> => {
+    try {
+        // Request microphone access
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true
+          } 
+        });
+  
+      // Create audio context
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: 16000
+      });
+      
+      // Create media recorder
+      const recorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      
+      // Set up recorder event handlers
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          setAudioChunks(prev => [...prev, event.data]);
+          
+          // Send audio chunk to backend for real-time transcription
+          sendAudioChunkToBackend(event.data);
+        }
+      };
+      
+      recorder.onstart = () => {
+        console.log('🎙️ Audio capture started');
+        setIsCapturingAudio(true);
+      };
+      
+      recorder.onstop = () => {
+        console.log('🛑 Audio capture stopped');
+        setIsCapturingAudio(false);
+      };
+      
+      setAudioContext(context);
+      setMediaRecorder(recorder);
+      
+      return true;
+      
+    } catch (error) {
+      console.error('❌ Error initializing audio capture:', error);
+      setProcessingStage('❌ Microphone access denied - using demo mode');
+      return false;
+    }
+  };
+
+  const sendAudioChunkToBackend = async (audioBlob: Blob): Promise<void> => {
+    if (!ws || !isConnected) return;
+    
+    try {
+      // Convert blob to base64 for WebSocket transmission
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      
+      // Send via WebSocket
+      const message = {
+        type: 'audio_chunk',
+        data: {
+          session_id: sessionId,
+          audio_data: base64Audio,
+          timestamp: Date.now() / 1000,
+          chunk_size: arrayBuffer.byteLength
+        }
+      };
+      
+      ws.send(JSON.stringify(message));
+      
+    } catch (error) {
+      console.error('❌ Error sending audio chunk:', error);
+    }
+  };
+
+  // Modified startAnalysis function with real-time audio capture
+  const startAnalysisWithRealTimeAudio = async (audioFile: RealAudioFile): Promise<void> => {
+    try {
+      // Check WebSocket connection
+      if (!ws || !isConnected) {
+        setProcessingStage('🔌 WebSocket not connected - attempting to connect...');
+        connectWebSocket();
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        if (!ws || !isConnected) {
+          throw new Error('Could not establish WebSocket connection');
+        }
+      }
+      
+      // Reset state for new analysis
+      if (selectedAudioFile?.id !== audioFile.id) {
+        setSelectedAudioFile(audioFile);
+        resetState();
+      }
+      
+      const newSessionId = `session_${Date.now()}`;
+      setSessionId(newSessionId);
+      setIsPlaying(true);
+      setProcessingStage('🎵 Starting real-time audio analysis...');
+      
+      // Initialize audio capture for real-time transcription
+      const audioCaptureReady = await initializeAudioCapture();
+      
+      if (audioCaptureReady && mediaRecorder) {
+        // Start real-time audio capture
+        mediaRecorder.start(100); // Capture in 100ms chunks
+        
+        // Start WebSocket session for real-time processing
+        const message = {
+          type: 'start_realtime_session',
+          data: {
+            session_id: newSessionId,
+            audio_config: {
+              sample_rate: 16000,
+              channels: 1,
+              format: 'webm'
+            }
+          }
+        };
+        ws.send(JSON.stringify(message));
+        
+      } else {
+        // Fallback to demo mode if audio capture fails
+        setProcessingStage('📱 Using demo mode - no microphone access');
+        
+        // Send fallback WebSocket message for demo transcription
+        const message = {
+          type: 'process_audio',
+          data: {
+            filename: audioFile.filename,
+            session_id: newSessionId
+          }
+        };
+        ws.send(JSON.stringify(message));
+      }
+      
+      // Start audio playback
+      const audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
+      setAudioElement(audio);
+      
+      // Set up audio event listeners
+      audio.addEventListener('timeupdate', () => {
+        setCurrentTime(audio.currentTime);
+      });
+      
+      audio.addEventListener('play', () => {
+        setIsPlaying(true);
+        if (mediaRecorder && mediaRecorder.state === 'paused') {
+          mediaRecorder.resume();
+        }
+      });
+      
+      audio.addEventListener('pause', () => {
+        setIsPlaying(false);
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          mediaRecorder.pause();
+        }
+      });
+      
+      audio.addEventListener('ended', () => {
+        setIsPlaying(false);
+        stopRealTimeCapture();
+        setProcessingStage('✅ Audio playback complete - analysis finishing');
+      });
+      
+      audio.addEventListener('error', (e) => {
+        console.error('❌ Audio playback error:', e);
+        setProcessingStage('❌ Error playing audio file');
+        setIsPlaying(false);
+        stopRealTimeCapture();
+      });
+      
+      // Start playback
+      await audio.play();
+      
+    } catch (error) {
+      console.error('❌ Error starting real-time analysis:', error);
+      setProcessingStage(`❌ Failed to start analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setIsPlaying(false);
+      stopRealTimeCapture();
+    }
+  };
+
+  const stopRealTimeCapture = (): void => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    
+    if (ws && isConnected && sessionId) {
+      // Stop real-time session
+      const message = {
+        type: 'stop_realtime_session',
+        data: {
+          session_id: sessionId
+        }
+      };
+      ws.send(JSON.stringify(message));
+    }
+    
+    setIsCapturingAudio(false);
+    setAudioChunks([]);
+  };
+
+// Enhanced WebSocket message handler for real-time audio
+const handleWebSocketMessageWithAudio = (message: WebSocketMessage): void => {
+  console.log('📨 WebSocket message received:', message);
+  
+  switch (message.type) {
+    case 'realtime_session_started':
+      setProcessingStage('🎙️ Real-time transcription session started');
+      break;
+      
+    case 'realtime_transcription':
+      const transcriptData = message.data;
+      
+      // Add real-time transcription segment
+      setShowingSegments(prev => [...prev, {
+        speaker: transcriptData.speaker,
+        start: transcriptData.start_time,
+        duration: transcriptData.duration,
+        text: transcriptData.text,
+        confidence: transcriptData.confidence
+      }]);
+      
+      // Update full transcription text
+      setTranscription(prev => prev + (prev ? ' ' : '') + transcriptData.text);
+      
+      // If it's customer speech, trigger fraud analysis
+      if (transcriptData.speaker === 'customer') {
+        // Request fraud analysis for the latest customer speech
+        const customerSegments = showingSegments.filter(seg => seg.speaker === 'customer');
+        if (customerSegments.length >= 1) {
+          requestFraudAnalysis(customerSegments.map(seg => seg.text).join(' '));
+        }
+      }
+      
+      setProcessingStage(`🎙️ Live: ${transcriptData.speaker} speaking...`);
+      break;
+      
+    case 'fraud_analysis_update':
+      const analysis = message.data;
+      setRiskScore(analysis.risk_score || 0);
+      setRiskLevel(analysis.risk_level || 'MINIMAL');
+      setDetectedPatterns(analysis.detected_patterns || {});
+      setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
+      break;
+      
+    case 'policy_guidance_ready':
+      setPolicyGuidance(message.data);
+      setProcessingStage('📚 Policy guidance updated');
+      break;
+      
+    case 'realtime_session_stopped':
+      setProcessingStage('🛑 Real-time session ended');
+      stopRealTimeCapture();
+      break;
+      
+    case 'processing_complete':
+      setProcessingStage('✅ Analysis complete');
+      break;
+      
+    case 'error':
+      setProcessingStage(`❌ Error: ${message.data.error || message.data.message}`);
+      break;
+      
+    default:
+      // Handle other message types from the original handler
+      handleWebSocketMessage(message);
+  }
+};
+
+const requestFraudAnalysis = (customerText: string): void => {
+  if (ws && isConnected && sessionId) {
+    const message = {
+      type: 'analyze_fraud',
+      data: {
+        session_id: sessionId,
+        text: customerText,
+        speaker: 'customer'
+      }
+    };
+    ws.send(JSON.stringify(message));
+  }
+};
+
+// Update the demo call buttons to use real-time analysis
+const DemoCallButton = ({ audioFile }: { audioFile: RealAudioFile }) => (
+  <button
+    onClick={() => !isPlaying ? startAnalysisWithRealTimeAudio(audioFile) : null}
+    disabled={isPlaying}
+    className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+      selectedAudioFile?.id === audioFile.id 
+        ? 'bg-blue-100 text-blue-800 border-2 border-blue-300' 
+        : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-2 border-transparent'
+    } ${isPlaying ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+  >
+    <span className="text-lg">{audioFile.icon}</span>
+    {!isPlaying ? (
+      <Play className="w-4 h-4" />
+    ) : selectedAudioFile?.id === audioFile.id ? (
+      <Pause className="w-4 h-4" />
+    ) : (
+      <Play className="w-4 h-4" />
+    )}
+    <span className="font-medium">{audioFile.title}</span>
+    {selectedAudioFile?.id === audioFile.id && isPlaying && (
+      <div className="flex items-center space-x-1">
+        <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
+          LIVE
+        </span>
+        {isCapturingAudio && (
+          <span className="text-xs bg-green-500 text-white px-2 py-1 rounded-full">
+            MIC
+          </span>
+        )}
+      </div>
+    )}
+  </button>
+);
+
+// Add microphone permission status indicator
+const MicrophoneStatus = () => (
+  <div className="flex items-center space-x-2 text-xs">
+    {isCapturingAudio ? (
+      <div className="flex items-center space-x-1 text-green-600">
+        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+        <span>Microphone Active</span>
+      </div>
+    ) : (
+      <div className="flex items-center space-x-1 text-gray-500">
+        <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+        <span>Microphone Standby</span>
+      </div>
+    )}
+  </div>
+);
+  
   // Mock customer data
   const customerData = {
     name: "Michael Thompson",

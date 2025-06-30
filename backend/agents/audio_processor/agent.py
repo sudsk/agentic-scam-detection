@@ -23,8 +23,7 @@ logger = logging.getLogger(__name__)
 
 class AudioProcessorAgent(BaseAgent):
     """
-    Audio Processing Agent with REAL Google Speech-to-Text Streaming API
-    RENAMED: This is now the main audio processor (was ServerRealtimeAudioProcessor)
+    Audio Processing Agent with Google Speech-to-Text Streaming API
     """
     
     def __init__(self):
@@ -39,14 +38,11 @@ class AudioProcessorAgent(BaseAgent):
         # Enhanced debug tracking
         self.debug_mode = True
         self.transcription_source = "unknown"
-        self.force_google_stt = True  # FORCE GOOGLE STT USAGE
+        self.force_google_stt = True  
         
         # Initialize transcription engine with enhanced debug
         self._initialize_transcription_engine_debug()
-        
-        # NO FALLBACK TRANSCRIPTIONS - Google STT only
-        # Removed _load_scenario_transcriptions() - no mock fallback allowed
-        
+              
         # Register with global registry
         agent_registry.register_agent(self)
         
@@ -101,7 +97,7 @@ class AudioProcessorAgent(BaseAgent):
         # ALWAYS TRY GOOGLE STT FIRST
         try:
             logger.info("🔄 Importing Google Cloud Speech...")
-            from google.cloud import speech
+            from google.cloud import speech_v1p1beta1 as speech
             
             logger.info("🔄 Creating Speech client...")
             self.google_client = speech.SpeechClient()

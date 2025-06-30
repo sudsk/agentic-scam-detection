@@ -559,6 +559,16 @@ function App() {
                   <span>Transfer</span>
                 </button>
               </div>
+              <div className="flex space-x-2 mt-2">
+                <button className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200">
+                  <PhoneCall className="w-4 h-4" />
+                  <span>Mute</span>
+                </button>
+                <button className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200">
+                  <Phone className="w-4 h-4" />
+                  <span>Hang Up</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -893,8 +903,4 @@ function App() {
   );
 }
 
-export default App;py-2 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200">
-                  <Phone className="w-4 h-4" />
-                  <span>Hang Up</span>
-                </button>
-                <button className="flex-1 flex items-center justify-center space-x-1 px-3
+export default App;

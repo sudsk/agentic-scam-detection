@@ -28,3 +28,6 @@ pytest-asyncio>=0.20.0
 
 # ===== PYDANTIC SETTINGS =====
 pydantic-settings>=2.10.1
+
+# ===== Google Cloud =====
+google-cloud-speech>=2.33.0

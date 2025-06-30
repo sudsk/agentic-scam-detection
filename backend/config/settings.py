@@ -69,7 +69,10 @@ class Settings(BaseSettings):
         "enable_speaker_diarization": True,
         "confidence_threshold": 0.8,
         "max_audio_duration_seconds": 300,
-        "chunk_size_seconds": 30
+        "chunk_size_seconds": 30,
+        "transcription_engine": "google_stt",
+        "chunk_duration_seconds": 2.0,
+        "processing_delay_ms": 200,     
     }
     
     fraud_agent_config: Dict[str, Any] = {

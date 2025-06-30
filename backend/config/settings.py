@@ -1,411 +1,265 @@
-# backend/config/settings.py
+# backend/config/settings.py - UPDATED for Real Transcription
 """
-Centralized Configuration for HSBC Scam Detection Agent Backend
-Single source of truth for all configuration values
-FIXED: Updated for Pydantic v2 compatibility
+Updated configuration settings for real server-side transcription
 """
 
 import os
-from functools import lru_cache
-from typing import List, Optional, Dict, Any
+from pathlib import Path
+from typing import Dict, Any, List
 
-# Fixed imports for Pydantic v2
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
-
-class Settings(BaseSettings):
-    """Application settings with environment variable support"""
+class Settings:
+    """Application settings with real transcription configuration"""
     
-    # ===== API CONFIGURATION =====
-    api_host: str = "0.0.0.0"
-    api_port: int = 8000
-    debug: bool = False
-    environment: str = "development"
-    
-    # ===== CORS CONFIGURATION =====
-    allowed_origins: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:3001", 
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-        # ADDED: For development - allow all origins (remove in production)
-        "*"
-    ]
-    
-    # ===== FRAUD DETECTION THRESHOLDS (CENTRALIZED) =====
-    # Risk score thresholds used across ALL agents
-    risk_threshold_critical: int = 80
-    risk_threshold_high: int = 60
-    risk_threshold_medium: int = 40
-    risk_threshold_low: int = 20
-    
-    # Confidence thresholds
-    confidence_threshold_high: float = 0.9
-    confidence_threshold_medium: float = 0.7
-    confidence_threshold_low: float = 0.5
-    
-    # Pattern weights for fraud detection
-    pattern_weights: Dict[str, float] = {
-        "authority_impersonation": 35,
-        "credential_requests": 40,
-        "investment_fraud": 40,  # Increased from 30
-        "romance_exploitation": 30,  # Increased from 25
-        "urgency_pressure": 25,  # Increased from 20
-        "third_party_instructions": 30,  # Increased from 25
-        "financial_pressure": 25
-    }
-    
-    # ===== AGENT CONFIGURATION =====
-    max_concurrent_sessions: int = 500
-    agent_timeout_seconds: int = 30
-    agent_retry_attempts: int = 3
-    agent_processing_timeout: int = 60
-    
-    # Agent-specific settings
-    audio_agent_config: Dict[str, Any] = {
-        "sample_rate": 16000,
-        "channels": 1,
-        "language_code": "en-GB",
-        "enable_speaker_diarization": True,
-        "confidence_threshold": 0.8,
-        "max_audio_duration_seconds": 300,
-        "chunk_size_seconds": 30,
-        "transcription_engine": "google_stt",
-        "chunk_duration_seconds": 2.0,
-        "processing_delay_ms": 200,     
-    }
-    
-    fraud_agent_config: Dict[str, Any] = {
-        "max_processing_time_seconds": 5.0,
-        "min_text_length": 3,
-        "max_text_length": 10000
-    }
-    
-    policy_agent_config: Dict[str, Any] = {
-        "policy_version": "2.1.0",
-        "include_customer_education": True,
-        "max_guidance_items": 10
-    }
-    
-    case_agent_config: Dict[str, Any] = {
-        "case_id_prefix": "FD",
-        "case_retention_days": 2555,  # 7 years
-        "max_cases_per_agent": 50,
-        "case_timeout_hours": 48,
-        "auto_escalation_enabled": True
-    }
-    
-    # Team assignments for case escalation
-    team_assignments: Dict[str, str] = {
-        "critical": "financial-crime-immediate@bank.com",
-        "high": "fraud-investigation-team@bank.com", 
-        "medium": "fraud-prevention-team@bank.com",
-        "low": "customer-service-enhanced@bank.com"
-    }
-    
-    # ===== AUDIO PROCESSING CONFIGURATION =====
-    max_audio_file_size_mb: int = 100
-    supported_audio_formats: List[str] = [".wav", ".mp3", ".m4a", ".flac"]
-    audio_sample_rate: int = 16000
-    audio_channels: int = 1
-    
-    # ===== SCAM TYPE CONFIGURATION =====
-    scam_type_keywords: Dict[str, List[str]] = {
-        "investment_scam": [
-            "investment", "trading", "forex", "crypto", "bitcoin", "profit",
-            "returns", "margin call", "platform", "advisor", "broker", "guaranteed"
-        ],
-        "romance_scam": [
-            "online", "dating", "relationship", "boyfriend", "girlfriend",
-            "military", "overseas", "emergency", "medical", "visa", "stuck", "stranded"
-        ],
-        "impersonation_scam": [
-            "bank", "security", "fraud", "police", "tax", "hmrc",
-            "government", "investigation", "verification", "account compromised"
-        ],
-        "authority_scam": [
-            "police", "court", "tax", "fine", "penalty", "arrest",
-            "legal action", "warrant", "prosecution", "bailiff"
+    def __init__(self):
+        # Base configuration
+        self.debug = os.getenv("DEBUG", "true").lower() == "true"
+        self.api_host = os.getenv("API_HOST", "0.0.0.0")
+        self.api_port = int(os.getenv("API_PORT", "8000"))
+        
+        # CORS settings
+        self.allowed_origins = [
+            "http://localhost:3000",
+            "http://localhost:3001", 
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001"
         ]
-    }
+        
+        # Paths
+        self.data_path = Path("data")
+        self.sample_audio_path = self.data_path / "sample_audio"
+        self.uploads_path = Path("uploads")
+        
+        # WebSocket settings
+        self.websocket_timeout = 300  # 5 minutes
+        self.max_connections = 100
+        
+        # Agent configurations - UPDATED for real transcription
+        self._setup_agent_configs()
     
-    # ===== DATABASE CONFIGURATION =====
-    postgres_host: str = "localhost"
-    postgres_port: int = 5432
-    postgres_db: str = "hsbc_fraud_detection"
-    postgres_user: str = "postgres"
-    postgres_password: str = "postgres123"
-    
-    # Firestore collections
-    firestore_collection_sessions: str = "fraud_sessions"
-    firestore_collection_cases: str = "fraud_cases" 
-    firestore_collection_metrics: str = "system_metrics"
-    firestore_collection_audio: str = "audio_files"
-    
-    # Redis Configuration
-    redis_host: str = "localhost"
-    redis_port: int = 6379
-    redis_db: int = 0
-    redis_password: Optional[str] = None
-    redis_ttl_sessions: int = 3600  # 1 hour
-    redis_ttl_cache: int = 1800     # 30 minutes
-    
-    # ===== GOOGLE CLOUD CONFIGURATION =====
-    gcp_project_id: Optional[str] = None
-    gcp_region: str = "europe-west2"
-    google_application_credentials: Optional[str] = None
-    
-    # Speech-to-Text Configuration
-    speech_model: str = "telephony"
-    speech_language_code: str = "en-GB"
-    enable_speaker_diarization: bool = True
-    enable_word_confidence: bool = True
-    
-    # Vertex AI Configuration
-    vertex_ai_location: str = "europe-west2"
-    vertex_ai_model_name: str = "gemini-pro"
-    vertex_ai_endpoint_name: Optional[str] = None
-    
-    # Pub/Sub Configuration
-    pubsub_topic_audio: str = "hsbc-fraud-audio"
-    pubsub_topic_transcripts: str = "hsbc-fraud-transcripts"
-    pubsub_topic_alerts: str = "hsbc-fraud-alerts"
-    
-    # ===== SECURITY CONFIGURATION =====
-    secret_key: str = "hsbc-scam-detection-secret-key-change-in-production"
-    access_token_expire_minutes: int = 30
-    algorithm: str = "HS256"
-    
-    # ===== MONITORING & LOGGING =====
-    log_level: str = "INFO"
-    log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    log_file: Optional[str] = None
-    
-    enable_metrics: bool = True
-    metrics_port: int = 9090
-    health_check_interval: int = 30
-    
-    # ===== RATE LIMITING =====
-    rate_limit_requests_per_minute: int = 100
-    rate_limit_burst: int = 10
-    
-    # ===== WEBSOCKET CONFIGURATION =====
-    websocket_ping_interval: int = 30
-    websocket_ping_timeout: int = 10
-    websocket_max_connections: int = 1000
-    
-    # ===== EXTERNAL API CONFIGURATION =====
-    quantexa_api_url: Optional[str] = None
-    quantexa_api_key: Optional[str] = None
-    quantexa_timeout_seconds: int = 30
-    
-    hsbc_core_banking_url: Optional[str] = None
-    hsbc_core_banking_certificate: Optional[str] = None
-    hsbc_core_banking_timeout_seconds: int = 60
-    
-    # ===== FEATURE FLAGS =====
-    enable_learning_agent: bool = True
-    enable_compliance_agent: bool = True
-    enable_case_management: bool = True
-    enable_real_time_transcription: bool = True
-    enable_mock_mode: bool = True
-    
-    # ===== DEMO CONFIGURATION =====
-    demo_mode: bool = True
-    demo_sample_data_path: str = "data/sample_audio"
-    demo_delay_simulation: bool = True
-    demo_delay_seconds: float = 1.0
-    
-    # ===== PERFORMANCE CONFIGURATION =====
-    max_concurrent_audio_processing: int = 10
-    max_concurrent_fraud_analysis: int = 20
-    cache_ttl_seconds: int = 3600
-    
-    # ===== VALIDATION =====
-    @field_validator('allowed_origins', mode='before')
-    @classmethod
-    def parse_cors_origins(cls, v):
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(',')]
-        return v
-    
-    @field_validator('supported_audio_formats', mode='before')
-    @classmethod
-    def parse_audio_formats(cls, v):
-        if isinstance(v, str):
-            return [fmt.strip() for fmt in v.split(',')]
-        return v
-    
-    @field_validator('google_application_credentials')
-    @classmethod
-    def validate_gcp_credentials(cls, v):
-        if v and not os.path.exists(v):
-            raise ValueError(f"Google Application Credentials file not found: {v}")
-        return v
-    
-    @field_validator('max_audio_file_size_mb')
-    @classmethod
-    def validate_max_file_size(cls, v):
-        if v <= 0 or v > 1000:
-            raise ValueError("Max audio file size must be between 1 and 1000 MB")
-        return v
-    
-    @field_validator('risk_threshold_critical', 'risk_threshold_high', 'risk_threshold_medium', 'risk_threshold_low')
-    @classmethod
-    def validate_risk_thresholds(cls, v):
-        if v < 0 or v > 100:
-            raise ValueError("Risk thresholds must be between 0 and 100")
-        return v
-    
-    # ===== DERIVED PROPERTIES =====
-    
-    @property
-    def risk_thresholds(self) -> Dict[str, int]:
-        """Get risk thresholds as dictionary"""
-        return {
-            "critical": self.risk_threshold_critical,
-            "high": self.risk_threshold_high,
-            "medium": self.risk_threshold_medium,
-            "low": self.risk_threshold_low
+    def _setup_agent_configs(self):
+        """Setup agent configurations with real transcription settings"""
+        
+        # Audio Processing Agent Configuration - UPDATED
+        self.audio_agent_config = {
+            # === TRANSCRIPTION ENGINE SETTINGS ===
+            "transcription_engine": os.getenv("TRANSCRIPTION_ENGINE", "mock_stt"),
+            # Options: "mock_stt", "whisper", "google_stt"
+            
+            # === AUDIO PROCESSING SETTINGS ===
+            "chunk_duration_seconds": float(os.getenv("CHUNK_DURATION", "2.0")),
+            "overlap_seconds": float(os.getenv("CHUNK_OVERLAP", "0.5")),
+            "processing_delay_ms": int(os.getenv("PROCESSING_DELAY", "300")),
+            
+            # === AUDIO FORMAT SETTINGS ===
+            "sample_rate": int(os.getenv("SAMPLE_RATE", "16000")),
+            "channels": int(os.getenv("AUDIO_CHANNELS", "1")),
+            "audio_format": "wav",
+            
+            # === PATHS ===
+            "audio_base_path": str(self.sample_audio_path),
+            "temp_audio_path": str(self.uploads_path / "temp_audio"),
+            
+            # === SPEECH DETECTION ===
+            "min_speech_duration": float(os.getenv("MIN_SPEECH_DURATION", "0.5")),
+            "silence_threshold": float(os.getenv("SILENCE_THRESHOLD", "0.01")),
+            
+            # === SPEAKER IDENTIFICATION ===
+            "enable_speaker_diarization": os.getenv("ENABLE_SPEAKER_DIARIZATION", "false").lower() == "true",
+            "default_speaker_alternation": True,
+            
+            # === WHISPER SPECIFIC SETTINGS ===
+            "whisper_model": os.getenv("WHISPER_MODEL", "base"),  # tiny, base, small, medium, large
+            "whisper_device": os.getenv("WHISPER_DEVICE", "cpu"),  # cpu, cuda
+            "whisper_language": os.getenv("WHISPER_LANGUAGE", "en"),
+            
+            # === GOOGLE STT SPECIFIC SETTINGS ===
+            "google_language_code": os.getenv("GOOGLE_LANGUAGE_CODE", "en-GB"),
+            "google_encoding": "LINEAR16",
+            "google_enable_punctuation": True,
+            "google_enable_word_confidence": True,
+            
+            # === PERFORMANCE SETTINGS ===
+            "max_concurrent_transcriptions": int(os.getenv("MAX_CONCURRENT_TRANSCRIPTIONS", "3")),
+            "transcription_timeout": int(os.getenv("TRANSCRIPTION_TIMEOUT", "10")),
+            
+            # === FALLBACK SETTINGS ===
+            "enable_fallback": True,
+            "fallback_engine": "mock_stt",  # Fallback if primary engine fails
+            
+            # === LOGGING ===
+            "log_transcription_details": os.getenv("LOG_TRANSCRIPTION_DETAILS", "true").lower() == "true",
+            "save_transcription_logs": os.getenv("SAVE_TRANSCRIPTION_LOGS", "false").lower() == "true"
         }
-    
-    @property
-    def confidence_thresholds(self) -> Dict[str, float]:
-        """Get confidence thresholds as dictionary"""
-        return {
-            "high": self.confidence_threshold_high,
-            "medium": self.confidence_threshold_medium,
-            "low": self.confidence_threshold_low
+        
+        # Fraud Detection Agent Configuration
+        self.fraud_agent_config = {
+            "confidence_threshold": 0.7,
+            "risk_escalation_threshold": 80,
+            "pattern_weights": {
+                "urgency_patterns": 25,
+                "guaranteed_returns": 30,
+                "third_party_instructions": 20,
+                "emotional_manipulation": 15,
+                "tech_complexity": 10
+            },
+            "scam_type_mapping": {
+                "investment": ["guaranteed", "returns", "profit", "investment", "trading"],
+                "romance": ["love", "relationship", "emergency", "hospital", "stuck"],
+                "impersonation": ["bank", "security", "verify", "account", "suspicious"]
+            }
         }
-    
-    def get_max_file_size_bytes(self) -> int:
-        """Get maximum file size in bytes"""
-        return self.max_audio_file_size_mb * 1024 * 1024
-    
-    def is_audio_format_supported(self, filename: str) -> bool:
-        """Check if audio file format is supported"""
-        return any(filename.lower().endswith(fmt) for fmt in self.supported_audio_formats)
-    
-    def get_redis_url(self) -> str:
-        """Get Redis connection URL"""
-        if self.redis_password:
-            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
-        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
-    
-    def get_postgres_url(self) -> str:
-        """Get PostgreSQL connection URL"""
-        return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        
+        # Policy Guidance Agent Configuration
+        self.policy_agent_config = {
+            "guidance_detail_level": "detailed",
+            "include_regulatory_info": True,
+            "max_recommended_actions": 6,
+            "include_customer_education": True
+        }
+        
+        # Case Management Agent Configuration
+        self.case_agent_config = {
+            "auto_create_threshold": 60,
+            "priority_mapping": {
+                "low": (0, 39),
+                "medium": (40, 69), 
+                "high": (70, 89),
+                "critical": (90, 100)
+            },
+            "default_assignee": "fraud_team",
+            "include_transcription": True
+        }
+        
+        # System Orchestrator Configuration  
+        self.orchestrator_config = {
+            "agent_coordination": True,
+            "parallel_processing": True,
+            "error_handling": "graceful_degradation",
+            "performance_monitoring": True
+        }
     
     def get_agent_config(self, agent_type: str) -> Dict[str, Any]:
         """Get configuration for specific agent type"""
-        base_config = {
-            "risk_thresholds": self.risk_thresholds,
-            "confidence_thresholds": self.confidence_thresholds,
-            "pattern_weights": self.pattern_weights,
-            "team_assignments": self.team_assignments,
-            "processing_timeout": self.agent_processing_timeout,
-            "retry_attempts": self.agent_retry_attempts
+        configs = {
+            "audio_processor": self.audio_agent_config,
+            "fraud_detector": self.fraud_agent_config,
+            "policy_guide": self.policy_agent_config,
+            "case_manager": self.case_agent_config,
+            "orchestrator": self.orchestrator_config
+        }
+        return configs.get(agent_type, {})
+    
+    def get_transcription_config(self) -> Dict[str, Any]:
+        """Get transcription-specific configuration"""
+        return {
+            "engine": self.audio_agent_config["transcription_engine"],
+            "chunk_duration": self.audio_agent_config["chunk_duration_seconds"],
+            "sample_rate": self.audio_agent_config["sample_rate"],
+            "channels": self.audio_agent_config["channels"],
+            "processing_delay": self.audio_agent_config["processing_delay_ms"],
+            "whisper_model": self.audio_agent_config["whisper_model"],
+            "google_language": self.audio_agent_config["google_language_code"]
+        }
+    
+    def validate_transcription_setup(self) -> Dict[str, Any]:
+        """Validate transcription engine setup"""
+        engine = self.audio_agent_config["transcription_engine"]
+        validation_result = {
+            "engine": engine,
+            "status": "unknown",
+            "requirements_met": False,
+            "missing_dependencies": [],
+            "recommendations": []
         }
         
-        agent_configs = {
-            "audio_processor": {**base_config, **self.audio_agent_config},
-            "fraud_detection": {**base_config, **self.fraud_agent_config},
-            "policy_guidance": {**base_config, **self.policy_agent_config},
-            "case_management": {**base_config, **self.case_agent_config}
-        }
+        if engine == "mock_stt":
+            validation_result.update({
+                "status": "ready",
+                "requirements_met": True,
+                "recommendations": ["Mock transcription ready - no dependencies needed"]
+            })
         
-        return agent_configs.get(agent_type, base_config)
-    
-    # Model configuration for Pydantic v2
-    model_config = {
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-        "case_sensitive": False,
-        "extra": "ignore"  # Ignore extra fields
-    }
+        elif engine == "whisper":
+            try:
+                import whisper
+                validation_result.update({
+                    "status": "ready", 
+                    "requirements_met": True,
+                    "recommendations": [f"Whisper model '{self.audio_agent_config['whisper_model']}' will be loaded"]
+                })
+            except ImportError:
+                validation_result.update({
+                    "status": "missing_dependencies",
+                    "requirements_met": False,
+                    "missing_dependencies": ["openai-whisper"],
+                    "recommendations": ["Install with: pip install openai-whisper"]
+                })
+        
+        elif engine == "google_stt":
+            try:
+                from google.cloud import speech
+                # Check for credentials
+                creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+                if creds_path and os.path.exists(creds_path):
+                    validation_result.update({
+                        "status": "ready",
+                        "requirements_met": True,
+                        "recommendations": ["Google Speech-to-Text credentials found"]
+                    })
+                else:
+                    validation_result.update({
+                        "status": "missing_credentials",
+                        "requirements_met": False,
+                        "missing_dependencies": ["Google Cloud credentials"],
+                        "recommendations": [
+                            "Set GOOGLE_APPLICATION_CREDENTIALS environment variable",
+                            "Download service account JSON from Google Cloud Console"
+                        ]
+                    })
+            except ImportError:
+                validation_result.update({
+                    "status": "missing_dependencies",
+                    "requirements_met": False,
+                    "missing_dependencies": ["google-cloud-speech"],
+                    "recommendations": ["Install with: pip install google-cloud-speech"]
+                })
+        
+        return validation_result
 
-# ===== ENVIRONMENT-SPECIFIC SETTINGS =====
+# Global settings instance
+_settings = None
 
-class DevelopmentSettings(Settings):
-    """Development-specific settings"""
-    debug: bool = True
-    log_level: str = "DEBUG"
-    demo_mode: bool = True
-    enable_mock_mode: bool = True
-    
-    # Relaxed security for development
-    allowed_origins: List[str] = ["*"]
-
-    # Development networking
-    api_host: str = "0.0.0.0"  # Listen on all interfaces    
-    
-    # Lower thresholds for testing
-    max_concurrent_sessions: int = 10
-    rate_limit_requests_per_minute: int = 1000
-
-class ProductionSettings(Settings):
-    """Production-specific settings"""
-    debug: bool = False
-    log_level: str = "INFO"
-    demo_mode: bool = False
-    enable_mock_mode: bool = False
-    
-    # Strict security for production
-    allowed_origins: List[str] = [
-        "https://hsbc-fraud-detection.internal",
-        "https://hsbc-agent-desktop.internal"
-    ]
-    
-    # Production performance settings
-    max_concurrent_sessions: int = 500
-    rate_limit_requests_per_minute: int = 100
-    
-    # Required in production
-    gcp_project_id: str = Field(..., description="GCP Project ID is required in production")
-    google_application_credentials: str = Field(..., description="GCP credentials required in production")
-    quantexa_api_url: str = Field(..., description="Quantexa API URL required in production")
-    quantexa_api_key: str = Field(..., description="Quantexa API key required in production")
-    hsbc_core_banking_url: str = Field(..., description="HSBC Core Banking URL required in production")
-
-class TestingSettings(Settings):
-    """Testing-specific settings"""
-    debug: bool = True
-    log_level: str = "DEBUG"
-    demo_mode: bool = True
-    enable_mock_mode: bool = True
-    
-    # Test database
-    postgres_db: str = "hsbc_fraud_test"
-    firestore_collection_sessions: str = "test_fraud_sessions"
-    firestore_collection_cases: str = "test_fraud_cases"
-    firestore_collection_metrics: str = "test_system_metrics"
-    
-    # Disable external services for testing
-    enable_learning_agent: bool = False
-    enable_case_management: bool = False
-
-# ===== SETTINGS FACTORY =====
-
-@lru_cache()
 def get_settings() -> Settings:
-    """Get cached settings instance"""
-    return Settings()
+    """Get global settings instance"""
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
 
-def get_settings_for_environment(environment: str = None) -> Settings:
-    """Get settings based on environment"""
-    environment = environment or os.getenv("ENVIRONMENT", "development").lower()
-    
-    if environment == "production":
-        return ProductionSettings()
-    elif environment == "testing":
-        return TestingSettings()
-    else:
-        return DevelopmentSettings()
+def get_transcription_validation() -> Dict[str, Any]:
+    """Get transcription setup validation"""
+    settings = get_settings()
+    return settings.validate_transcription_setup()
 
-def create_agent_config(agent_type: str, settings: Settings = None) -> Dict[str, Any]:
-    """Create agent configuration from centralized settings"""
-    settings = settings or get_settings()
-    return settings.get_agent_config(agent_type)
-
-# Export settings instance
-settings = get_settings()
+# Environment variable examples for different setups
+ENV_EXAMPLES = {
+    "mock_transcription": {
+        "TRANSCRIPTION_ENGINE": "mock_stt",
+        "CHUNK_DURATION": "2.0",
+        "PROCESSING_DELAY": "300"
+    },
+    "whisper_transcription": {
+        "TRANSCRIPTION_ENGINE": "whisper", 
+        "WHISPER_MODEL": "base",  # or "small", "medium", "large"
+        "WHISPER_DEVICE": "cpu",  # or "cuda" for GPU
+        "CHUNK_DURATION": "3.0",  # Longer chunks for better accuracy
+        "PROCESSING_DELAY": "800"  # More processing time needed
+    },
+    "google_stt": {
+        "TRANSCRIPTION_ENGINE": "google_stt",
+        "GOOGLE_LANGUAGE_CODE": "en-GB",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account.json",
+        "CHUNK_DURATION": "2.0",
+        "PROCESSING_DELAY": "200"  # Fast cloud processing
+    }
+}

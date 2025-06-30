@@ -1,6 +1,7 @@
-# backend/config/settings.py - UPDATED for Real Transcription
+# backend/config/settings.py - FIXED VERSION
 """
-Updated configuration settings for real server-side transcription
+Updated configuration settings with pattern_weights for fraud detection
+FIXED: Added missing pattern_weights attribute that the fraud detection agent needs
 """
 
 import os
@@ -24,6 +25,55 @@ class Settings:
             "http://127.0.0.1:3001"
         ]
         
+        # FIXED: Add missing pattern_weights that the fraud detection agent needs
+        self.pattern_weights: Dict[str, float] = {
+            "authority_impersonation": 35,
+            "credential_requests": 40,
+            "investment_fraud": 40,
+            "romance_exploitation": 30,
+            "urgency_pressure": 25,
+            "third_party_instructions": 30,
+            "financial_pressure": 25
+        }
+        
+        # FIXED: Add missing risk thresholds that agents need
+        self.risk_threshold_critical = 80
+        self.risk_threshold_high = 60
+        self.risk_threshold_medium = 40
+        self.risk_threshold_low = 20
+        
+        # FIXED: Add missing team assignments
+        self.team_assignments = {
+            "critical": "financial-crime-immediate@bank.com",
+            "high": "fraud-investigation-team@bank.com", 
+            "medium": "fraud-prevention-team@bank.com",
+            "low": "customer-service-enhanced@bank.com"
+        }
+        
+        # FIXED: Add missing scam type keywords
+        self.scam_type_keywords = {
+            "investment_scam": [
+                "investment", "trading", "forex", "crypto", "bitcoin", "profit",
+                "returns", "margin call", "platform", "advisor", "broker", "guaranteed"
+            ],
+            "romance_scam": [
+                "online", "dating", "relationship", "boyfriend", "girlfriend",
+                "military", "overseas", "emergency", "medical", "visa", "stuck", "stranded"
+            ],
+            "impersonation_scam": [
+                "bank", "security", "fraud", "police", "tax", "hmrc",
+                "government", "investigation", "verification", "account compromised"
+            ],
+            "authority_scam": [
+                "police", "court", "tax", "fine", "penalty", "arrest",
+                "legal action", "warrant", "prosecution", "bailiff"
+            ]
+        }
+        
+        # Audio file settings
+        self.supported_audio_formats = [".wav", ".mp3", ".m4a", ".flac"]
+        self.max_audio_file_size_mb = 100
+        
         # Paths
         self.data_path = Path("data")
         self.sample_audio_path = self.data_path / "sample_audio"
@@ -39,16 +89,15 @@ class Settings:
     def _setup_agent_configs(self):
         """Setup agent configurations with real transcription settings"""
         
-        # Audio Processing Agent Configuration - UPDATED
+        # Audio Processing Agent Configuration - GOOGLE STT ONLY
         self.audio_agent_config = {
             # === TRANSCRIPTION ENGINE SETTINGS ===
-            "transcription_engine": os.getenv("TRANSCRIPTION_ENGINE", "mock_stt"),
-            # Options: "mock_stt", "whisper", "google_stt"
+            "transcription_engine": "google_stt",  # Only Google Speech-to-Text supported
             
             # === AUDIO PROCESSING SETTINGS ===
             "chunk_duration_seconds": float(os.getenv("CHUNK_DURATION", "2.0")),
             "overlap_seconds": float(os.getenv("CHUNK_OVERLAP", "0.5")),
-            "processing_delay_ms": int(os.getenv("PROCESSING_DELAY", "300")),
+            "processing_delay_ms": int(os.getenv("PROCESSING_DELAY", "200")),  # Fast cloud processing
             
             # === AUDIO FORMAT SETTINGS ===
             "sample_rate": int(os.getenv("SAMPLE_RATE", "16000")),
@@ -64,27 +113,21 @@ class Settings:
             "silence_threshold": float(os.getenv("SILENCE_THRESHOLD", "0.01")),
             
             # === SPEAKER IDENTIFICATION ===
-            "enable_speaker_diarization": os.getenv("ENABLE_SPEAKER_DIARIZATION", "false").lower() == "true",
+            "enable_speaker_diarization": os.getenv("ENABLE_SPEAKER_DIARIZATION", "true").lower() == "true",  # Enable by default for Google STT
             "default_speaker_alternation": True,
             
-            # === WHISPER SPECIFIC SETTINGS ===
-            "whisper_model": os.getenv("WHISPER_MODEL", "base"),  # tiny, base, small, medium, large
-            "whisper_device": os.getenv("WHISPER_DEVICE", "cpu"),  # cpu, cuda
-            "whisper_language": os.getenv("WHISPER_LANGUAGE", "en"),
-            
             # === GOOGLE STT SPECIFIC SETTINGS ===
-            "google_language_code": os.getenv("GOOGLE_LANGUAGE_CODE", "en-GB"),
-            "google_encoding": "LINEAR16",
-            "google_enable_punctuation": True,
-            "google_enable_word_confidence": True,
+            "language_code": os.getenv("GOOGLE_LANGUAGE_CODE", "en-GB"),
+            "encoding": "LINEAR16",
+            "enable_automatic_punctuation": True,
+            "enable_word_time_offsets": True,
+            "enable_word_confidence": True,
+            "use_enhanced": True,  # Use enhanced model for better accuracy
+            "model": os.getenv("GOOGLE_STT_MODEL", "telephony"),  # Optimized for phone calls
             
             # === PERFORMANCE SETTINGS ===
-            "max_concurrent_transcriptions": int(os.getenv("MAX_CONCURRENT_TRANSCRIPTIONS", "3")),
-            "transcription_timeout": int(os.getenv("TRANSCRIPTION_TIMEOUT", "10")),
-            
-            # === FALLBACK SETTINGS ===
-            "enable_fallback": True,
-            "fallback_engine": "mock_stt",  # Fallback if primary engine fails
+            "max_concurrent_transcriptions": int(os.getenv("MAX_CONCURRENT_TRANSCRIPTIONS", "5")),  # Higher for cloud
+            "transcription_timeout": int(os.getenv("TRANSCRIPTION_TIMEOUT", "30")),  # Longer for network calls
             
             # === LOGGING ===
             "log_transcription_details": os.getenv("LOG_TRANSCRIPTION_DETAILS", "true").lower() == "true",
@@ -95,17 +138,13 @@ class Settings:
         self.fraud_agent_config = {
             "confidence_threshold": 0.7,
             "risk_escalation_threshold": 80,
-            "pattern_weights": {
-                "urgency_patterns": 25,
-                "guaranteed_returns": 30,
-                "third_party_instructions": 20,
-                "emotional_manipulation": 15,
-                "tech_complexity": 10
-            },
-            "scam_type_mapping": {
-                "investment": ["guaranteed", "returns", "profit", "investment", "trading"],
-                "romance": ["love", "relationship", "emergency", "hospital", "stuck"],
-                "impersonation": ["bank", "security", "verify", "account", "suspicious"]
+            "pattern_weights": self.pattern_weights,  # FIXED: Use the class attribute
+            "scam_type_mapping": self.scam_type_keywords,  # FIXED: Use the class attribute
+            "risk_thresholds": {
+                "critical": self.risk_threshold_critical,
+                "high": self.risk_threshold_high,
+                "medium": self.risk_threshold_medium,
+                "low": self.risk_threshold_low
             }
         }
         
@@ -114,12 +153,25 @@ class Settings:
             "guidance_detail_level": "detailed",
             "include_regulatory_info": True,
             "max_recommended_actions": 6,
-            "include_customer_education": True
+            "include_customer_education": True,
+            "policy_version": "2.1.0",
+            "risk_thresholds": {
+                "critical": self.risk_threshold_critical,
+                "high": self.risk_threshold_high,
+                "medium": self.risk_threshold_medium,
+                "low": self.risk_threshold_low
+            },
+            "team_assignments": self.team_assignments
         }
         
         # Case Management Agent Configuration
         self.case_agent_config = {
             "auto_create_threshold": 60,
+            "case_id_prefix": "FD",
+            "case_retention_days": 2555,  # 7 years
+            "max_cases_per_agent": 50,
+            "case_timeout_hours": 48,
+            "auto_escalation_enabled": True,
             "priority_mapping": {
                 "low": (0, 39),
                 "medium": (40, 69), 
@@ -127,7 +179,14 @@ class Settings:
                 "critical": (90, 100)
             },
             "default_assignee": "fraud_team",
-            "include_transcription": True
+            "include_transcription": True,
+            "risk_thresholds": {
+                "critical": self.risk_threshold_critical,
+                "high": self.risk_threshold_high,
+                "medium": self.risk_threshold_medium,
+                "low": self.risk_threshold_low
+            },
+            "team_assignments": self.team_assignments
         }
         
         # System Orchestrator Configuration  
@@ -142,87 +201,88 @@ class Settings:
         """Get configuration for specific agent type"""
         configs = {
             "audio_processor": self.audio_agent_config,
-            "fraud_detector": self.fraud_agent_config,
-            "policy_guide": self.policy_agent_config,
-            "case_manager": self.case_agent_config,
+            "fraud_detection": self.fraud_agent_config,
+            "policy_guidance": self.policy_agent_config,
+            "case_management": self.case_agent_config,
             "orchestrator": self.orchestrator_config
         }
         return configs.get(agent_type, {})
     
     def get_transcription_config(self) -> Dict[str, Any]:
-        """Get transcription-specific configuration"""
+        """Get transcription-specific configuration for Google STT"""
         return {
-            "engine": self.audio_agent_config["transcription_engine"],
+            "engine": "google_stt",
             "chunk_duration": self.audio_agent_config["chunk_duration_seconds"],
             "sample_rate": self.audio_agent_config["sample_rate"],
             "channels": self.audio_agent_config["channels"],
             "processing_delay": self.audio_agent_config["processing_delay_ms"],
-            "whisper_model": self.audio_agent_config["whisper_model"],
-            "google_language": self.audio_agent_config["google_language_code"]
+            "language_code": self.audio_agent_config["language_code"],
+            "model": self.audio_agent_config["model"],
+            "enable_speaker_diarization": self.audio_agent_config["enable_speaker_diarization"]
         }
     
+    # FIXED: Add properties that agents expect to access directly
+    @property
+    def risk_thresholds(self) -> Dict[str, int]:
+        """Get risk thresholds as dictionary"""
+        return {
+            "critical": self.risk_threshold_critical,
+            "high": self.risk_threshold_high,
+            "medium": self.risk_threshold_medium,
+            "low": self.risk_threshold_low
+        }
+    
+    def get_max_file_size_bytes(self) -> int:
+        """Get maximum file size in bytes"""
+        return self.max_audio_file_size_mb * 1024 * 1024
+    
+    def is_audio_format_supported(self, filename: str) -> bool:
+        """Check if audio file format is supported"""
+        return any(filename.lower().endswith(fmt) for fmt in self.supported_audio_formats)
+    
     def validate_transcription_setup(self) -> Dict[str, Any]:
-        """Validate transcription engine setup"""
-        engine = self.audio_agent_config["transcription_engine"]
+        """Validate Google Speech-to-Text setup"""
         validation_result = {
-            "engine": engine,
+            "engine": "google_stt",
             "status": "unknown",
             "requirements_met": False,
             "missing_dependencies": [],
             "recommendations": []
         }
         
-        if engine == "mock_stt":
-            validation_result.update({
-                "status": "ready",
-                "requirements_met": True,
-                "recommendations": ["Mock transcription ready - no dependencies needed"]
-            })
-        
-        elif engine == "whisper":
-            try:
-                import whisper
+        try:
+            from google.cloud import speech
+            
+            # Check for credentials
+            creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            if creds_path and os.path.exists(creds_path):
                 validation_result.update({
-                    "status": "ready", 
+                    "status": "ready",
                     "requirements_met": True,
-                    "recommendations": [f"Whisper model '{self.audio_agent_config['whisper_model']}' will be loaded"]
+                    "recommendations": [
+                        "Google Speech-to-Text credentials found",
+                        f"Using model: {self.audio_agent_config['model']}",
+                        f"Language: {self.audio_agent_config['language_code']}"
+                    ]
                 })
-            except ImportError:
+            else:
                 validation_result.update({
-                    "status": "missing_dependencies",
+                    "status": "missing_credentials",
                     "requirements_met": False,
-                    "missing_dependencies": ["openai-whisper"],
-                    "recommendations": ["Install with: pip install openai-whisper"]
+                    "missing_dependencies": ["Google Cloud credentials"],
+                    "recommendations": [
+                        "Set GOOGLE_APPLICATION_CREDENTIALS environment variable",
+                        "Download service account JSON from Google Cloud Console",
+                        "Ensure the service account has Speech-to-Text API permissions"
+                    ]
                 })
-        
-        elif engine == "google_stt":
-            try:
-                from google.cloud import speech
-                # Check for credentials
-                creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-                if creds_path and os.path.exists(creds_path):
-                    validation_result.update({
-                        "status": "ready",
-                        "requirements_met": True,
-                        "recommendations": ["Google Speech-to-Text credentials found"]
-                    })
-                else:
-                    validation_result.update({
-                        "status": "missing_credentials",
-                        "requirements_met": False,
-                        "missing_dependencies": ["Google Cloud credentials"],
-                        "recommendations": [
-                            "Set GOOGLE_APPLICATION_CREDENTIALS environment variable",
-                            "Download service account JSON from Google Cloud Console"
-                        ]
-                    })
-            except ImportError:
-                validation_result.update({
-                    "status": "missing_dependencies",
-                    "requirements_met": False,
-                    "missing_dependencies": ["google-cloud-speech"],
-                    "recommendations": ["Install with: pip install google-cloud-speech"]
-                })
+        except ImportError:
+            validation_result.update({
+                "status": "missing_dependencies",
+                "requirements_met": False,
+                "missing_dependencies": ["google-cloud-speech"],
+                "recommendations": ["Install with: pip install google-cloud-speech"]
+            })
         
         return validation_result
 
@@ -241,25 +301,22 @@ def get_transcription_validation() -> Dict[str, Any]:
     settings = get_settings()
     return settings.validate_transcription_setup()
 
-# Environment variable examples for different setups
+# Environment variable examples for Google Speech-to-Text setup
 ENV_EXAMPLES = {
-    "mock_transcription": {
-        "TRANSCRIPTION_ENGINE": "mock_stt",
-        "CHUNK_DURATION": "2.0",
-        "PROCESSING_DELAY": "300"
-    },
-    "whisper_transcription": {
-        "TRANSCRIPTION_ENGINE": "whisper", 
-        "WHISPER_MODEL": "base",  # or "small", "medium", "large"
-        "WHISPER_DEVICE": "cpu",  # or "cuda" for GPU
-        "CHUNK_DURATION": "3.0",  # Longer chunks for better accuracy
-        "PROCESSING_DELAY": "800"  # More processing time needed
-    },
-    "google_stt": {
-        "TRANSCRIPTION_ENGINE": "google_stt",
+    "google_stt_production": {
         "GOOGLE_LANGUAGE_CODE": "en-GB",
-        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account.json",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account.json", 
+        "GOOGLE_STT_MODEL": "telephony",  # Optimized for phone calls
         "CHUNK_DURATION": "2.0",
-        "PROCESSING_DELAY": "200"  # Fast cloud processing
+        "PROCESSING_DELAY": "200",  # Fast cloud processing
+        "ENABLE_SPEAKER_DIARIZATION": "true"
+    },
+    "google_stt_development": {
+        "GOOGLE_LANGUAGE_CODE": "en-US",
+        "GOOGLE_APPLICATION_CREDENTIALS": "./credentials/dev-service-account.json",
+        "GOOGLE_STT_MODEL": "latest_long",  # Better for longer audio
+        "CHUNK_DURATION": "3.0",
+        "PROCESSING_DELAY": "300",
+        "ENABLE_SPEAKER_DIARIZATION": "true"
     }
 }

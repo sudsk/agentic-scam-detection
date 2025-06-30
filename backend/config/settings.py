@@ -74,6 +74,12 @@ class Settings:
         self.supported_audio_formats = [".wav", ".mp3", ".m4a", ".flac"]
         self.max_audio_file_size_mb = 100
         
+        # FIXED: Add missing demo configuration attributes from original settings
+        self.demo_mode = True
+        self.demo_sample_data_path = "data/sample_audio"
+        self.demo_delay_simulation = True
+        self.demo_delay_seconds = 1.0
+        
         # Paths
         self.data_path = Path("data")
         self.sample_audio_path = self.data_path / "sample_audio"
@@ -82,6 +88,14 @@ class Settings:
         # WebSocket settings
         self.websocket_timeout = 300  # 5 minutes
         self.max_connections = 100
+        
+        # FIXED: Add additional missing attributes from original settings
+        self.environment = "development"
+        self.enable_mock_mode = True
+        self.enable_learning_agent = True
+        self.enable_compliance_agent = True
+        self.enable_case_management = True
+        self.enable_real_time_transcription = True
         
         # Agent configurations - UPDATED for real transcription
         self._setup_agent_configs()

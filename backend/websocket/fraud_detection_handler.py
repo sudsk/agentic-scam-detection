@@ -29,6 +29,7 @@ class FraudDetectionWebSocketHandler:
         self.connection_manager = connection_manager
         self.active_sessions: Dict[str, Dict] = {}
         self.customer_speech_buffer: Dict[str, List[str]] = {}
+        self.processing_sessions: Dict[str, bool] = {}
         
         logger.info("🔌 Server-side Fraud Detection WebSocket handler initialized")
     
@@ -92,6 +93,7 @@ class FraudDetectionWebSocketHandler:
             }
             
             self.customer_speech_buffer[session_id] = []
+            self.processing_sessions[session_id] = True
             
             # Create WebSocket callback for server processor
             async def websocket_callback(message_data: Dict) -> None:
@@ -131,6 +133,8 @@ class FraudDetectionWebSocketHandler:
                 del self.active_sessions[session_id]
             if session_id in self.customer_speech_buffer:
                 del self.customer_speech_buffer[session_id]
+            if session_id in self.processing_sessions:
+                del self.processing_sessions[session_id]
     
     async def handle_server_message(
         self, 
@@ -222,6 +226,63 @@ class FraudDetectionWebSocketHandler:
             })
             
             # Add realistic processing delay
+            await asyncio.sleep(0.8)
+            
+            # Run fraud detection
+            fraud_result = fraud_detection_system.fraud_detector.process(customer_text)
+            
+            if 'error' not in fraud_result:
+                # Send fraud analysis results
+                await self.send_message(websocket, client_id, {
+                    'type': 'fraud_analysis_update',
+                    'data': {
+                        'session_id': session_id,
+                        'risk_score': fraud_result.get('risk_score', 0),
+                        'risk_level': fraud_result.get('risk_level', 'MINIMAL'),
+                        'scam_type': fraud_result.get('scam_type', 'unknown'),
+                        'detected_patterns': fraud_result.get('detected_patterns', {}),
+                        'confidence': fraud_result.get('confidence', 0.0),
+                        'explanation': fraud_result.get('explanation', ''),
+                        'timestamp': get_current_timestamp()
+                    }
+                })
+                
+                risk_score = fraud_result.get('risk_score', 0)
+                
+                # Get policy guidance for medium/high risk
+                if risk_score >= 40:
+                    await self.get_policy_guidance(websocket, client_id, session_id, fraud_result)
+                
+                # Create case for high risk
+                if risk_score >= 80:
+                    await self.create_fraud_case(websocket, client_id, session_id, fraud_result)
+                
+                logger.info(f"✅ Fraud analysis complete: {risk_score}% risk")
+            else:
+                logger.error(f"❌ Fraud analysis failed: {fraud_result.get('error')}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error in fraud analysis: {e}")
+    
+    async def get_policy_guidance(
+        self, 
+        websocket: WebSocket, 
+        client_id: str, 
+        session_id: str, 
+        fraud_result: Dict
+    ) -> None:
+        """Get and send policy guidance"""
+        
+        try:
+            # Send policy guidance started notification
+            await self.send_message(websocket, client_id, {
+                'type': 'policy_analysis_started',
+                'data': {
+                    'session_id': session_id,
+                    'timestamp': get_current_timestamp()
+                }
+            })
+            
             await asyncio.sleep(0.6)
             
             # Get policy guidance
@@ -394,6 +455,9 @@ class FraudDetectionWebSocketHandler:
             if session_id in self.customer_speech_buffer:
                 del self.customer_speech_buffer[session_id]
             
+            if session_id in self.processing_sessions:
+                del self.processing_sessions[session_id]
+            
             logger.info(f"🧹 Cleaned up session {session_id}")
             
         except Exception as e:
@@ -460,67 +524,11 @@ class FraudDetectionWebSocketHandler:
             'active_websocket_sessions': len(self.active_sessions),
             'server_processor_sessions': len(server_realtime_processor.active_sessions),
             'customer_speech_buffers': len(self.customer_speech_buffer),
+            'processing_sessions': len([s for s in self.processing_sessions.values() if s]),
             'system_status': 'operational',
             'processing_mode': 'server_realtime',
             'timestamp': get_current_timestamp()
         }
 
 # Export the handler class
-__all__ = ['FraudDetectionWebSocketHandler']0.8)
-            
-            # Run fraud detection
-            fraud_result = fraud_detection_system.fraud_detector.process(customer_text)
-            
-            if 'error' not in fraud_result:
-                # Send fraud analysis results
-                await self.send_message(websocket, client_id, {
-                    'type': 'fraud_analysis_update',
-                    'data': {
-                        'session_id': session_id,
-                        'risk_score': fraud_result.get('risk_score', 0),
-                        'risk_level': fraud_result.get('risk_level', 'MINIMAL'),
-                        'scam_type': fraud_result.get('scam_type', 'unknown'),
-                        'detected_patterns': fraud_result.get('detected_patterns', {}),
-                        'confidence': fraud_result.get('confidence', 0.0),
-                        'explanation': fraud_result.get('explanation', ''),
-                        'timestamp': get_current_timestamp()
-                    }
-                })
-                
-                risk_score = fraud_result.get('risk_score', 0)
-                
-                # Get policy guidance for medium/high risk
-                if risk_score >= 40:
-                    await self.get_policy_guidance(websocket, client_id, session_id, fraud_result)
-                
-                # Create case for high risk
-                if risk_score >= 80:
-                    await self.create_fraud_case(websocket, client_id, session_id, fraud_result)
-                
-                logger.info(f"✅ Fraud analysis complete: {risk_score}% risk")
-            else:
-                logger.error(f"❌ Fraud analysis failed: {fraud_result.get('error')}")
-                
-        except Exception as e:
-            logger.error(f"❌ Error in fraud analysis: {e}")
-    
-    async def get_policy_guidance(
-        self, 
-        websocket: WebSocket, 
-        client_id: str, 
-        session_id: str, 
-        fraud_result: Dict
-    ) -> None:
-        """Get and send policy guidance"""
-        
-        try:
-            # Send policy guidance started notification
-            await self.send_message(websocket, client_id, {
-                'type': 'policy_analysis_started',
-                'data': {
-                    'session_id': session_id,
-                    'timestamp': get_current_timestamp()
-                }
-            })
-            
-            await asyncio.sleep(
+__all__ = ['FraudDetectionWebSocketHandler']

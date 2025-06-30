@@ -21,7 +21,8 @@ import {
   User,
   Clock,
   Hash,
-  Settings
+  Settings,
+  Server
 } from 'lucide-react';
 
 // Environment configuration
@@ -107,16 +108,9 @@ function App() {
   // WebSocket state
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  
-  // Real-time audio capture state
-  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [isCapturingAudio, setIsCapturingAudio] = useState<boolean>(false);
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
-  const [isRealTimeMode, setIsRealTimeMode] = useState<boolean>(false);
+  const [serverProcessing, setServerProcessing] = useState<boolean>(false);
   
   // Refs
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Mock customer data
@@ -126,114 +120,6 @@ function App() {
     status: "Active",
     segment: "Personal Banking",
     riskProfile: "Medium"
-  };
-
-  // ===== REAL-TIME AUDIO CAPTURE FUNCTIONS =====
-
-  const initializeAudioCapture = async (): Promise<boolean> => {
-    try {
-      // Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          sampleRate: 16000,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true
-        } 
-      });
-
-      // Create audio context
-      const context = new (window.AudioContext || (window as any).webkitAudioContext)({
-        sampleRate: 16000
-      });
-      
-      // Create media recorder
-      const recorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      });
-      
-      // Set up recorder event handlers
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          setAudioChunks(prev => [...prev, event.data]);
-          
-          // Send audio chunk to backend for real-time transcription
-          sendAudioChunkToBackend(event.data);
-        }
-      };
-      
-      recorder.onstart = () => {
-        console.log('🎙️ Audio capture started');
-        setIsCapturingAudio(true);
-      };
-      
-      recorder.onstop = () => {
-        console.log('🛑 Audio capture stopped');
-        setIsCapturingAudio(false);
-      };
-      
-      setAudioContext(context);
-      setMediaRecorder(recorder);
-      
-      return true;
-      
-    } catch (error) {
-      console.error('❌ Error initializing audio capture:', error);
-      setProcessingStage('❌ Microphone access denied - using demo mode');
-      return false;
-    }
-  };
-
-  const sendAudioChunkToBackend = async (audioBlob: Blob): Promise<void> => {
-    if (!ws || !isConnected || !isRealTimeMode) return;
-    
-    try {
-      // Convert blob to base64 for WebSocket transmission
-      const arrayBuffer = await audioBlob.arrayBuffer();
-      const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-      
-      // Send via WebSocket
-      const message = {
-        type: 'audio_chunk',
-        data: {
-          session_id: sessionId,
-          audio_data: base64Audio,
-          timestamp: Date.now() / 1000,
-          chunk_size: arrayBuffer.byteLength
-        }
-      };
-      
-      ws.send(JSON.stringify(message));
-      
-    } catch (error) {
-      console.error('❌ Error sending audio chunk:', error);
-    }
-  };
-
-  const stopRealTimeCapture = (): void => {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-      
-      // Stop all tracks to release microphone
-      if (mediaRecorder.stream) {
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-      }
-    }
-    
-    if (ws && isConnected && sessionId && isRealTimeMode) {
-      // Stop real-time session
-      const message = {
-        type: 'stop_realtime_session',
-        data: {
-          session_id: sessionId
-        }
-      };
-      ws.send(JSON.stringify(message));
-    }
-    
-    setIsCapturingAudio(false);
-    setIsRealTimeMode(false);
-    setAudioChunks([]);
   };
 
   // ===== WEBSOCKET FUNCTIONS =====
@@ -287,19 +173,18 @@ function App() {
     console.log('📨 WebSocket message received:', message);
     
     switch (message.type) {
-      case 'realtime_session_started':
-        setProcessingStage('🎙️ Real-time transcription session started');
-        setIsRealTimeMode(true);
+      case 'server_processing_started':
+        setProcessingStage('🖥️ Server processing started');
+        setServerProcessing(true);
         break;
         
-      case 'realtime_transcription':
       case 'transcription_segment':
         const transcriptData = message.data;
         
-        // Add real-time transcription segment
+        // Add transcription segment
         setShowingSegments(prev => [...prev, {
           speaker: transcriptData.speaker,
-          start: transcriptData.start_time || transcriptData.start,
+          start: transcriptData.start,
           duration: transcriptData.duration,
           text: transcriptData.text,
           confidence: transcriptData.confidence
@@ -308,15 +193,11 @@ function App() {
         // Update full transcription text
         setTranscription(prev => prev + (prev ? ' ' : '') + transcriptData.text);
         
-        // If it's customer speech and we're in real-time mode, trigger fraud analysis
-        if (transcriptData.speaker === 'customer' && isRealTimeMode) {
-          const customerSegments = showingSegments.filter(seg => seg.speaker === 'customer');
-          if (customerSegments.length >= 1) {
-            requestFraudAnalysis(customerSegments.map(seg => seg.text).join(' '));
-          }
-        }
+        setProcessingStage(`🎙️ Processing: ${transcriptData.speaker} speaking...`);
+        break;
         
-        setProcessingStage(`🎙️ Live: ${transcriptData.speaker} speaking...`);
+      case 'fraud_analysis_started':
+        setProcessingStage('🔍 Analyzing for fraud patterns...');
         break;
         
       case 'fraud_analysis_update':
@@ -327,23 +208,36 @@ function App() {
         setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
         break;
         
-      case 'policy_guidance_ready':
-        setPolicyGuidance(message.data);
-        setProcessingStage('📚 Policy guidance updated');
+      case 'policy_analysis_started':
+        setProcessingStage('📚 Retrieving policy guidance...');
         break;
         
-      case 'realtime_session_stopped':
-        setProcessingStage('🛑 Real-time session ended');
-        setIsRealTimeMode(false);
-        stopRealTimeCapture();
+      case 'policy_guidance_ready':
+        setPolicyGuidance(message.data);
+        setProcessingStage('📚 Policy guidance ready');
+        break;
+        
+      case 'case_creation_started':
+        setProcessingStage('📋 Creating fraud case...');
+        break;
+        
+      case 'case_created':
+        setProcessingStage(`📋 Case created: ${message.data.case_id}`);
         break;
         
       case 'processing_complete':
-        setProcessingStage('✅ Analysis complete');
+        setProcessingStage('✅ Server processing complete');
+        setServerProcessing(false);
+        break;
+        
+      case 'processing_stopped':
+        setProcessingStage('🛑 Processing stopped');
+        setServerProcessing(false);
         break;
         
       case 'error':
         setProcessingStage(`❌ Error: ${message.data.error || message.data.message}`);
+        setServerProcessing(false);
         break;
         
       default:
@@ -351,23 +245,9 @@ function App() {
     }
   };
 
-  const requestFraudAnalysis = (customerText: string): void => {
-    if (ws && isConnected && sessionId) {
-      const message = {
-        type: 'analyze_fraud',
-        data: {
-          session_id: sessionId,
-          text: customerText,
-          speaker: 'customer'
-        }
-      };
-      ws.send(JSON.stringify(message));
-    }
-  };
-
   // ===== AUDIO ANALYSIS FUNCTIONS =====
 
-  const startAnalysisWithRealTimeAudio = async (audioFile: RealAudioFile): Promise<void> => {
+  const startServerProcessing = async (audioFile: RealAudioFile): Promise<void> => {
     try {
       // Check WebSocket connection
       if (!ws || !isConnected) {
@@ -386,48 +266,23 @@ function App() {
         resetState();
       }
       
-      const newSessionId = `session_${Date.now()}`;
+      const newSessionId = `server_session_${Date.now()}`;
       setSessionId(newSessionId);
       setIsPlaying(true);
-      setProcessingStage('🎵 Starting real-time audio analysis...');
+      setServerProcessing(true);
+      setProcessingStage('🖥️ Starting server-side processing...');
       
-      // Initialize audio capture for real-time transcription
-      const audioCaptureReady = await initializeAudioCapture();
+      // Send WebSocket message to start server processing
+      const message = {
+        type: 'process_audio',
+        data: {
+          filename: audioFile.filename,
+          session_id: newSessionId
+        }
+      };
+      ws.send(JSON.stringify(message));
       
-      if (audioCaptureReady && mediaRecorder) {
-        // Start real-time audio capture
-        mediaRecorder.start(100); // Capture in 100ms chunks
-        
-        // Start WebSocket session for real-time processing
-        const message = {
-          type: 'start_realtime_session',
-          data: {
-            session_id: newSessionId,
-            audio_config: {
-              sample_rate: 16000,
-              channels: 1,
-              format: 'webm'
-            }
-          }
-        };
-        ws.send(JSON.stringify(message));
-        
-      } else {
-        // Fallback to demo mode if audio capture fails
-        setProcessingStage('📱 Using demo mode - no microphone access');
-        
-        // Send fallback WebSocket message for demo transcription
-        const message = {
-          type: 'process_audio',
-          data: {
-            filename: audioFile.filename,
-            session_id: newSessionId
-          }
-        };
-        ws.send(JSON.stringify(message));
-      }
-      
-      // Start audio playback
+      // Start audio playback simultaneously
       const audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
       setAudioElement(audio);
       
@@ -438,96 +293,54 @@ function App() {
       
       audio.addEventListener('play', () => {
         setIsPlaying(true);
-        if (mediaRecorder && mediaRecorder.state === 'paused') {
-          mediaRecorder.resume();
-        }
       });
       
       audio.addEventListener('pause', () => {
         setIsPlaying(false);
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-          mediaRecorder.pause();
-        }
       });
       
       audio.addEventListener('ended', () => {
         setIsPlaying(false);
-        stopRealTimeCapture();
-        setProcessingStage('✅ Audio playback complete - analysis finishing');
+        setProcessingStage('✅ Audio playback complete - server processing finishing');
       });
       
       audio.addEventListener('error', (e) => {
         console.error('❌ Audio playback error:', e);
         setProcessingStage('❌ Error playing audio file');
         setIsPlaying(false);
-        stopRealTimeCapture();
+        stopServerProcessing();
       });
       
       // Start playback
       await audio.play();
       
     } catch (error) {
-      console.error('❌ Error starting real-time analysis:', error);
-      setProcessingStage(`❌ Failed to start analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('❌ Error starting server processing:', error);
+      setProcessingStage(`❌ Failed to start processing: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsPlaying(false);
-      stopRealTimeCapture();
+      setServerProcessing(false);
     }
   };
 
-  const startAnalysis = async (audioFile: RealAudioFile): Promise<void> => {
-    try {
-      if (selectedAudioFile?.id !== audioFile.id) {
-        setSelectedAudioFile(audioFile);
-        resetState();
-      }
-      
-      const newSessionId = `session_${Date.now()}`;
-      setSessionId(newSessionId);
-      setIsPlaying(true);
-      setProcessingStage('Starting Analysis...');
-      
-      // Send WebSocket message for demo processing
-      if (ws && isConnected) {
-        const message = {
-          type: 'process_audio',
-          data: {
-            filename: audioFile.filename,
-            session_id: newSessionId
-          }
-        };
-        ws.send(JSON.stringify(message));
-      }
-      
-      // Start audio playback
-      const audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
-      setAudioElement(audio);
-      
-      audio.addEventListener('timeupdate', () => {
-        setCurrentTime(audio.currentTime);
-      });
-      
-      audio.addEventListener('ended', () => {
-        setIsPlaying(false);
-      });
-      
-      await audio.play();
-      
-    } catch (error) {
-      console.error('❌ Error starting analysis:', error);
-      setIsPlaying(false);
+  const stopServerProcessing = (): void => {
+    if (ws && isConnected && sessionId) {
+      const message = {
+        type: 'stop_processing',
+        data: {
+          session_id: sessionId
+        }
+      };
+      ws.send(JSON.stringify(message));
     }
-  };
-
-  const stopAnalysis = (): void => {
+    
     setIsPlaying(false);
-    setProcessingStage('Analysis Stopped');
+    setServerProcessing(false);
+    setProcessingStage('🛑 Processing stopped');
     
     if (audioElement) {
       audioElement.pause();
       audioElement.currentTime = 0;
     }
-    
-    stopRealTimeCapture();
   };
 
   // ===== UTILITY FUNCTIONS =====
@@ -542,8 +355,7 @@ function App() {
     setProcessingStage('');
     setShowingSegments([]);
     setSessionId('');
-    setIsRealTimeMode(false);
-    stopRealTimeCapture();
+    setServerProcessing(false);
   };
 
   const loadAudioFiles = async (): Promise<void> => {
@@ -568,7 +380,7 @@ function App() {
 
   const DemoCallButton = ({ audioFile }: { audioFile: RealAudioFile }) => (
     <button
-      onClick={() => !isPlaying ? startAnalysisWithRealTimeAudio(audioFile) : null}
+      onClick={() => !isPlaying ? startServerProcessing(audioFile) : null}
       disabled={isPlaying}
       className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
         selectedAudioFile?.id === audioFile.id 
@@ -590,9 +402,9 @@ function App() {
           <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
             LIVE
           </span>
-          {isCapturingAudio && (
-            <span className="text-xs bg-green-500 text-white px-2 py-1 rounded-full">
-              MIC
+          {serverProcessing && (
+            <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">
+              SERVER
             </span>
           )}
         </div>
@@ -600,17 +412,17 @@ function App() {
     </button>
   );
 
-  const MicrophoneStatus = () => (
+  const ProcessingStatus = () => (
     <div className="flex items-center space-x-2 text-xs">
-      {isCapturingAudio ? (
-        <div className="flex items-center space-x-1 text-green-600">
-          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-          <span>Microphone Active</span>
+      {serverProcessing ? (
+        <div className="flex items-center space-x-1 text-blue-600">
+          <Server className="w-4 h-4 animate-pulse" />
+          <span>Server Processing Active</span>
         </div>
       ) : (
         <div className="flex items-center space-x-1 text-gray-500">
-          <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-          <span>Microphone Standby</span>
+          <Server className="w-4 h-4" />
+          <span>Server Ready</span>
         </div>
       )}
     </div>
@@ -632,7 +444,6 @@ function App() {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
-      stopRealTimeCapture();
     };
   }, []);
 
@@ -649,7 +460,7 @@ function App() {
             </div>
             <span className="text-lg font-medium text-gray-900">Agent Desktop</span>
             <div className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
-              LIVE CALL
+              SERVER PROCESSING
             </div>
           </div>
           
@@ -657,7 +468,7 @@ function App() {
             <span>Agent: Sarah Mitchell</span>
             <span>ID: SM2024</span>
             <span>Shift: 09:00-17:00</span>
-            <MicrophoneStatus />
+            <ProcessingStatus />
             <Settings className="w-4 h-4" />
           </div>
         </div>
@@ -666,7 +477,7 @@ function App() {
       {/* Demo Call Selection - Compact Widget Bar */}
       <div className="bg-white border-b border-gray-200 px-6 py-3">
         <div className="flex items-center space-x-4">
-          <span className="text-sm font-medium text-gray-700">Demo Calls:</span>
+          <span className="text-sm font-medium text-gray-700">Demo Calls (Server Processing):</span>
           <div className="flex space-x-2">
             {audioFiles.map((audioFile) => (
               <DemoCallButton key={audioFile.id} audioFile={audioFile} />
@@ -675,10 +486,10 @@ function App() {
           
           {isPlaying && selectedAudioFile && (
             <button
-              onClick={stopAnalysis}
+              onClick={stopServerProcessing}
               className="ml-4 px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
             >
-              Stop Call
+              Stop Processing
             </button>
           )}
           
@@ -739,10 +550,6 @@ function App() {
                 <span className="font-medium">{formatTime(currentTime)}</span>
               </div>
               <div className="flex space-x-2">
-                <button className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200">
-                  <Phone className="w-4 h-4" />
-                  <span>Hang Up</span>
-                </button>
                 <button className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-yellow-100 text-yellow-700 rounded text-sm hover:bg-yellow-200">
                   <Volume2 className="w-4 h-4" />
                   <span>Hold</span>
@@ -802,14 +609,14 @@ function App() {
         {/* Center - Live Transcription */}
         <div className="flex-1 bg-white border-r border-gray-200">
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Live Transcription</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Server-side Transcription</h3>
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-              <span className="text-sm text-red-600 font-medium">Recording</span>
-              <span className="text-sm text-gray-500">Confidence: 94%</span>
-              {isRealTimeMode && (
+              <span className="text-sm text-red-600 font-medium">Processing</span>
+              <span className="text-sm text-gray-500">Server Mode</span>
+              {serverProcessing && (
                 <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">
-                  REAL-TIME
+                  SERVER
                 </span>
               )}
             </div>
@@ -819,10 +626,11 @@ function App() {
             {showingSegments.length === 0 ? (
               <div className="flex items-center justify-center h-64 text-gray-500">
                 <div className="text-center">
-                  <Mic className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p>Select a demo call to see live transcription</p>
+                  <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p>Select a demo call to see server-side transcription</p>
+                  <p className="text-sm text-blue-600 mt-2">Audio plays locally, server processes simultaneously</p>
                   {processingStage && (
-                    <p className="text-sm text-blue-600 mt-2">{processingStage}</p>
+                    <p className="text-sm text-green-600 mt-2">{processingStage}</p>
                   )}
                 </div>
               </div>
@@ -856,6 +664,9 @@ function App() {
                           {Math.round(segment.confidence * 100)}%
                         </span>
                       )}
+                      <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">
+                        SERVER
+                      </span>
                     </div>
                     <div className="mt-2 ml-3 p-3 bg-gray-50 rounded-lg border-l-4 border-blue-400">
                       <p className="text-sm text-gray-800">{segment.text}</p>
@@ -863,12 +674,10 @@ function App() {
                   </div>
                 ))}
                 
-                {isPlaying && (
+                {serverProcessing && (
                   <div className="flex items-center space-x-2 text-gray-500 ml-3">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-                    <span className="text-sm">
-                      {isRealTimeMode ? "Listening to microphone..." : "Processing..."}
-                    </span>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    <span className="text-sm">Server processing audio...</span>
                   </div>
                 )}
               </div>
@@ -886,7 +695,7 @@ function App() {
               ) : (
                 <div className="w-2 h-2 bg-red-500 rounded-full"></div>
               )}
-              <span className="text-sm text-gray-600">Live Analysis</span>
+              <span className="text-sm text-gray-600">Server Analysis</span>
             </div>
           </div>
 
@@ -941,7 +750,7 @@ function App() {
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-                Live Alerts
+                Server Alerts
               </h4>
               
               {riskScore >= 80 && (
@@ -950,7 +759,7 @@ function App() {
                     <AlertTriangle className="w-4 h-4 text-red-600" />
                     <span className="text-sm font-medium text-red-800">INVESTMENT SCAM DETECTED</span>
                   </div>
-                  <p className="text-xs text-red-700 mt-1">Multiple red flags: guaranteed returns, urgency, third-party instructions</p>
+                  <p className="text-xs text-red-700 mt-1">Server analysis: guaranteed returns, urgency, third-party instructions</p>
                 </div>
               )}
               
@@ -960,7 +769,7 @@ function App() {
                     <AlertCircle className="w-4 h-4 text-orange-600" />
                     <span className="text-sm font-medium text-orange-800">URGENCY PRESSURE</span>
                   </div>
-                  <p className="text-xs text-orange-700 mt-1">"Immediately" and "lose all investments" detected</p>
+                  <p className="text-xs text-orange-700 mt-1">Server detected: "immediately" and time pressure patterns</p>
                 </div>
               )}
             </div>
@@ -990,33 +799,6 @@ function App() {
                       <span className="text-xs font-medium text-red-800">1. STOP TRANSACTION</span>
                     </div>
                     <p className="text-xs text-red-700 mt-1">Do not process any transfers</p>
-                  </div>
-                )}
-                
-                {riskScore >= 60 && (
-                  <div className="p-2 bg-orange-50 border border-orange-200 rounded-lg">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-medium text-orange-800">2. ASK:</span>
-                    </div>
-                    <p className="text-xs text-orange-700 mt-1">"Have you been able to withdraw any profits from this investment?"</p>
-                  </div>
-                )}
-                
-                {riskScore >= 40 && (
-                  <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-medium text-yellow-800">3. EDUCATE:</span>
-                    </div>
-                    <p className="text-xs text-yellow-700 mt-1">Explain that guaranteed returns are impossible</p>
-                  </div>
-                )}
-                
-                {riskScore >= 80 && (
-                  <div className="p-2 bg-purple-50 border border-purple-200 rounded-lg">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-medium text-purple-800">4. ESCALATE:</span>
-                    </div>
-                    <p className="text-xs text-purple-700 mt-1">Transfer to Financial Crime Team</p>
                   </div>
                 )}
               </div>
@@ -1086,16 +868,16 @@ function App() {
             <div className="flex-1 flex items-center justify-center p-4">
               <div className="text-center text-gray-500">
                 <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h4 className="text-sm font-medium text-gray-900 mb-2">AI Agent Assist</h4>
+                <h4 className="text-sm font-medium text-gray-900 mb-2">Server-side AI Processing</h4>
                 <p className="text-xs text-gray-600">
-                  Start a demo call to see real-time fraud detection and policy guidance
+                  Start a demo call to see server-side fraud detection and policy guidance
                 </p>
                 <div className="mt-4 space-y-2 text-xs">
                   <div className="flex items-center justify-center space-x-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                     <span>6 Agents Ready</span>
                   </div>
-                  <div className="text-gray-400">Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
+                  <div className="text-gray-400">Server Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
                   {processingStage && (
                     <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
                       <p className="text-blue-700">{processingStage}</p>
@@ -1111,4 +893,8 @@ function App() {
   );
 }
 
-export default App;
+export default App;py-2 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200">
+                  <Phone className="w-4 h-4" />
+                  <span>Hang Up</span>
+                </button>
+                <button className="flex-1 flex items-center justify-center space-x-1 px-3

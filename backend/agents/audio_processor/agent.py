@@ -481,8 +481,9 @@ class AudioProcessorAgent(BaseAgent):
                                 if empty_count % 1000 == 0:  # Log every 10 seconds of emptiness
                                     logger.debug(f"⏳ Waiting for audio... empty for {empty_count/100:.1f}s")
                                 
-                                # Small delay to prevent busy waiting
-                                await asyncio.sleep(0.01)
+                                # Small delay to prevent busy waiting  
+                                import time
+                                time.sleep(0.01)
                                 continue
                                 
                             except Exception as e:

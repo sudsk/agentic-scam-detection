@@ -36,13 +36,18 @@ class LiveAudioBuffer:
             self.buffer.put(audio_data)
     
     def get_audio_chunks(self):
-        """Generator for audio chunks"""
+        """Generator for audio chunks - yields actual audio data"""
         while self.is_active:
             try:
                 chunk = self.buffer.get(timeout=0.1)
-                yield chunk
+                if chunk and len(chunk) > 0:  # Only yield non-empty chunks
+                    yield chunk
             except queue.Empty:
+                # No audio available, continue waiting
                 continue
+            except Exception as e:
+                logger.error(f"❌ Error getting audio chunk: {e}")
+                break
     
     def start(self):
         self.is_active = True
@@ -238,8 +243,9 @@ class AudioProcessorAgent(BaseAgent):
             session["status"] = "streaming"
             session["websocket_callback"] = websocket_callback
             
-            # Start audio buffer
+            # IMPORTANT: Start audio buffer BEFORE creating request generator
             self.audio_buffers[session_id].start()
+            logger.info("✅ Audio buffer started and ready")
             
             # Start streaming task
             streaming_task = asyncio.create_task(
@@ -344,32 +350,42 @@ class AudioProcessorAgent(BaseAgent):
             
             logger.info(f"✅ Streaming config created successfully")
             
-            # ROBUST: Create streaming request generator based on working examples
+            # FIXED: Create streaming request generator that sends config exactly once
+            # The error shows multiple streaming_config requests are being sent
             def request_generator():
-                logger.info("🔄 Generating streaming requests...")
+                logger.info("🔄 Starting request generator...")
+                config_sent = False
                 
-                # First, yield the configuration request
-                logger.info("✅ Sending initial streaming config")
-                yield self.speech_module.StreamingRecognizeRequest(
-                    streaming_config=streaming_config
-                )
+                # Send the configuration request exactly once
+                if not config_sent:
+                    logger.info("✅ Sending streaming config (one time only)")
+                    yield self.speech_module.StreamingRecognizeRequest(
+                        streaming_config=streaming_config
+                    )
+                    config_sent = True
+                    logger.info("✅ Config sent, now streaming audio...")
                 
-                # Then yield audio content requests
+                # Now stream audio content only
                 chunk_count = 0
                 try:
                     for audio_chunk in audio_buffer.get_audio_chunks():
                         if session_id not in self.active_sessions:
                             logger.info("🛑 Session ended, stopping audio stream")
                             break
+                        
+                        # Validate we have audio data
+                        if audio_chunk and len(audio_chunk) > 0:
+                            chunk_count += 1
+                            if chunk_count % 50 == 0:  # Log every 50 chunks (5 seconds)
+                                logger.debug(f"🎵 Streaming audio chunk {chunk_count}")
                             
-                        chunk_count += 1
-                        if chunk_count % 20 == 0:  # Less frequent logging
-                            logger.debug(f"🎵 Streaming chunk {chunk_count}")
-                        
-                        yield self.speech_module.StreamingRecognizeRequest(
-                            audio_content=audio_chunk
-                        )
-                        
+                            # Send ONLY audio_content, no config
+                            yield self.speech_module.StreamingRecognizeRequest(
+                                audio_content=audio_chunk
+                            )
+                        else:
+                            logger.debug("⚠️ Skipping empty audio chunk")
+                            
                 except Exception as e:
                     logger.error(f"❌ Error in request generator: {e}")
                 finally:
@@ -381,9 +397,36 @@ class AudioProcessorAgent(BaseAgent):
             try:
                 # Method 1: Named parameters (newer versions)
                 logger.info("🔧 Attempting method 1: named parameters...")
+                
+                # CRITICAL FIX: When using config parameter, don't send streaming_config in requests
+                def audio_only_generator():
+                    logger.info("🔄 Generating audio-only requests (config passed separately)...")
+                    chunk_count = 0
+                    try:
+                        for audio_chunk in audio_buffer.get_audio_chunks():
+                            if session_id not in self.active_sessions:
+                                logger.info("🛑 Session ended, stopping audio stream")
+                                break
+                            
+                            if audio_chunk and len(audio_chunk) > 0:
+                                chunk_count += 1
+                                if chunk_count % 50 == 0:
+                                    logger.debug(f"🎵 Streaming audio chunk {chunk_count}")
+                                
+                                # Send ONLY audio_content when config is passed as parameter
+                                yield self.speech_module.StreamingRecognizeRequest(
+                                    audio_content=audio_chunk
+                                )
+                            
+                    except Exception as e:
+                        logger.error(f"❌ Error in audio generator: {e}")
+                    finally:
+                        logger.info(f"🏁 Audio generator completed: {chunk_count} chunks sent")
+                
+                # Call streaming_recognize with config as parameter and audio-only requests
                 responses = self.google_client.streaming_recognize(
                     config=streaming_config,
-                    requests=request_generator()
+                    requests=audio_only_generator()
                 )
                 logger.info("✅ Method 1 successful: streaming recognition started")
                 
@@ -394,7 +437,7 @@ class AudioProcessorAgent(BaseAgent):
                     # Method 2: Positional parameters (some versions)  
                     logger.info("🔧 Attempting method 2: positional parameters...")
                     responses = self.google_client.streaming_recognize(
-                        streaming_config, request_generator()
+                        streaming_config, audio_only_generator()
                     )
                     logger.info("✅ Method 2 successful: streaming recognition started")
                     
@@ -402,8 +445,8 @@ class AudioProcessorAgent(BaseAgent):
                     logger.warning(f"⚠️ Method 2 failed ({e2}), trying method 3...")
                     
                     try:
-                        # Method 3: Different parameter name (some versions)
-                        logger.info("🔧 Attempting method 3: requests parameter...")
+                        # Method 3: Traditional approach with config in first request
+                        logger.info("🔧 Attempting method 3: config in first request...")
                         responses = self.google_client.streaming_recognize(
                             requests=request_generator()
                         )

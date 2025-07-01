@@ -1,7 +1,7 @@
-# backend/agents/audio_processor/agent.py - REAL-TIME CHUNK PROCESSING
+# backend/agents/audio_processor/agent.py - FIXED GOOGLE STT STREAMING
 """
 Audio Processing Agent for Large Files (16MB+) with Real-time Streaming
-Processes audio in chunks as it "plays" for real-time fraud detection
+FIXED: Proper Google STT streaming implementation with correct request iterator
 """
 
 import asyncio
@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable, AsyncGenerator
 import json
 import math
+import io
 
 from ..shared.base_agent import BaseAgent, AgentCapability, agent_registry
 from ...config.settings import get_settings
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 class AudioProcessorAgent(BaseAgent):
     """
     Real-time Audio Chunk Processor for Large Files
-    Simulates real-time audio playback while streaming chunks to Google STT
+    FIXED: Proper Google STT streaming with request iterator
     """
     
     def __init__(self):
@@ -298,7 +299,7 @@ class AudioProcessorAgent(BaseAgent):
                 
                 # Process chunk through Google STT
                 try:
-                    chunk_results = await self._process_chunk_with_stt(
+                    chunk_results = await self._process_chunk_with_stt_fixed(
                         chunk_data, chunk_index, chunk_start_time, chunk_duration
                     )
                     
@@ -396,86 +397,56 @@ class AudioProcessorAgent(BaseAgent):
         
         return chunks
     
-    async def _process_chunk_with_stt(
-        self, 
-        chunk_data: bytes, 
-        chunk_index: int, 
-        chunk_start_time: float, 
-        chunk_duration: float
-    ) -> List[Dict]:
-        """Process a single chunk with Google STT streaming"""
-        
-        try:
-            logger.debug(f"🎯 STT processing chunk {chunk_index}: {len(chunk_data)} bytes")
-            
-            # Create streaming configuration (without speaker diarization to avoid errors)
-            config = self.speech_module.RecognitionConfig(
-                encoding=self.speech_module.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=16000,
-                language_code="en-GB",
-                enable_automatic_punctuation=True,
-                enable_word_confidence=True,
-                max_alternatives=1
-            )
-            
-            streaming_config = self.speech_module.StreamingRecognitionConfig(
-                config=config,
-                interim_results=True,
-                single_utterance=False
-            )
-            
-            # Create request generator for streaming
-            def request_generator():
-                # First request with config
-                yield self.speech_module.StreamingRecognizeRequest(
-                    streaming_config=streaming_config
-                )
+"text": transcript,
+                                    "confidence": alternative.confidence,
+                                    "chunk_index": chunk_index
+                                })
+                                
+                                logger.debug(f"📝 Chunk {chunk_index} result: '{transcript[:50]}...'")
                 
-                # Split chunk into smaller pieces for streaming (4KB each)
-                stream_chunk_size = 4096
-                for i in range(0, len(chunk_data), stream_chunk_size):
-                    stream_chunk = chunk_data[i:i + stream_chunk_size]
-                    yield self.speech_module.StreamingRecognizeRequest(
-                        audio_content=stream_chunk
-                    )
-            
-            # Process streaming response
-            responses = self.google_client.streaming_recognize(request_generator())
-            
-            # Collect final results
-            segments = []
-            
-            for response in responses:
-                if response.error:
-                    logger.error(f"❌ STT error in chunk {chunk_index}: {response.error}")
-                    continue
+                return segments
                 
-                for result in response.results:
-                    if result.is_final and result.alternatives:
-                        alternative = result.alternatives[0]
-                        transcript = alternative.transcript.strip()
-                        
-                        if transcript:
-                            # Estimate speaker (alternate for demo purposes)
-                            speaker = "customer" if chunk_index % 2 == 0 else "agent"
+            except Exception as streaming_error:
+                logger.error(f"❌ STT streaming error for chunk {chunk_index}: {streaming_error}")
+                
+                # Fallback: try non-streaming recognition
+                try:
+                    logger.info(f"🔄 Fallback to non-streaming STT for chunk {chunk_index}")
+                    
+                    audio = self.speech_module.RecognitionAudio(content=chunk_data)
+                    
+                    response = self.google_client.recognize(config=config, audio=audio)
+                    
+                    segments = []
+                    for result in response.results:
+                        if result.alternatives:
+                            alternative = result.alternatives[0]
+                            transcript = alternative.transcript.strip()
                             
-                            segments.append({
-                                "speaker": speaker,
-                                "relative_start": 0.0,  # Relative to chunk start
-                                "relative_end": chunk_duration,
-                                "duration": chunk_duration,
-                                "text": transcript,
-                                "confidence": alternative.confidence,
-                                "chunk_index": chunk_index
-                            })
-                            
-                            logger.debug(f"📝 Chunk {chunk_index} result: '{transcript[:50]}...'")
-            
-            return segments
+                            if transcript:
+                                # Alternate speakers for fallback
+                                speaker = "agent" if chunk_index % 2 == 1 else "customer"
+                                
+                                segments.append({
+                                    "speaker": speaker,
+                                    "relative_start": 0.0,
+                                    "relative_end": chunk_duration,
+                                    "duration": chunk_duration,
+                                    "text": transcript,
+                                    "confidence": alternative.confidence,
+                                    "chunk_index": chunk_index
+                                })
+                                
+                                logger.info(f"📝 Fallback chunk {chunk_index} result: '{transcript[:50]}...'")
+                    
+                    return segments
+                    
+                except Exception as fallback_error:
+                    logger.error(f"❌ Fallback STT also failed for chunk {chunk_index}: {fallback_error}")
+                    return []
             
         except Exception as e:
             logger.error(f"❌ STT processing failed for chunk {chunk_index}: {e}")
-            # Return empty segments rather than failing completely
             return []
     
     async def _get_audio_info(self, audio_path: Path) -> Dict[str, Any]:

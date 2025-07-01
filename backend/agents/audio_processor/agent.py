@@ -110,11 +110,22 @@ class AudioProcessorAgent(BaseAgent):
         
         try:
             logger.info("🔄 Initializing Google STT for live streaming...")
-            from google.cloud import speech_v1p1beta1 as speech
             
-            self.google_client = speech.SpeechClient()
-            self.speech_module = speech
-            self.transcription_source = "google_stt_live_streaming"
+            # Try the standard speech library first
+            try:
+                from google.cloud import speech
+                self.google_client = speech.SpeechClient()
+                self.speech_module = speech
+                self.transcription_source = "google_stt_v1_streaming"
+                logger.info("✅ Using Google STT v1")
+            except ImportError:
+                # Fallback to v1p1beta1 if available
+                logger.info("🔄 Trying v1p1beta1...")
+                from google.cloud import speech_v1p1beta1 as speech
+                self.google_client = speech.SpeechClient()
+                self.speech_module = speech  
+                self.transcription_source = "google_stt_v1p1beta1_streaming"
+                logger.info("✅ Using Google STT v1p1beta1")
             
             logger.info("✅ Google STT live streaming client ready!")
                         
@@ -291,51 +302,114 @@ class AudioProcessorAgent(BaseAgent):
             
             logger.info(f"✅ Streaming config created successfully")
             
-            # FIXED: Create streaming request generator correctly
+            # ROBUST: Create streaming request generator based on working examples
             def request_generator():
-                logger.info("🔄 Generating initial streaming request...")
+                logger.info("🔄 Generating streaming requests...")
                 
-                # FIXED: First request must contain streaming_config only
-                initial_request = self.speech_module.StreamingRecognizeRequest(
+                # First, yield the configuration request
+                logger.info("✅ Sending initial streaming config")
+                yield self.speech_module.StreamingRecognizeRequest(
                     streaming_config=streaming_config
                 )
-                yield initial_request
-                logger.info("✅ Initial config request sent")
                 
-                # Then stream audio chunks
+                # Then yield audio content requests
                 chunk_count = 0
-                for audio_chunk in audio_buffer.get_audio_chunks():
-                    chunk_count += 1
-                    if chunk_count % 10 == 0:
-                        logger.debug(f"🎵 Streaming chunk {chunk_count}")
-                    
-                    # FIXED: Subsequent requests contain only audio_content
-                    audio_request = self.speech_module.StreamingRecognizeRequest(
-                        audio_content=audio_chunk
+                try:
+                    for audio_chunk in audio_buffer.get_audio_chunks():
+                        if session_id not in self.active_sessions:
+                            logger.info("🛑 Session ended, stopping audio stream")
+                            break
+                            
+                        chunk_count += 1
+                        if chunk_count % 20 == 0:  # Less frequent logging
+                            logger.debug(f"🎵 Streaming chunk {chunk_count}")
+                        
+                        yield self.speech_module.StreamingRecognizeRequest(
+                            audio_content=audio_chunk
+                        )
+                        
+                except Exception as e:
+                    logger.error(f"❌ Error in request generator: {e}")
+                finally:
+                    logger.info(f"🏁 Request generator completed: {chunk_count} audio chunks sent")
+            
+            logger.info("🚀 Starting streaming recognition with CORRECT method signature...")
+            
+            # MULTIPLE ATTEMPTS: Try different method signatures to handle various Google STT versions
+            try:
+                # Method 1: Named parameters (newer versions)
+                logger.info("🔧 Attempting method 1: named parameters...")
+                responses = self.google_client.streaming_recognize(
+                    config=streaming_config,
+                    requests=request_generator()
+                )
+                logger.info("✅ Method 1 successful: streaming recognition started")
+                
+            except (TypeError, AttributeError) as e1:
+                logger.warning(f"⚠️ Method 1 failed ({e1}), trying method 2...")
+                
+                try:
+                    # Method 2: Positional parameters (some versions)  
+                    logger.info("🔧 Attempting method 2: positional parameters...")
+                    responses = self.google_client.streaming_recognize(
+                        streaming_config, request_generator()
                     )
-                    yield audio_request
-                
-                logger.info(f"🏁 Request generator finished after {chunk_count} chunks")
-            
-            logger.info("🚀 Starting streaming recognition with FIXED method...")
-            
-            # FIXED: Use the correct streaming_recognize method signature
-            # The method expects an iterator of StreamingRecognizeRequest objects
-            responses = self.google_client.streaming_recognize(request_generator())
-            logger.info("✅ Streaming recognition started successfully")
-            
-            # Process streaming responses
-            response_count = 0
-            async for response in self._async_response_iterator(responses):
-                response_count += 1
-                if response_count % 5 == 0:
-                    logger.debug(f"📨 Processed {response_count} responses")
+                    logger.info("✅ Method 2 successful: streaming recognition started")
                     
-                if session_id not in self.active_sessions:
-                    logger.info("🛑 Session stopped, breaking response loop")
-                    break
+                except (TypeError, AttributeError) as e2:
+                    logger.warning(f"⚠️ Method 2 failed ({e2}), trying method 3...")
+                    
+                    try:
+                        # Method 3: Different parameter name (some versions)
+                        logger.info("🔧 Attempting method 3: requests parameter...")
+                        responses = self.google_client.streaming_recognize(
+                            requests=request_generator()
+                        )
+                        logger.info("✅ Method 3 successful: streaming recognition started")
+                        
+                    except (TypeError, AttributeError) as e3:
+                        logger.error(f"❌ All streaming methods failed:")
+                        logger.error(f"  Method 1: {e1}")
+                        logger.error(f"  Method 2: {e2}")
+                        logger.error(f"  Method 3: {e3}")
+                        
+                        # Debug: Show available methods
+                        try:
+                            client_methods = [method for method in dir(self.google_client) if 'streaming' in method.lower()]
+                            logger.error(f"🔍 Available streaming methods: {client_methods}")
+                            
+                            # Try to inspect the method signature
+                            import inspect
+                            if hasattr(self.google_client, 'streaming_recognize'):
+                                sig = inspect.signature(self.google_client.streaming_recognize)
+                                logger.error(f"🔍 Method signature: {sig}")
+                                
+                        except Exception as debug_e:
+                            logger.error(f"🔍 Debug inspection failed: {debug_e}")
+                        
+                        raise Exception(f"All streaming recognition methods failed: {e1}, {e2}, {e3}")
+            
+            # Process streaming responses with robust error handling
+            response_count = 0
+            try:
+                for response in responses:
+                    response_count += 1
+                    if response_count % 10 == 0:  # Less frequent logging
+                        logger.debug(f"📨 Processed {response_count} responses")
+                        
+                    # Check if session is still active
+                    if session_id not in self.active_sessions:
+                        logger.info("🛑 Session stopped, breaking response loop")
+                        break
+                    
+                    # Process the response
+                    await self._process_streaming_response(session_id, response, websocket_callback)
+                    
+                logger.info(f"✅ Streaming completed successfully: {response_count} responses processed")
                 
-                await self._process_streaming_response(session_id, response, websocket_callback)
+            except Exception as response_error:
+                logger.error(f"❌ Error processing responses: {response_error}")
+                raise response_error
             
         except asyncio.CancelledError:
             logger.info(f"🛑 Live streaming cancelled for {session_id}")
@@ -361,17 +435,6 @@ class AudioProcessorAgent(BaseAgent):
             # Cleanup
             if session_id in self.audio_buffers:
                 self.audio_buffers[session_id].stop()
-    
-    async def _async_response_iterator(self, responses):
-        """Convert synchronous response iterator to async"""
-        try:
-            for response in responses:
-                yield response
-                # Small delay to prevent blocking
-                await asyncio.sleep(0.001)  # Very small delay
-        except Exception as e:
-            logger.error(f"❌ Error in response iterator: {e}")
-            raise
     
     async def _process_streaming_response(
         self, 

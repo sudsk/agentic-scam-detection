@@ -265,6 +265,8 @@ class AudioProcessorAgent(BaseAgent):
         
         try:
             logger.info(f"🎙️ Starting live streaming recognition for {session_id}")
+            logger.info(f"🔧 Google STT client type: {type(self.google_client)}")
+            logger.info(f"🔧 Speech module: {self.speech_module}")
             
             # Configure streaming recognition
             config = self.speech_module.RecognitionConfig(
@@ -284,25 +286,60 @@ class AudioProcessorAgent(BaseAgent):
                 single_utterance=False  # Continuous conversation
             )
             
+            logger.info(f"✅ Streaming config created successfully")
+            
             # Create streaming request generator
             def request_generator():
+                logger.info("🔄 Generating config request...")
                 # First request with config
-                yield self.speech_module.StreamingRecognizeRequest(
+                config_request = self.speech_module.StreamingRecognizeRequest(
                     streaming_config=streaming_config
                 )
+                yield config_request
+                logger.info("✅ Config request yielded")
                 
                 # Then stream audio chunks
+                chunk_count = 0
                 for audio_chunk in audio_buffer.get_audio_chunks():
-                    yield self.speech_module.StreamingRecognizeRequest(
+                    chunk_count += 1
+                    if chunk_count % 10 == 0:
+                        logger.debug(f"🎵 Streaming chunk {chunk_count}")
+                    
+                    audio_request = self.speech_module.StreamingRecognizeRequest(
                         audio_content=audio_chunk
                     )
+                    yield audio_request
+                
+                logger.info(f"🏁 Request generator finished after {chunk_count} chunks")
             
-            # Start streaming recognition
-            responses = self.google_client.streaming_recognize(requests=request_generator())
+            logger.info("🚀 Starting streaming recognition...")
+            
+            # Start streaming recognition - try different parameter formats
+            try:
+                # Method 1: requests parameter (v1p1beta1)
+                logger.info("🔧 Trying streaming_recognize with requests parameter...")
+                responses = self.google_client.streaming_recognize(requests=request_generator())
+                logger.info("✅ Streaming started successfully with requests parameter")
+            except TypeError as e:
+                logger.warning(f"⚠️ Method 1 failed ({e}), trying method 2...")
+                try:
+                    # Method 2: Direct generator (some versions)
+                    logger.info("🔧 Trying streaming_recognize with direct generator...")
+                    responses = self.google_client.streaming_recognize(request_generator())
+                    logger.info("✅ Streaming started successfully with direct generator")
+                except Exception as e2:
+                    logger.error(f"❌ Both streaming methods failed: {e}, {e2}")
+                    raise Exception(f"Streaming recognition failed: {e}, {e2}")
             
             # Process streaming responses
+            response_count = 0
             async for response in self._async_response_iterator(responses):
+                response_count += 1
+                if response_count % 5 == 0:
+                    logger.debug(f"📨 Processed {response_count} responses")
+                    
                 if session_id not in self.active_sessions:
+                    logger.info("🛑 Session stopped, breaking response loop")
                     break
                 
                 await self._process_streaming_response(session_id, response, websocket_callback)
@@ -311,11 +348,24 @@ class AudioProcessorAgent(BaseAgent):
             logger.info(f"🛑 Live streaming cancelled for {session_id}")
         except Exception as e:
             logger.error(f"❌ Error in live streaming: {e}")
+            logger.error(f"🔧 Error type: {type(e)}")
+            logger.error(f"🔧 Error args: {e.args}")
+            
+            # Try to provide helpful debugging info
+            if "missing" in str(e) and "argument" in str(e):
+                logger.error("💡 This looks like a method signature issue. Checking Google STT client methods...")
+                try:
+                    client_methods = [method for method in dir(self.google_client) if 'streaming' in method.lower()]
+                    logger.error(f"🔍 Available streaming methods: {client_methods}")
+                except:
+                    pass
+            
             await websocket_callback({
                 "type": "streaming_error",
                 "data": {
                     "session_id": session_id,
                     "error": str(e),
+                    "error_type": type(e).__name__,
                     "timestamp": get_current_timestamp()
                 }
             })
@@ -326,19 +376,14 @@ class AudioProcessorAgent(BaseAgent):
     
     async def _async_response_iterator(self, responses):
         """Convert synchronous response iterator to async"""
-        loop = asyncio.get_event_loop()
-        
-        def get_next_response():
-            try:
-                return next(responses)
-            except StopIteration:
-                return None
-        
-        while True:
-            response = await loop.run_in_executor(None, get_next_response)
-            if response is None:
-                break
-            yield response
+        try:
+            for response in responses:
+                yield response
+                # Small delay to prevent blocking
+                await asyncio.sleep(0.01)
+        except Exception as e:
+            logger.error(f"❌ Error in response iterator: {e}")
+            raise
     
     async def _process_streaming_response(
         self, 

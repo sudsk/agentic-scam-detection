@@ -1,4 +1,4 @@
-# backend/agents/audio_processor/agent.py - COMPLETE FIXED VERSION
+# backend/agents/audio_processor/agent.py - COMPLETELY FIXED VERSION
 """
 Audio Processing Agent for LIVE PHONE CALLS
 FIXED: Complete implementation with proper Google Speech-to-Text streaming API
@@ -528,6 +528,27 @@ class AudioProcessorAgent(BaseAgent):
         # Try Google's speaker diarization first
         if hasattr(alternative, 'words') and alternative.words:
             first_word = alternative.words[0]
+            if hasattr(first_word, 'speaker_tag') and first_word.speaker_tag:
+                speaker_tag = first_word.speaker_tag
+                if speaker_tag == 1:
+                    return "customer"
+                elif speaker_tag == 2:
+                    return "agent"
+                else:
+                    return f"speaker_{speaker_tag}"
+        
+        # Fallback to session-tracked speaker
+        return self.speaker_states.get(session_id, "customer")
+    
+    def _extract_timing(self, alternative) -> tuple:
+        """Extract timing information from alternative"""
+        start_time = 0.0
+        end_time = 0.0
+        
+        if hasattr(alternative, 'words') and alternative.words:
+            first_word = alternative.words[0]
+            last_word = alternative.words[-1]
+            
             if hasattr(first_word, 'start_time') and first_word.start_time:
                 start_time = first_word.start_time.total_seconds()
             if hasattr(last_word, 'end_time') and last_word.end_time:
@@ -941,25 +962,4 @@ class AudioProcessorAgent(BaseAgent):
             }
 
 # Create global instance
-audio_processor_agent = AudioProcessorAgent()speaker_tag') and first_word.speaker_tag:
-                speaker_tag = first_word.speaker_tag
-                if speaker_tag == 1:
-                    return "customer"
-                elif speaker_tag == 2:
-                    return "agent"
-                else:
-                    return f"speaker_{speaker_tag}"
-        
-        # Fallback to session-tracked speaker
-        return self.speaker_states.get(session_id, "customer")
-    
-    def _extract_timing(self, alternative) -> tuple:
-        """Extract timing information from alternative"""
-        start_time = 0.0
-        end_time = 0.0
-        
-        if hasattr(alternative, 'words') and alternative.words:
-            first_word = alternative.words[0]
-            last_word = alternative.words[-1]
-            
-            if hasattr(first_word, '
+audio_processor_agent = AudioProcessorAgent()

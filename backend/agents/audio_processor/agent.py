@@ -280,19 +280,61 @@ class AudioProcessorAgent(BaseAgent):
         try:
             logger.info(f"🎙️ Starting live streaming recognition for {session_id}")
             
-            # FIXED: Configure streaming recognition correctly
-            config = self.speech_module.RecognitionConfig(
-                encoding=self.speech_module.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=self.sample_rate,
-                language_code="en-GB",
-                enable_automatic_punctuation=True,
-                enable_word_confidence=True,
-                max_alternatives=1,
-                # Enable speaker diarization for call center scenarios
-                enable_speaker_diarization=True,
-                diarization_speaker_count=2,  # Customer + Agent
-                model="telephony"  # Optimized for phone calls
-            )
+            # FIXED: Configure streaming recognition with correct speaker diarization
+            # Based on Google documentation: use diarization_config with SpeakerDiarizationConfig
+            try:
+                # Create speaker diarization config if available
+                diarization_config = None
+                if hasattr(self.speech_module, 'SpeakerDiarizationConfig'):
+                    diarization_config = self.speech_module.SpeakerDiarizationConfig(
+                        enable_speaker_diarization=True,
+                        min_speaker_count=2,  # Customer + Agent
+                        max_speaker_count=2
+                    )
+                    logger.info("✅ Speaker diarization config created")
+                else:
+                    logger.warning("⚠️ SpeakerDiarizationConfig not available, skipping diarization")
+                
+                # Create main recognition config with robust field handling
+                config_params = {
+                    "encoding": self.speech_module.RecognitionConfig.AudioEncoding.LINEAR16,
+                    "sample_rate_hertz": self.sample_rate,
+                    "language_code": "en-GB",
+                    "enable_automatic_punctuation": True,
+                    "enable_word_confidence": True,
+                    "max_alternatives": 1
+                }
+                
+                # Add diarization config if available
+                if diarization_config:
+                    config_params["diarization_config"] = diarization_config
+                
+                # Add model if supported (for phone call optimization)
+                if hasattr(self.speech_module.RecognitionConfig, 'model'):
+                    # Try different model field names
+                    try:
+                        config_params["model"] = "phone_call"  # Optimized for telephony
+                        logger.info("✅ Using phone_call model for telephony optimization")
+                    except:
+                        try:
+                            config_params["model"] = "telephony"  # Alternative name
+                            logger.info("✅ Using telephony model")
+                        except:
+                            logger.info("ℹ️ Using default model (phone_call/telephony not available)")
+                
+                config = self.speech_module.RecognitionConfig(**config_params)
+                logger.info("✅ RecognitionConfig created successfully")
+                
+            except Exception as config_error:
+                logger.error(f"❌ Error creating RecognitionConfig: {config_error}")
+                # Fallback to minimal config
+                logger.info("🔄 Falling back to minimal configuration...")
+                config = self.speech_module.RecognitionConfig(
+                    encoding=self.speech_module.RecognitionConfig.AudioEncoding.LINEAR16,
+                    sample_rate_hertz=self.sample_rate,
+                    language_code="en-GB"
+                )
+                logger.info("✅ Minimal RecognitionConfig created as fallback")
             
             streaming_config = self.speech_module.StreamingRecognitionConfig(
                 config=config,
@@ -462,10 +504,18 @@ class AudioProcessorAgent(BaseAgent):
                         if hasattr(alternative, 'words') and alternative.words:
                             # Use the speaker tag from the first word as representative
                             first_word = alternative.words[0]
-                            if hasattr(first_word, 'speaker_tag'):
+                            if hasattr(first_word, 'speaker_tag') and first_word.speaker_tag:
                                 # Map speaker tags to meaningful names
+                                # Usually speaker_tag 1 = first speaker, 2 = second speaker
                                 speaker_tag = first_word.speaker_tag
-                                detected_speaker = "customer" if speaker_tag == 1 else "agent"
+                                if speaker_tag == 1:
+                                    detected_speaker = "customer"  # Assume first speaker is customer
+                                elif speaker_tag == 2:
+                                    detected_speaker = "agent"     # Second speaker is agent
+                                else:
+                                    detected_speaker = f"speaker_{speaker_tag}"  # Multiple speakers
+                                
+                                logger.debug(f"🎤 Detected speaker tag {speaker_tag} -> {detected_speaker}")
                         else:
                             # Fallback to telephony system's speaker detection
                             detected_speaker = self.speaker_states.get(session_id, "customer")
@@ -479,9 +529,9 @@ class AudioProcessorAgent(BaseAgent):
                             first_word = alternative.words[0]
                             last_word = alternative.words[-1]
                             
-                            if hasattr(first_word, 'start_time'):
+                            if hasattr(first_word, 'start_time') and first_word.start_time:
                                 start_time = first_word.start_time.total_seconds()
-                            if hasattr(last_word, 'end_time'):
+                            if hasattr(last_word, 'end_time') and last_word.end_time:
                                 end_time = last_word.end_time.total_seconds()
                         
                         segment_data = {

@@ -1,7 +1,7 @@
-# backend/agents/audio_processor/agent.py - FIXED GOOGLE STT STREAMING
+# backend/agents/audio_processor/agent.py - LIVE TELEPHONY STREAMING
 """
-Audio Processing Agent for Large Files (16MB+) with Real-time Streaming
-FIXED: Proper Google STT streaming implementation with correct speaker diarization
+Audio Processing Agent for LIVE PHONE CALLS
+Real-time streaming recognition for telephony systems with progressive fraud detection
 """
 
 import asyncio
@@ -11,8 +11,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable, AsyncGenerator
 import json
-import math
-from collections import Counter
+import threading
+import queue
+from collections import deque
 
 from ..shared.base_agent import BaseAgent, AgentCapability, agent_registry
 from ...config.settings import get_settings
@@ -20,26 +21,58 @@ from ...utils import get_current_timestamp
 
 logger = logging.getLogger(__name__)
 
+class LiveAudioBuffer:
+    """Thread-safe audio buffer for live streaming"""
+    
+    def __init__(self, chunk_size: int = 1600):  # 100ms at 16kHz
+        self.chunk_size = chunk_size
+        self.buffer = queue.Queue()
+        self.is_active = False
+        
+    def add_audio_chunk(self, audio_data: bytes):
+        """Add audio chunk from telephony system"""
+        if self.is_active:
+            self.buffer.put(audio_data)
+    
+    def get_audio_chunks(self):
+        """Generator for audio chunks"""
+        while self.is_active:
+            try:
+                chunk = self.buffer.get(timeout=0.1)
+                yield chunk
+            except queue.Empty:
+                continue
+    
+    def start(self):
+        self.is_active = True
+        
+    def stop(self):
+        self.is_active = False
+
 class AudioProcessorAgent(BaseAgent):
     """
-    Real-time Audio Chunk Processor for Large Files
-    FIXED: Proper Google STT streaming with speaker diarization
+    Live Audio Processor for Real-time Phone Calls
+    Streams audio from telephony system and provides real-time transcription + fraud detection
     """
     
     def __init__(self):
         super().__init__(
             agent_type="audio_processor",
-            agent_name="Real-time Audio Chunk Processor"
+            agent_name="Live Telephony Audio Processor"
         )
         
         self.active_sessions: Dict[str, Dict] = {}
-        self.processing_tasks: Dict[str, asyncio.Task] = {}
+        self.streaming_tasks: Dict[str, asyncio.Task] = {}
+        self.audio_buffers: Dict[str, LiveAudioBuffer] = {}
         
-        # Real-time processing settings
-        self.chunk_size_bytes = 8 * 1024 * 1024  # 8MB chunks (under 10MB limit)
-        self.real_time_chunk_duration = 2.0  # Send chunks every 2 seconds
+        # Live streaming settings
+        self.chunk_duration_ms = 100  # 100ms chunks
         self.sample_rate = 16000
-        self.bytes_per_second = self.sample_rate * 2  # 16-bit audio = 2 bytes per sample
+        self.channels = 1
+        self.chunk_size = int(self.sample_rate * self.chunk_duration_ms / 1000) * 2  # 16-bit
+        
+        # Speaker tracking
+        self.speaker_states: Dict[str, str] = {}  # session_id -> current_speaker
         
         # Initialize Google STT
         self._initialize_google_stt()
@@ -47,9 +80,8 @@ class AudioProcessorAgent(BaseAgent):
         # Register with global registry
         agent_registry.register_agent(self)
         
-        logger.info(f"🎵 {self.agent_name} ready for large file processing")
-        logger.info(f"📊 Chunk size: {self.chunk_size_bytes / (1024*1024):.1f}MB")
-        logger.info(f"⏱️  Real-time chunk duration: {self.real_time_chunk_duration}s")
+        logger.info(f"📞 {self.agent_name} ready for live calls")
+        logger.info(f"🎙️ Chunk size: {self.chunk_duration_ms}ms ({self.chunk_size} bytes)")
     
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration"""
@@ -57,9 +89,10 @@ class AudioProcessorAgent(BaseAgent):
         
         base_config = {
             **settings.get_agent_config("audio_processor"),
-            "audio_base_path": "data/sample_audio",
-            "processing_delay_ms": 100,  # Faster for real-time
-            "enable_interim_results": True,  # Get partial results
+            "audio_base_path": "data/sample_audio",  # For demo files
+            "enable_interim_results": True,
+            "single_utterance": False,
+            "max_streaming_duration": 300  # 5 minutes max per stream
         }
         
         return base_config
@@ -72,17 +105,17 @@ class AudioProcessorAgent(BaseAgent):
         ]
     
     def _initialize_google_stt(self):
-        """Initialize Google Speech-to-Text streaming"""
+        """Initialize Google Speech-to-Text for streaming"""
         
         try:
-            logger.info("🔄 Initializing Google STT for streaming...")
+            logger.info("🔄 Initializing Google STT for live streaming...")
             from google.cloud import speech_v1p1beta1 as speech
             
             self.google_client = speech.SpeechClient()
             self.speech_module = speech
-            self.transcription_source = "google_stt_streaming_chunks"
+            self.transcription_source = "google_stt_live_streaming"
             
-            logger.info("✅ Google STT streaming client ready!")
+            logger.info("✅ Google STT live streaming client ready!")
                         
         except ImportError as e:
             logger.error(f"❌ Google STT import failed: {e}")
@@ -100,102 +133,114 @@ class AudioProcessorAgent(BaseAgent):
     def process(self, input_data: Any) -> Dict[str, Any]:
         """Main processing method"""
         if isinstance(input_data, dict):
-            file_path = input_data.get('file_path', input_data.get('audio_file_path', ''))
-        else:
-            file_path = str(input_data)
+            action = input_data.get('action', 'status')
+            if action == 'start_live_call':
+                return self._prepare_live_call(input_data)
+            elif action == 'add_audio_chunk':
+                return self._add_audio_chunk(input_data)
         
-        try:
-            if not self.google_client:
-                return {
-                    "error": "Google Speech-to-Text not available",
-                    "agent_id": self.agent_id,
-                    "timestamp": datetime.now().isoformat()
-                }
-            
-            return {
-                "agent_type": self.agent_type,
-                "status": "ready_for_realtime_chunking",
-                "file_path": file_path,
-                "chunk_processing": True,
-                "real_time_simulation": True,
-                "transcription_source": self.transcription_source,
-                "agent_id": self.agent_id,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            self.handle_error(e, "process")
-            return {
-                "error": str(e),
-                "agent_id": self.agent_id,
-                "timestamp": datetime.now().isoformat()
-            }
+        return {
+            "agent_type": self.agent_type,
+            "status": "ready_for_live_calls",
+            "transcription_source": self.transcription_source,
+            "active_calls": len(self.active_sessions),
+            "agent_id": self.agent_id,
+            "timestamp": datetime.now().isoformat()
+        }
     
-    async def start_realtime_processing(
+    def _prepare_live_call(self, data: Dict) -> Dict[str, Any]:
+        """Prepare for a live call"""
+        session_id = data.get('session_id')
+        if not session_id:
+            return {"error": "session_id required"}
+        
+        if session_id in self.active_sessions:
+            return {"error": f"Session {session_id} already active"}
+        
+        # Initialize session
+        self.active_sessions[session_id] = {
+            "start_time": datetime.now(),
+            "status": "ready",
+            "total_audio_received": 0,
+            "transcription_segments": [],
+            "current_speaker": "customer"  # Default
+        }
+        
+        # Initialize audio buffer
+        self.audio_buffers[session_id] = LiveAudioBuffer(self.chunk_size)
+        self.speaker_states[session_id] = "customer"
+        
+        return {
+            "session_id": session_id,
+            "status": "ready_for_live_audio",
+            "chunk_size_bytes": self.chunk_size,
+            "sample_rate": self.sample_rate
+        }
+    
+    def _add_audio_chunk(self, data: Dict) -> Dict[str, Any]:
+        """Add audio chunk from telephony system"""
+        session_id = data.get('session_id')
+        audio_data = data.get('audio_data')  # bytes
+        speaker = data.get('speaker', 'customer')  # customer or agent
+        
+        if not session_id or session_id not in self.active_sessions:
+            return {"error": "Invalid session"}
+        
+        if not audio_data:
+            return {"error": "No audio data"}
+        
+        # Add to buffer
+        self.audio_buffers[session_id].add_audio_chunk(audio_data)
+        
+        # Update session stats
+        session = self.active_sessions[session_id]
+        session["total_audio_received"] += len(audio_data)
+        session["current_speaker"] = speaker
+        self.speaker_states[session_id] = speaker
+        
+        return {
+            "status": "audio_received",
+            "bytes_received": len(audio_data),
+            "total_bytes": session["total_audio_received"]
+        }
+    
+    async def start_live_streaming(
         self, 
-        session_id: str, 
-        audio_filename: str,
+        session_id: str,
         websocket_callback: Callable[[Dict], None]
     ) -> Dict[str, Any]:
-        """Start real-time chunk processing for large audio files"""
+        """Start live streaming recognition for a phone call"""
         
         try:
-            logger.info(f"🎵 STARTING REAL-TIME CHUNK PROCESSING")
-            logger.info(f"🎯 Session: {session_id}, File: {audio_filename}")
+            logger.info(f"📞 STARTING LIVE STREAMING")
+            logger.info(f"🎯 Session: {session_id}")
             
-            # Validate audio file
-            audio_path = Path(self.config["audio_base_path"]) / audio_filename
-            
-            if not audio_path.exists():
-                raise FileNotFoundError(f"Audio file not found: {audio_path}")
-            
-            if session_id in self.active_sessions:
-                raise ValueError(f"Session {session_id} already active")
+            if session_id not in self.active_sessions:
+                raise ValueError(f"Session {session_id} not prepared")
             
             if not self.google_client:
                 raise Exception("Google Speech-to-Text not available")
             
-            # Get audio file info
-            audio_info = await self._get_audio_info(audio_path)
-            file_size_mb = audio_info["size_bytes"] / (1024 * 1024)
+            # Update session status
+            session = self.active_sessions[session_id]
+            session["status"] = "streaming"
+            session["websocket_callback"] = websocket_callback
             
-            logger.info(f"📁 File size: {file_size_mb:.1f}MB")
-            logger.info(f"⏱️  Estimated duration: {audio_info['duration']:.1f}s")
+            # Start audio buffer
+            self.audio_buffers[session_id].start()
             
-            # Calculate chunking strategy
-            chunk_strategy = self._calculate_chunk_strategy(audio_info)
-            logger.info(f"📊 Chunk strategy: {chunk_strategy}")
-            
-            # Initialize session
-            self.active_sessions[session_id] = {
-                "filename": audio_filename,
-                "audio_path": str(audio_path),
-                "audio_info": audio_info,
-                "chunk_strategy": chunk_strategy,
-                "websocket_callback": websocket_callback,
-                "start_time": datetime.now(),
-                "status": "active",
-                "current_position": 0.0,
-                "transcribed_segments": [],
-                "transcription_source": self.transcription_source,
-                "chunks_processed": 0
-            }
-            
-            # Start real-time chunk processing task
-            processing_task = asyncio.create_task(
-                self._process_realtime_chunks(session_id)
+            # Start streaming task
+            streaming_task = asyncio.create_task(
+                self._live_streaming_recognition(session_id)
             )
-            self.processing_tasks[session_id] = processing_task
+            self.streaming_tasks[session_id] = streaming_task
             
-            # Send initial confirmation
+            # Send confirmation
             await websocket_callback({
-                "type": "realtime_chunk_processing_started",
+                "type": "live_streaming_started",
                 "data": {
                     "session_id": session_id,
-                    "filename": audio_filename,
-                    "audio_info": audio_info,
-                    "chunk_strategy": chunk_strategy,
-                    "processing_mode": "realtime_chunks",
+                    "processing_mode": "live_telephony_streaming",
                     "transcription_engine": self.transcription_source,
                     "timestamp": get_current_timestamp()
                 }
@@ -203,387 +248,286 @@ class AudioProcessorAgent(BaseAgent):
             
             return {
                 "session_id": session_id,
-                "status": "started",
-                "processing_mode": "realtime_chunks",
-                "file_size_mb": file_size_mb,
-                "expected_chunks": chunk_strategy["total_chunks"],
-                "chunk_duration": chunk_strategy["chunk_duration_seconds"]
+                "status": "streaming",
+                "processing_mode": "live_telephony_streaming"
             }
             
         except Exception as e:
-            logger.error(f"❌ Error starting real-time processing: {e}")
+            logger.error(f"❌ Error starting live streaming: {e}")
             return {"error": str(e)}
     
-    def _calculate_chunk_strategy(self, audio_info: Dict) -> Dict[str, Any]:
-        """Calculate optimal chunking strategy for real-time processing"""
-        
-        file_size_bytes = audio_info["size_bytes"]
-        duration_seconds = audio_info["duration"]
-        
-        # Calculate how many chunks we need to stay under 8MB per chunk
-        min_chunks_for_size = math.ceil(file_size_bytes / self.chunk_size_bytes)
-        
-        # Calculate how many chunks for real-time processing (every 2 seconds)
-        chunks_for_realtime = math.ceil(duration_seconds / self.real_time_chunk_duration)
-        
-        # Use the larger number to ensure both constraints are met
-        total_chunks = max(min_chunks_for_size, chunks_for_realtime, 1)
-        
-        # Calculate actual chunk size and timing
-        chunk_size_bytes = math.ceil(file_size_bytes / total_chunks)
-        chunk_duration_seconds = duration_seconds / total_chunks
-        
-        return {
-            "total_chunks": total_chunks,
-            "chunk_size_bytes": chunk_size_bytes,
-            "chunk_size_mb": chunk_size_bytes / (1024 * 1024),
-            "chunk_duration_seconds": chunk_duration_seconds,
-            "file_size_mb": file_size_bytes / (1024 * 1024),
-            "total_duration": duration_seconds,
-            "real_time_simulation": True
-        }
-    
-    async def _process_realtime_chunks(self, session_id: str) -> None:
-        """Process audio file in real-time chunks using Google STT streaming"""
+    async def _live_streaming_recognition(self, session_id: str) -> None:
+        """Perform live streaming recognition with Google STT"""
         
         session = self.active_sessions[session_id]
         websocket_callback = session["websocket_callback"]
-        audio_path = Path(session["audio_path"])
-        chunk_strategy = session["chunk_strategy"]
+        audio_buffer = self.audio_buffers[session_id]
         
         try:
-            logger.info(f"🔄 Starting real-time chunk processing for {session_id}")
+            logger.info(f"🎙️ Starting live streaming recognition for {session_id}")
             
-            # Read the entire audio file
-            with open(audio_path, 'rb') as audio_file:
-                audio_content = audio_file.read()
+            # Configure streaming recognition
+            config = self.speech_module.RecognitionConfig(
+                encoding=self.speech_module.RecognitionConfig.AudioEncoding.LINEAR16,
+                sample_rate_hertz=self.sample_rate,
+                language_code="en-GB",
+                enable_automatic_punctuation=True,
+                enable_word_confidence=True,
+                max_alternatives=1,
+                # Note: Speaker diarization is not effective for real-time streaming
+                # We'll use telephony system's speaker detection instead
+            )
             
-            logger.info(f"📖 Read {len(audio_content)} bytes from {audio_path.name}")
+            streaming_config = self.speech_module.StreamingRecognitionConfig(
+                config=config,
+                interim_results=True,  # Get interim results for real-time feedback
+                single_utterance=False  # Continuous conversation
+            )
             
-            # Create audio chunks
-            chunks = self._create_audio_chunks(audio_content, chunk_strategy)
-            logger.info(f"📦 Created {len(chunks)} chunks")
+            # Create streaming request generator
+            def request_generator():
+                # First request with config
+                yield self.speech_module.StreamingRecognizeRequest(
+                    streaming_config=streaming_config
+                )
+                
+                # Then stream audio chunks
+                for audio_chunk in audio_buffer.get_audio_chunks():
+                    yield self.speech_module.StreamingRecognizeRequest(
+                        audio_content=audio_chunk
+                    )
             
-            # Process chunks in real-time simulation
-            start_time = time.time()
-            current_audio_time = 0.0
+            # Start streaming recognition
+            responses = self.google_client.streaming_recognize(requests=request_generator())
             
-            for chunk_index, (chunk_data, chunk_start_time, chunk_duration) in enumerate(chunks):
+            # Process streaming responses
+            async for response in self._async_response_iterator(responses):
                 if session_id not in self.active_sessions:
                     break
                 
-                # Wait for real-time timing (simulate audio playback)
-                target_time = start_time + chunk_start_time
-                current_time = time.time()
-                
-                if current_time < target_time:
-                    wait_time = target_time - current_time
-                    logger.debug(f"⏳ Waiting {wait_time:.2f}s for chunk {chunk_index}")
-                    await asyncio.sleep(wait_time)
-                
-                # Process chunk with Google STT streaming
-                logger.info(f"🎯 Processing chunk {chunk_index + 1}/{len(chunks)} at {chunk_start_time:.1f}s")
-                
-                # Send chunk processing notification
-                await websocket_callback({
-                    "type": "chunk_processing_started",
-                    "data": {
-                        "session_id": session_id,
-                        "chunk_index": chunk_index,
-                        "chunk_start_time": chunk_start_time,
-                        "chunk_duration": chunk_duration,
-                        "chunk_size_mb": len(chunk_data) / (1024 * 1024),
-                        "timestamp": get_current_timestamp()
-                    }
-                })
-                
-                # Process chunk through Google STT
-                try:
-                    chunk_results = await self._process_chunk_with_stt_fixed(
-                        chunk_data, chunk_index, chunk_start_time, chunk_duration
-                    )
+                await self._process_streaming_response(session_id, response, websocket_callback)
+            
+        except asyncio.CancelledError:
+            logger.info(f"🛑 Live streaming cancelled for {session_id}")
+        except Exception as e:
+            logger.error(f"❌ Error in live streaming: {e}")
+            await websocket_callback({
+                "type": "streaming_error",
+                "data": {
+                    "session_id": session_id,
+                    "error": str(e),
+                    "timestamp": get_current_timestamp()
+                }
+            })
+        finally:
+            # Cleanup
+            if session_id in self.audio_buffers:
+                self.audio_buffers[session_id].stop()
+    
+    async def _async_response_iterator(self, responses):
+        """Convert synchronous response iterator to async"""
+        loop = asyncio.get_event_loop()
+        
+        def get_next_response():
+            try:
+                return next(responses)
+            except StopIteration:
+                return None
+        
+        while True:
+            response = await loop.run_in_executor(None, get_next_response)
+            if response is None:
+                break
+            yield response
+    
+    async def _process_streaming_response(
+        self, 
+        session_id: str, 
+        response, 
+        websocket_callback: Callable
+    ) -> None:
+        """Process individual streaming response"""
+        
+        try:
+            if response.error:
+                logger.error(f"❌ Streaming error: {response.error}")
+                return
+            
+            for result in response.results:
+                if result.alternatives:
+                    alternative = result.alternatives[0]
+                    transcript = alternative.transcript.strip()
                     
-                    # Send each transcription segment
-                    for segment in chunk_results:
+                    if transcript:
+                        # Get current speaker from telephony system
+                        current_speaker = self.speaker_states.get(session_id, "customer")
+                        
+                        # Create segment data
                         segment_data = {
                             "session_id": session_id,
-                            "speaker": segment["speaker"],
-                            "start": chunk_start_time + segment["relative_start"],
-                            "end": chunk_start_time + segment["relative_end"],
-                            "duration": segment["duration"],
-                            "text": segment["text"],
-                            "confidence": segment["confidence"],
-                            "chunk_index": chunk_index,
-                            "processing_mode": "realtime_chunks",
+                            "speaker": current_speaker,
+                            "text": transcript,
+                            "confidence": alternative.confidence,
+                            "is_final": result.is_final,
+                            "processing_mode": "live_streaming",
                             "transcription_source": self.transcription_source,
                             "timestamp": get_current_timestamp()
                         }
                         
-                        session["transcribed_segments"].append(segment_data)
-                        
+                        # Send segment (both interim and final)
                         await websocket_callback({
-                            "type": "transcription_segment",
+                            "type": "live_transcription_segment",
                             "data": segment_data
                         })
                         
-                        logger.info(f"📤 Sent segment: {segment['speaker']} - '{segment['text'][:50]}...'")
-                
-                except Exception as chunk_error:
-                    logger.error(f"❌ Error processing chunk {chunk_index}: {chunk_error}")
-                    await websocket_callback({
-                        "type": "chunk_error",
-                        "data": {
-                            "session_id": session_id,
-                            "chunk_index": chunk_index,
-                            "error": str(chunk_error),
-                            "timestamp": get_current_timestamp()
-                        }
-                    })
-                
-                session["chunks_processed"] += 1
-                current_audio_time = chunk_start_time + chunk_duration
-                
-                # Small delay between chunks for processing
-                await asyncio.sleep(0.1)
-            
-            # Send completion
-            await websocket_callback({
-                "type": "realtime_processing_complete",
-                "data": {
-                    "session_id": session_id,
-                    "total_chunks_processed": session["chunks_processed"],
-                    "total_segments": len(session["transcribed_segments"]),
-                    "total_duration": current_audio_time,
-                    "processing_mode": "realtime_chunks",
-                    "timestamp": get_current_timestamp()
-                }
-            })
-            
-            logger.info(f"✅ Real-time chunk processing completed for {session_id}")
-            
-        except asyncio.CancelledError:
-            logger.info(f"🛑 Real-time processing cancelled for {session_id}")
+                        # If final, trigger fraud analysis for customer speech
+                        if result.is_final and current_speaker == "customer":
+                            await self._trigger_progressive_fraud_analysis(
+                                session_id, transcript, websocket_callback
+                            )
+                        
+                        # Log the segment
+                        status = "FINAL" if result.is_final else "interim"
+                        logger.info(f"📝 {status}: {current_speaker} - '{transcript[:50]}...'")
+        
         except Exception as e:
-            logger.error(f"❌ Error in real-time chunk processing: {e}")
-            await websocket_callback({
-                "type": "error",
-                "data": {
-                    "session_id": session_id,
-                    "error": str(e),
-                    "processing_mode": "realtime_chunks",
-                    "timestamp": get_current_timestamp()
-                }
-            })
+            logger.error(f"❌ Error processing streaming response: {e}")
     
-    def _create_audio_chunks(self, audio_content: bytes, chunk_strategy: Dict) -> List[tuple]:
-        """Create audio chunks with timing information"""
-        
-        total_chunks = chunk_strategy["total_chunks"]
-        chunk_size_bytes = chunk_strategy["chunk_size_bytes"]
-        chunk_duration = chunk_strategy["chunk_duration_seconds"]
-        
-        chunks = []
-        
-        for i in range(total_chunks):
-            start_byte = i * chunk_size_bytes
-            end_byte = min((i + 1) * chunk_size_bytes, len(audio_content))
-            
-            chunk_data = audio_content[start_byte:end_byte]
-            chunk_start_time = i * chunk_duration
-            
-            chunks.append((chunk_data, chunk_start_time, chunk_duration))
-            
-            logger.debug(f"📦 Chunk {i}: {len(chunk_data)} bytes, {chunk_start_time:.1f}s")
-        
-        return chunks
-    
-    async def _process_chunk_with_stt_fixed(
+    async def _trigger_progressive_fraud_analysis(
         self, 
-        chunk_data: bytes, 
-        chunk_index: int, 
-        chunk_start_time: float, 
-        chunk_duration: float
-    ) -> List[Dict]:
-        """
-        FIXED: Process a single chunk with Google STT using proper speaker diarization config
-        """
+        session_id: str, 
+        customer_text: str, 
+        websocket_callback: Callable
+    ) -> None:
+        """Trigger progressive fraud analysis as customer speaks"""
         
         try:
-            logger.debug(f"🎯 STT processing chunk {chunk_index}: {len(chunk_data)} bytes")
+            # Add to session's customer speech history
+            session = self.active_sessions[session_id]
+            if "customer_speech_history" not in session:
+                session["customer_speech_history"] = []
             
-            # FIXED: Proper SpeakerDiarizationConfig setup
-            diarization_config = self.speech_module.SpeakerDiarizationConfig(
-                enable_speaker_diarization=True,
-                min_speaker_count=2,
-                max_speaker_count=2  # Phone call typically has 2 speakers
-            )
+            session["customer_speech_history"].append(customer_text)
             
-            # FIXED: Proper RecognitionConfig with diarization_config parameter
-            config = self.speech_module.RecognitionConfig(
-                encoding=self.speech_module.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=16000,
-                language_code="en-GB",
-                enable_automatic_punctuation=True,
-                enable_word_confidence=True,
-                enable_word_time_offsets=True,  # Get word-level timing
-                max_alternatives=1,
-                diarization_config=diarization_config  # Proper way to set speaker diarization
-            )
+            # Combine recent customer speech for analysis
+            recent_speech = " ".join(session["customer_speech_history"][-5:])  # Last 5 segments
             
-            # Try streaming recognition first (better for real-time), fallback to standard
-            try:
-                # Create streaming config with proper diarization
-                streaming_config = self.speech_module.StreamingRecognitionConfig(
-                    config=config,
-                    interim_results=False,  # Only final results for chunks
-                    single_utterance=False
-                )
+            if len(recent_speech.strip()) >= 20:  # Minimum text for analysis
+                # Send to fraud detection system
+                await websocket_callback({
+                    "type": "progressive_fraud_analysis_trigger",
+                    "data": {
+                        "session_id": session_id,
+                        "customer_text": recent_speech,
+                        "text_length": len(recent_speech),
+                        "segments_analyzed": len(session["customer_speech_history"]),
+                        "timestamp": get_current_timestamp()
+                    }
+                })
                 
-                # FIXED: Proper request generator with named requests parameter
-                def request_generator():
-                    # First request with config
-                    yield self.speech_module.StreamingRecognizeRequest(
-                        streaming_config=streaming_config
-                    )
-                    
-                    # Break chunk into smaller streaming pieces (4KB each)
-                    stream_chunk_size = 4096
-                    for i in range(0, len(chunk_data), stream_chunk_size):
-                        stream_chunk = chunk_data[i:i + stream_chunk_size]
-                        yield self.speech_module.StreamingRecognizeRequest(
-                            audio_content=stream_chunk
-                        )
-                
-                # FIXED: Call with proper requests parameter
-                responses = self.google_client.streaming_recognize(requests=request_generator())
-                
-                # Process streaming responses
-                streaming_segments = []
-                for response in responses:
-                    if response.error:
-                        logger.warning(f"⚠️ STT streaming error in chunk {chunk_index}: {response.error}")
-                        raise Exception(f"Streaming error: {response.error}")
-                    
-                    for result in response.results:
-                        if result.is_final and result.alternatives:
-                            alternative = result.alternatives[0]
-                            transcript = alternative.transcript.strip()
-                            
-                            if transcript:
-                                streaming_segments.append((result, alternative, transcript))
-                
-                # If streaming worked, process the segments
-                if streaming_segments:
-                    logger.debug(f"✅ Streaming STT success for chunk {chunk_index}")
-                    response_results = streaming_segments
-                else:
-                    # No results from streaming, try standard recognition
-                    raise Exception("No streaming results")
-                    
-            except Exception as streaming_error:
-                logger.debug(f"🔄 Streaming failed for chunk {chunk_index}: {streaming_error}, trying standard recognition")
-                
-                # Fallback to standard recognition
-                audio = self.speech_module.RecognitionAudio(content=chunk_data)
-                response = self.google_client.recognize(config=config, audio=audio)
-                
-                # Convert standard response to same format
-                response_results = []
-                for result in response.results:
-                    if result.alternatives:
-                        alternative = result.alternatives[0]
-                        transcript = alternative.transcript.strip()
-                        if transcript:
-                            response_results.append((result, alternative, transcript))
-            
-            segments = []
-            
-            # Process results (works for both streaming and standard recognition)
-            for result, alternative, transcript in response_results:
-                # Determine speaker from diarization
-                speaker = "customer"  # Default
-                
-                # The speaker information is in the word-level results
-                if hasattr(alternative, 'words') and alternative.words:
-                    # Get speaker tags from word-level results
-                    speaker_tags = []
-                    for word in alternative.words:
-                        if hasattr(word, 'speaker_tag'):
-                            speaker_tags.append(word.speaker_tag)
-                    
-                    if speaker_tags:
-                        # Use most common speaker tag
-                        most_common_speaker = Counter(speaker_tags).most_common(1)[0][0]
-                        # Speaker tag 1 = first speaker (customer), tag 2 = second speaker (agent)
-                        speaker = "customer" if most_common_speaker == 1 else "agent"
-                        logger.debug(f"🎯 Chunk {chunk_index}: Speaker tags {set(speaker_tags)} -> {speaker}")
-                else:
-                    # Fallback: alternate speakers by chunk index
-                    speaker = "customer" if chunk_index % 2 == 0 else "agent"
-                    logger.debug(f"🎯 Chunk {chunk_index}: No speaker tags, using fallback -> {speaker}")
-                
-                segment = {
-                    "speaker": speaker,
-                    "relative_start": 0.0,  # Relative to chunk start
-                    "relative_end": chunk_duration,
-                    "duration": chunk_duration,
-                    "text": transcript,
-                    "confidence": alternative.confidence,
-                    "chunk_index": chunk_index
-                }
-                
-                segments.append(segment)
-                logger.info(f"📝 Chunk {chunk_index}: {speaker} - '{transcript[:50]}...' (conf: {alternative.confidence:.2f})")
-            
-            return segments
-            
+                logger.info(f"🔍 Triggered fraud analysis: {len(recent_speech)} chars")
+        
         except Exception as e:
-            logger.error(f"❌ STT processing failed for chunk {chunk_index}: {e}")
-            # Don't use any fallback - let it fail cleanly
-            return []
+            logger.error(f"❌ Error triggering fraud analysis: {e}")
     
-    async def _get_audio_info(self, audio_path: Path) -> Dict[str, Any]:
-        """Get audio file information"""
+    # Demo method for file simulation (temporary)
+    async def start_realtime_processing(
+        self, 
+        session_id: str, 
+        audio_filename: str,
+        websocket_callback: Callable[[Dict], None]
+    ) -> Dict[str, Any]:
+        """Demo method: simulate live call from audio file"""
+        
         try:
-            file_size = audio_path.stat().st_size
+            logger.info(f"🎭 DEMO: Simulating live call from file")
+            logger.info(f"🎯 Session: {session_id}, File: {audio_filename}")
             
-            # Estimate duration based on file size and sample rate
-            # For 16-bit mono audio at 16kHz: bytes_per_second = 16000 * 2 = 32000
-            estimated_duration = file_size / self.bytes_per_second
+            # Prepare session for demo
+            self._prepare_live_call({"session_id": session_id})
+            
+            # Start demo streaming simulation
+            demo_task = asyncio.create_task(
+                self._simulate_live_call_from_file(session_id, audio_filename, websocket_callback)
+            )
+            self.streaming_tasks[session_id] = demo_task
             
             return {
-                "filename": audio_path.name,
-                "duration": estimated_duration,
-                "sample_rate": self.sample_rate,
-                "channels": 1,
-                "format": "wav",
-                "size_bytes": file_size,
-                "transcription_engine": self.transcription_source
+                "session_id": session_id,
+                "status": "demo_simulation_started",
+                "processing_mode": "demo_live_call_simulation"
             }
             
         except Exception as e:
-            logger.error(f"❌ Error getting audio info: {e}")
-            return {
-                "filename": audio_path.name,
-                "duration": 30.0,  # Default
-                "sample_rate": 16000,
-                "channels": 1,
-                "format": "wav",
-                "size_bytes": 0,
-                "transcription_engine": self.transcription_source,
-                "error": str(e)
-            }
+            logger.error(f"❌ Error starting demo: {e}")
+            return {"error": str(e)}
     
-    async def stop_realtime_processing(self, session_id: str) -> Dict[str, Any]:
-        """Stop real-time processing"""
+    async def _simulate_live_call_from_file(
+        self, 
+        session_id: str, 
+        audio_filename: str, 
+        websocket_callback: Callable
+    ) -> None:
+        """Demo: Simulate live call by streaming audio file in chunks"""
+        
+        try:
+            # Read audio file
+            audio_path = Path(self.config["audio_base_path"]) / audio_filename
+            with open(audio_path, 'rb') as f:
+                audio_content = f.read()
+            
+            # Skip WAV header (44 bytes)
+            audio_data = audio_content[44:] if len(audio_content) > 44 else audio_content
+            
+            # Start live streaming
+            await self.start_live_streaming(session_id, websocket_callback)
+            
+            # Simulate streaming chunks
+            current_speaker = "customer"
+            chunk_count = 0
+            
+            for i in range(0, len(audio_data), self.chunk_size):
+                if session_id not in self.active_sessions:
+                    break
+                
+                chunk = audio_data[i:i + self.chunk_size]
+                
+                # Alternate speaker every few chunks (demo)
+                if chunk_count % 10 == 0 and chunk_count > 0:
+                    current_speaker = "agent" if current_speaker == "customer" else "customer"
+                
+                # Add chunk to buffer
+                self._add_audio_chunk({
+                    "session_id": session_id,
+                    "audio_data": chunk,
+                    "speaker": current_speaker
+                })
+                
+                chunk_count += 1
+                
+                # Wait for real-time simulation
+                await asyncio.sleep(self.chunk_duration_ms / 1000.0)
+            
+            logger.info(f"🎭 Demo simulation completed: {chunk_count} chunks")
+            
+        except Exception as e:
+            logger.error(f"❌ Demo simulation error: {e}")
+    
+    async def stop_live_streaming(self, session_id: str) -> Dict[str, Any]:
+        """Stop live streaming for a session"""
         try:
             if session_id not in self.active_sessions:
                 return {"error": "Session not found"}
             
-            # Cancel processing task
-            if session_id in self.processing_tasks:
-                self.processing_tasks[session_id].cancel()
-                del self.processing_tasks[session_id]
+            # Stop audio buffer
+            if session_id in self.audio_buffers:
+                self.audio_buffers[session_id].stop()
+                del self.audio_buffers[session_id]
+            
+            # Cancel streaming task
+            if session_id in self.streaming_tasks:
+                self.streaming_tasks[session_id].cancel()
+                del self.streaming_tasks[session_id]
             
             # Get session info
             session = self.active_sessions[session_id]
@@ -591,31 +535,38 @@ class AudioProcessorAgent(BaseAgent):
             
             # Cleanup
             del self.active_sessions[session_id]
+            if session_id in self.speaker_states:
+                del self.speaker_states[session_id]
             
-            logger.info(f"🛑 Stopped real-time processing for {session_id}")
+            logger.info(f"🛑 Stopped live streaming for {session_id}")
             
             return {
                 "session_id": session_id,
                 "status": "stopped",
                 "duration": duration,
-                "chunks_processed": session.get("chunks_processed", 0),
-                "segments_transcribed": len(session.get("transcribed_segments", [])),
-                "processing_mode": "realtime_chunks"
+                "processing_mode": "live_telephony_streaming"
             }
             
         except Exception as e:
             logger.error(f"❌ Error stopping session: {e}")
             return {"error": str(e)}
     
+    # Alias for compatibility
+    async def stop_realtime_processing(self, session_id: str) -> Dict[str, Any]:
+        """Alias for stop_live_streaming"""
+        return await self.stop_live_streaming(session_id)
+    
     def get_all_sessions_status(self) -> Dict[str, Any]:
-        """Get status of all sessions"""
+        """Get status of all live sessions"""
         return {
             "active_sessions": len(self.active_sessions),
-            "processing_tasks": len(self.processing_tasks),
+            "streaming_tasks": len(self.streaming_tasks),
+            "audio_buffers": len(self.audio_buffers),
             "transcription_source": self.transcription_source,
-            "chunk_size_mb": self.chunk_size_bytes / (1024 * 1024),
-            "realtime_chunk_duration": self.real_time_chunk_duration,
-            "google_client_available": self.google_client is not None
+            "processing_mode": "live_telephony_streaming",
+            "google_client_available": self.google_client is not None,
+            "chunk_duration_ms": self.chunk_duration_ms,
+            "sample_rate": self.sample_rate
         }
 
 # Create global instance

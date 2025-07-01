@@ -196,15 +196,19 @@ class AudioProcessorAgent(BaseAgent):
             "current_speaker": "customer"  # Default
         }
         
-        # Initialize audio buffer
+        # Initialize audio buffer AND start it immediately
         self.audio_buffers[session_id] = LiveAudioBuffer(self.chunk_size)
+        self.audio_buffers[session_id].start()  # Start buffer immediately
         self.speaker_states[session_id] = "customer"
+        
+        logger.info(f"✅ Session {session_id} prepared with active audio buffer")
         
         return {
             "session_id": session_id,
             "status": "ready_for_live_audio",
             "chunk_size_bytes": self.chunk_size,
-            "sample_rate": self.sample_rate
+            "sample_rate": self.sample_rate,
+            "audio_buffer_active": True
         }
     
     def _add_audio_chunk(self, data: Dict) -> Dict[str, Any]:
@@ -239,7 +243,7 @@ class AudioProcessorAgent(BaseAgent):
         session_id: str,
         websocket_callback: Callable[[Dict], None]
     ) -> Dict[str, Any]:
-        """Start live streaming recognition for a phone call"""
+        """Start live streaming recognition for a phone call - ONLY after buffer is ready"""
         
         try:
             logger.info(f"📞 STARTING LIVE STREAMING")
@@ -251,14 +255,26 @@ class AudioProcessorAgent(BaseAgent):
             if not self.google_client:
                 raise Exception("Google Speech-to-Text not available")
             
+            # CRITICAL: Ensure audio buffer has data before starting streaming
+            audio_buffer = self.audio_buffers[session_id]
+            
+            # Wait for audio buffer to have at least some data
+            logger.info("⏳ Waiting for audio buffer to have data...")
+            wait_count = 0
+            while audio_buffer.buffer.empty() and wait_count < 100:  # Wait up to 10 seconds
+                await asyncio.sleep(0.1)
+                wait_count += 1
+            
+            if audio_buffer.buffer.empty():
+                raise Exception("Audio buffer is empty - no audio data available for streaming")
+            
+            buffer_size = audio_buffer.buffer.qsize()
+            logger.info(f"✅ Audio buffer ready with {buffer_size} chunks")
+            
             # Update session status
             session = self.active_sessions[session_id]
             session["status"] = "streaming"
             session["websocket_callback"] = websocket_callback
-            
-            # IMPORTANT: Start audio buffer BEFORE creating request generator
-            self.audio_buffers[session_id].start()
-            logger.info("✅ Audio buffer started and ready")
             
             # Start streaming task
             streaming_task = asyncio.create_task(
@@ -273,6 +289,7 @@ class AudioProcessorAgent(BaseAgent):
                     "session_id": session_id,
                     "processing_mode": "live_telephony_streaming",
                     "transcription_engine": self.transcription_source,
+                    "audio_buffer_size": buffer_size,
                     "timestamp": get_current_timestamp()
                 }
             })
@@ -280,7 +297,8 @@ class AudioProcessorAgent(BaseAgent):
             return {
                 "session_id": session_id,
                 "status": "streaming",
-                "processing_mode": "live_telephony_streaming"
+                "processing_mode": "live_telephony_streaming",
+                "audio_buffer_size": buffer_size
             }
             
         except Exception as e:

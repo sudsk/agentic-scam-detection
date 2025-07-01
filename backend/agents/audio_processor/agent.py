@@ -1,6 +1,7 @@
-# backend/agents/audio_processor/agent.py - LIVE TELEPHONY STREAMING
+# backend/agents/audio_processor/agent.py - FIXED GOOGLE STT STREAMING
 """
 Audio Processing Agent for LIVE PHONE CALLS
+FIXED: Correct Google Speech-to-Text streaming API usage
 Real-time streaming recognition for telephony systems with progressive fraud detection
 """
 
@@ -52,7 +53,7 @@ class LiveAudioBuffer:
 class AudioProcessorAgent(BaseAgent):
     """
     Live Audio Processor for Real-time Phone Calls
-    Streams audio from telephony system and provides real-time transcription + fraud detection
+    FIXED: Uses correct Google Speech-to-Text streaming API
     """
     
     def __init__(self):
@@ -257,7 +258,9 @@ class AudioProcessorAgent(BaseAgent):
             return {"error": str(e)}
     
     async def _live_streaming_recognition(self, session_id: str) -> None:
-        """Perform live streaming recognition with Google STT"""
+        """
+        FIXED: Perform live streaming recognition with correct Google STT API usage
+        """
         
         session = self.active_sessions[session_id]
         websocket_callback = session["websocket_callback"]
@@ -265,10 +268,8 @@ class AudioProcessorAgent(BaseAgent):
         
         try:
             logger.info(f"🎙️ Starting live streaming recognition for {session_id}")
-            logger.info(f"🔧 Google STT client type: {type(self.google_client)}")
-            logger.info(f"🔧 Speech module: {self.speech_module}")
             
-            # Configure streaming recognition
+            # FIXED: Configure streaming recognition correctly
             config = self.speech_module.RecognitionConfig(
                 encoding=self.speech_module.RecognitionConfig.AudioEncoding.LINEAR16,
                 sample_rate_hertz=self.sample_rate,
@@ -276,8 +277,10 @@ class AudioProcessorAgent(BaseAgent):
                 enable_automatic_punctuation=True,
                 enable_word_confidence=True,
                 max_alternatives=1,
-                # Note: Speaker diarization is not effective for real-time streaming
-                # We'll use telephony system's speaker detection instead
+                # Enable speaker diarization for call center scenarios
+                enable_speaker_diarization=True,
+                diarization_speaker_count=2,  # Customer + Agent
+                model="telephony"  # Optimized for phone calls
             )
             
             streaming_config = self.speech_module.StreamingRecognitionConfig(
@@ -288,15 +291,16 @@ class AudioProcessorAgent(BaseAgent):
             
             logger.info(f"✅ Streaming config created successfully")
             
-            # Create streaming request generator
+            # FIXED: Create streaming request generator correctly
             def request_generator():
-                logger.info("🔄 Generating config request...")
-                # First request with config
-                config_request = self.speech_module.StreamingRecognizeRequest(
+                logger.info("🔄 Generating initial streaming request...")
+                
+                # FIXED: First request must contain streaming_config only
+                initial_request = self.speech_module.StreamingRecognizeRequest(
                     streaming_config=streaming_config
                 )
-                yield config_request
-                logger.info("✅ Config request yielded")
+                yield initial_request
+                logger.info("✅ Initial config request sent")
                 
                 # Then stream audio chunks
                 chunk_count = 0
@@ -305,6 +309,7 @@ class AudioProcessorAgent(BaseAgent):
                     if chunk_count % 10 == 0:
                         logger.debug(f"🎵 Streaming chunk {chunk_count}")
                     
+                    # FIXED: Subsequent requests contain only audio_content
                     audio_request = self.speech_module.StreamingRecognizeRequest(
                         audio_content=audio_chunk
                     )
@@ -312,24 +317,12 @@ class AudioProcessorAgent(BaseAgent):
                 
                 logger.info(f"🏁 Request generator finished after {chunk_count} chunks")
             
-            logger.info("🚀 Starting streaming recognition...")
+            logger.info("🚀 Starting streaming recognition with FIXED method...")
             
-            # Start streaming recognition - try different parameter formats
-            try:
-                # Method 1: requests parameter (v1p1beta1)
-                logger.info("🔧 Trying streaming_recognize with requests parameter...")
-                responses = self.google_client.streaming_recognize(requests=request_generator())
-                logger.info("✅ Streaming started successfully with requests parameter")
-            except TypeError as e:
-                logger.warning(f"⚠️ Method 1 failed ({e}), trying method 2...")
-                try:
-                    # Method 2: Direct generator (some versions)
-                    logger.info("🔧 Trying streaming_recognize with direct generator...")
-                    responses = self.google_client.streaming_recognize(request_generator())
-                    logger.info("✅ Streaming started successfully with direct generator")
-                except Exception as e2:
-                    logger.error(f"❌ Both streaming methods failed: {e}, {e2}")
-                    raise Exception(f"Streaming recognition failed: {e}, {e2}")
+            # FIXED: Use the correct streaming_recognize method signature
+            # The method expects an iterator of StreamingRecognizeRequest objects
+            responses = self.google_client.streaming_recognize(request_generator())
+            logger.info("✅ Streaming recognition started successfully")
             
             # Process streaming responses
             response_count = 0
@@ -351,14 +344,9 @@ class AudioProcessorAgent(BaseAgent):
             logger.error(f"🔧 Error type: {type(e)}")
             logger.error(f"🔧 Error args: {e.args}")
             
-            # Try to provide helpful debugging info
-            if "missing" in str(e) and "argument" in str(e):
-                logger.error("💡 This looks like a method signature issue. Checking Google STT client methods...")
-                try:
-                    client_methods = [method for method in dir(self.google_client) if 'streaming' in method.lower()]
-                    logger.error(f"🔍 Available streaming methods: {client_methods}")
-                except:
-                    pass
+            # More detailed error information
+            import traceback
+            logger.error(f"🔧 Full traceback: {traceback.format_exc()}")
             
             await websocket_callback({
                 "type": "streaming_error",
@@ -380,7 +368,7 @@ class AudioProcessorAgent(BaseAgent):
             for response in responses:
                 yield response
                 # Small delay to prevent blocking
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.001)  # Very small delay
         except Exception as e:
             logger.error(f"❌ Error in response iterator: {e}")
             raise
@@ -404,16 +392,44 @@ class AudioProcessorAgent(BaseAgent):
                     transcript = alternative.transcript.strip()
                     
                     if transcript:
-                        # Get current speaker from telephony system
-                        current_speaker = self.speaker_states.get(session_id, "customer")
+                        # IMPROVED: Use Google's speaker diarization if available
+                        detected_speaker = "customer"  # Default
                         
-                        # Create segment data
+                        # Check if speaker diarization data is available
+                        if hasattr(alternative, 'words') and alternative.words:
+                            # Use the speaker tag from the first word as representative
+                            first_word = alternative.words[0]
+                            if hasattr(first_word, 'speaker_tag'):
+                                # Map speaker tags to meaningful names
+                                speaker_tag = first_word.speaker_tag
+                                detected_speaker = "customer" if speaker_tag == 1 else "agent"
+                        else:
+                            # Fallback to telephony system's speaker detection
+                            detected_speaker = self.speaker_states.get(session_id, "customer")
+                        
+                        # Create segment data with improved timing
+                        start_time = 0.0
+                        end_time = 0.0
+                        
+                        if hasattr(alternative, 'words') and alternative.words:
+                            # Get timing from word-level timestamps
+                            first_word = alternative.words[0]
+                            last_word = alternative.words[-1]
+                            
+                            if hasattr(first_word, 'start_time'):
+                                start_time = first_word.start_time.total_seconds()
+                            if hasattr(last_word, 'end_time'):
+                                end_time = last_word.end_time.total_seconds()
+                        
                         segment_data = {
                             "session_id": session_id,
-                            "speaker": current_speaker,
+                            "speaker": detected_speaker,
                             "text": transcript,
                             "confidence": alternative.confidence,
                             "is_final": result.is_final,
+                            "start": start_time,
+                            "end": end_time,
+                            "duration": end_time - start_time,
                             "processing_mode": "live_streaming",
                             "transcription_source": self.transcription_source,
                             "timestamp": get_current_timestamp()
@@ -421,19 +437,19 @@ class AudioProcessorAgent(BaseAgent):
                         
                         # Send segment (both interim and final)
                         await websocket_callback({
-                            "type": "live_transcription_segment",
+                            "type": "transcription_segment",
                             "data": segment_data
                         })
                         
                         # If final, trigger fraud analysis for customer speech
-                        if result.is_final and current_speaker == "customer":
+                        if result.is_final and detected_speaker == "customer":
                             await self._trigger_progressive_fraud_analysis(
                                 session_id, transcript, websocket_callback
                             )
                         
                         # Log the segment
                         status = "FINAL" if result.is_final else "interim"
-                        logger.info(f"📝 {status}: {current_speaker} - '{transcript[:50]}...'")
+                        logger.info(f"📝 {status}: {detected_speaker} - '{transcript[:50]}...'")
         
         except Exception as e:
             logger.error(f"❌ Error processing streaming response: {e}")

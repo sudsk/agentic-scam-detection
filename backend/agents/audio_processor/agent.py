@@ -441,61 +441,59 @@ class AudioProcessorAgent(BaseAgent):
                 # Method 1: Named parameters (newer versions)
                 logger.info("🔧 Attempting method 1: named parameters...")
                 
-                # CRITICAL FIX: Create audio generator that immediately yields pre-filled data
+                # SIMPLE FIX: Create a basic generator that immediately yields available chunks
                 def audio_only_generator():
                     logger.info("🔄 Generating audio-only requests (config passed separately)...")
-                    chunk_count = 0
-                    empty_count = 0
                     
-                    try:
-                        # Get the audio buffer for this session
-                        buffer = self.audio_buffers[session_id]
-                        logger.info(f"🎵 Audio buffer queue size: {buffer.buffer.qsize()}")
-                        
-                        while buffer.is_active:
-                            if session_id not in self.active_sessions:
-                                logger.info("🛑 Session ended, stopping audio generator")
-                                break
-                            
-                            try:
-                                # Try to get audio chunk with very short timeout
-                                audio_chunk = buffer.buffer.get(timeout=0.01)
+                    # Get the audio buffer for this session
+                    buffer = self.audio_buffers[session_id]
+                    logger.info(f"🎵 Audio buffer queue size: {buffer.buffer.qsize()}")
+                    
+                    chunk_count = 0
+                    
+                    # First, yield all pre-filled chunks immediately
+                    while not buffer.buffer.empty():
+                        try:
+                            audio_chunk = buffer.buffer.get_nowait()
+                            if audio_chunk and len(audio_chunk) > 0:
+                                chunk_count += 1
+                                logger.info(f"🎵 Yielding pre-filled chunk {chunk_count} (size: {len(audio_chunk)})")
                                 
-                                if audio_chunk and len(audio_chunk) > 0:
-                                    chunk_count += 1
-                                    empty_count = 0  # Reset empty counter
-                                    
-                                    if chunk_count % 50 == 0:
-                                        logger.info(f"🎵 Yielding audio chunk {chunk_count}")
-                                    
-                                    # Yield the audio chunk to Google STT
-                                    yield self.speech_module.StreamingRecognizeRequest(
-                                        audio_content=audio_chunk
-                                    )
-                                else:
-                                    logger.debug("⚠️ Empty audio chunk received")
-                                    empty_count += 1
-                                    
-                            except queue.Empty:
-                                empty_count += 1
-                                if empty_count % 1000 == 0:  # Log every 10 seconds of emptiness
-                                    logger.debug(f"⏳ Waiting for audio... empty for {empty_count/100:.1f}s")
+                                yield self.speech_module.StreamingRecognizeRequest(
+                                    audio_content=audio_chunk
+                                )
+                            else:
+                                logger.warning("⚠️ Got empty chunk from buffer")
+                        except queue.Empty:
+                            break
+                        except Exception as e:
+                            logger.error(f"❌ Error getting chunk: {e}")
+                            break
+                    
+                    logger.info(f"✅ Yielded {chunk_count} pre-filled chunks")
+                    
+                    # Then continue with real-time chunks
+                    while buffer.is_active and session_id in self.active_sessions:
+                        try:
+                            audio_chunk = buffer.buffer.get(timeout=0.1)
+                            if audio_chunk and len(audio_chunk) > 0:
+                                chunk_count += 1
+                                if chunk_count % 50 == 0:
+                                    logger.info(f"🎵 Yielding real-time chunk {chunk_count}")
                                 
-                                # Small delay to prevent busy waiting  
-                                import time
-                                time.sleep(0.01)
-                                continue
-                                
-                            except Exception as e:
-                                logger.error(f"❌ Error getting audio chunk: {e}")
-                                break
-                                
-                    except Exception as e:
-                        logger.error(f"❌ Error in audio generator: {e}")
-                    finally:
-                        logger.info(f"🏁 Audio generator completed: {chunk_count} chunks yielded")
+                                yield self.speech_module.StreamingRecognizeRequest(
+                                    audio_content=audio_chunk
+                                )
+                        except queue.Empty:
+                            # No more audio, continue waiting
+                            continue
+                        except Exception as e:
+                            logger.error(f"❌ Error in real-time chunk generation: {e}")
+                            break
+                    
+                    logger.info(f"🏁 Audio generator finished: {chunk_count} total chunks")
                 
-                # Call streaming_recognize with config as parameter and audio-only requests
+                # Call streaming_recognize
                 responses = self.google_client.streaming_recognize(
                     config=streaming_config,
                     requests=audio_only_generator()

@@ -36,31 +36,43 @@ class LiveAudioBuffer:
             self.buffer.put(audio_data)
     
     def get_audio_chunks(self):
-        """Generator for audio chunks - yields actual audio data with timeout handling"""
-        logger.info("🎵 Audio chunk generator started")
+        """Generator for audio chunks - DEBUG VERSION with detailed logging"""
+        logger.info("🎵 Audio chunk generator started - DEBUG MODE")
         chunk_count = 0
+        empty_iterations = 0
         
         while self.is_active:
             try:
-                # Use shorter timeout to prevent Google STT timeout
-                chunk = self.buffer.get(timeout=0.05)  # 50ms timeout
-                if chunk and len(chunk) > 0:  # Only yield non-empty chunks
+                # Check queue size
+                queue_size = self.buffer.qsize()
+                if queue_size > 0:
+                    logger.debug(f"📊 Queue has {queue_size} chunks available")
+                
+                # Try to get chunk with timeout
+                chunk = self.buffer.get(timeout=0.1)
+                
+                if chunk and len(chunk) > 0:
                     chunk_count += 1
-                    if chunk_count % 100 == 0:
-                        logger.debug(f"🎵 Yielded {chunk_count} audio chunks")
+                    empty_iterations = 0
+                    
+                    if chunk_count <= 10 or chunk_count % 50 == 0:
+                        logger.info(f"🎵 Yielding audio chunk {chunk_count} (size: {len(chunk)} bytes)")
+                    
                     yield chunk
                 else:
-                    logger.debug("⚠️ Skipping empty audio chunk")
+                    logger.debug("⚠️ Got empty/null chunk from queue")
+                    empty_iterations += 1
                     
             except queue.Empty:
-                # No audio available - this is normal for real-time streaming
-                # Don't wait too long to prevent Google STT timeout
+                empty_iterations += 1
+                if empty_iterations % 100 == 0:  # Every 10 seconds
+                    logger.warning(f"⏳ Audio generator: No audio for {empty_iterations/10:.1f}s (queue size: {self.buffer.qsize()})")
                 continue
             except Exception as e:
-                logger.error(f"❌ Error getting audio chunk: {e}")
+                logger.error(f"❌ Error in audio chunk generator: {e}")
                 break
         
-        logger.info(f"🎵 Audio chunk generator completed: {chunk_count} total chunks")
+        logger.info(f"🎵 Audio chunk generator completed: {chunk_count} total chunks yielded, empty for {empty_iterations} iterations")
     
     def start(self):
         self.is_active = True
@@ -429,30 +441,58 @@ class AudioProcessorAgent(BaseAgent):
                 # Method 1: Named parameters (newer versions)
                 logger.info("🔧 Attempting method 1: named parameters...")
                 
-                # CRITICAL FIX: When using config parameter, don't send streaming_config in requests
+                # CRITICAL FIX: Create audio generator that immediately yields pre-filled data
                 def audio_only_generator():
                     logger.info("🔄 Generating audio-only requests (config passed separately)...")
                     chunk_count = 0
+                    empty_count = 0
+                    
                     try:
-                        for audio_chunk in audio_buffer.get_audio_chunks():
+                        # Get the audio buffer for this session
+                        buffer = self.audio_buffers[session_id]
+                        logger.info(f"🎵 Audio buffer queue size: {buffer.buffer.qsize()}")
+                        
+                        while buffer.is_active:
                             if session_id not in self.active_sessions:
-                                logger.info("🛑 Session ended, stopping audio stream")
+                                logger.info("🛑 Session ended, stopping audio generator")
                                 break
                             
-                            if audio_chunk and len(audio_chunk) > 0:
-                                chunk_count += 1
-                                if chunk_count % 50 == 0:
-                                    logger.debug(f"🎵 Streaming audio chunk {chunk_count}")
+                            try:
+                                # Try to get audio chunk with very short timeout
+                                audio_chunk = buffer.buffer.get(timeout=0.01)
                                 
-                                # Send ONLY audio_content when config is passed as parameter
-                                yield self.speech_module.StreamingRecognizeRequest(
-                                    audio_content=audio_chunk
-                                )
-                            
+                                if audio_chunk and len(audio_chunk) > 0:
+                                    chunk_count += 1
+                                    empty_count = 0  # Reset empty counter
+                                    
+                                    if chunk_count % 50 == 0:
+                                        logger.info(f"🎵 Yielding audio chunk {chunk_count}")
+                                    
+                                    # Yield the audio chunk to Google STT
+                                    yield self.speech_module.StreamingRecognizeRequest(
+                                        audio_content=audio_chunk
+                                    )
+                                else:
+                                    logger.debug("⚠️ Empty audio chunk received")
+                                    empty_count += 1
+                                    
+                            except queue.Empty:
+                                empty_count += 1
+                                if empty_count % 1000 == 0:  # Log every 10 seconds of emptiness
+                                    logger.debug(f"⏳ Waiting for audio... empty for {empty_count/100:.1f}s")
+                                
+                                # Small delay to prevent busy waiting
+                                await asyncio.sleep(0.01)
+                                continue
+                                
+                            except Exception as e:
+                                logger.error(f"❌ Error getting audio chunk: {e}")
+                                break
+                                
                     except Exception as e:
                         logger.error(f"❌ Error in audio generator: {e}")
                     finally:
-                        logger.info(f"🏁 Audio generator completed: {chunk_count} chunks sent")
+                        logger.info(f"🏁 Audio generator completed: {chunk_count} chunks yielded")
                 
                 # Call streaming_recognize with config as parameter and audio-only requests
                 responses = self.google_client.streaming_recognize(
@@ -736,17 +776,42 @@ class AudioProcessorAgent(BaseAgent):
             initial_chunks = 0
             
             # Pre-fill with first few chunks immediately
-            for i in range(0, min(len(audio_data), self.chunk_size * 10), self.chunk_size):
+            for i in range(0, min(len(audio_data), self.chunk_size * 20), self.chunk_size):  # 20 chunks
                 chunk = audio_data[i:i + self.chunk_size]
                 if len(chunk) > 0:
-                    self._add_audio_chunk({
+                    # Add chunk using the proper method
+                    add_result = self._add_audio_chunk({
                         "session_id": session_id,
                         "audio_data": chunk,
                         "speaker": current_speaker
                     })
-                    initial_chunks += 1
+                    
+                    if add_result.get("status") == "audio_received":
+                        initial_chunks += 1
+                    else:
+                        logger.error(f"❌ Failed to add audio chunk: {add_result}")
+                        
+                    if initial_chunks <= 5:
+                        logger.info(f"🎵 Added chunk {initial_chunks}: {len(chunk)} bytes")
             
-            logger.info(f"✅ Pre-filled buffer with {initial_chunks} chunks")
+            # Check buffer state after pre-filling
+            if session_id in self.audio_buffers:
+                buffer = self.audio_buffers[session_id]
+                queue_size = buffer.buffer.qsize()
+                logger.info(f"✅ Pre-filled buffer with {initial_chunks} chunks, queue size: {queue_size}")
+                
+                if queue_size == 0:
+                    logger.error("❌ CRITICAL: Buffer queue is empty after pre-filling!")
+                    # Try direct buffer access
+                    for i in range(5):  # Add 5 chunks directly
+                        chunk = audio_data[i*self.chunk_size:(i+1)*self.chunk_size]
+                        if len(chunk) > 0:
+                            buffer.buffer.put(chunk)
+                            logger.info(f"🔧 Direct add chunk {i+1}: {len(chunk)} bytes")
+                    
+                    logger.info(f"🔧 After direct add, queue size: {buffer.buffer.qsize()}")
+            else:
+                logger.error("❌ CRITICAL: Audio buffer not found for session!")
             
             # NOW start live streaming with pre-filled buffer
             await self.start_live_streaming(session_id, websocket_callback)

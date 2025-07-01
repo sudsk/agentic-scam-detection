@@ -667,25 +667,25 @@ class AudioProcessorAgent(BaseAgent):
         audio_filename: str,
         websocket_callback: Callable[[Dict], None]
     ) -> Dict[str, Any]:
-        """Demo method: simulate live call from audio file with immediate audio feed"""
+        """Demo method: simulate live call from audio file with pre-filled buffer"""
         
         try:
-            logger.info(f"🎭 DEMO: Starting immediate live call simulation")
+            logger.info(f"🎭 DEMO: Starting live call simulation with pre-filled buffer")
             logger.info(f"🎯 Session: {session_id}, File: {audio_filename}")
             
-            # CRITICAL: Prepare session AND start feeding audio immediately
+            # Prepare session for demo
             self._prepare_live_call({"session_id": session_id})
             
-            # Start feeding audio data immediately to prevent timeout
-            audio_task = asyncio.create_task(
+            # Start the demo simulation (which will pre-fill buffer then start streaming)
+            demo_task = asyncio.create_task(
                 self._simulate_live_call_from_file(session_id, audio_filename, websocket_callback)
             )
-            self.streaming_tasks[session_id] = audio_task
+            self.streaming_tasks[session_id] = demo_task
             
             return {
                 "session_id": session_id,
                 "status": "demo_simulation_started",
-                "processing_mode": "demo_live_call_simulation_immediate"
+                "processing_mode": "demo_live_call_simulation_buffered"
             }
             
         except Exception as e:
@@ -711,54 +711,59 @@ class AudioProcessorAgent(BaseAgent):
             
             logger.info(f"🎭 Demo: Loaded {len(audio_data)} bytes of audio data")
             
-            # CRITICAL FIX: Start feeding audio data IMMEDIATELY to prevent timeout
-            # Don't wait for live streaming to start - start feeding data right away
+            # CRITICAL FIX: Pre-fill the buffer with initial audio chunks BEFORE starting streaming
+            logger.info("🎵 Pre-filling audio buffer to prevent timeout...")
             
-            # Start streaming audio chunks immediately in a separate task
-            async def feed_audio_data():
-                logger.info("🎵 Starting immediate audio data feed...")
-                current_speaker = "customer"
-                chunk_count = 0
-                
-                # Wait a brief moment for the audio buffer to be ready
-                await asyncio.sleep(0.1)
-                
-                for i in range(0, len(audio_data), self.chunk_size):
-                    if session_id not in self.active_sessions:
-                        break
-                    
-                    chunk = audio_data[i:i + self.chunk_size]
-                    
-                    if len(chunk) > 0:  # Only add non-empty chunks
-                        # Alternate speaker every few chunks (demo)
-                        if chunk_count % 15 == 0 and chunk_count > 0:
-                            current_speaker = "agent" if current_speaker == "customer" else "customer"
-                        
-                        # Add chunk to buffer
-                        self._add_audio_chunk({
-                            "session_id": session_id,
-                            "audio_data": chunk,
-                            "speaker": current_speaker
-                        })
-                        
-                        chunk_count += 1
-                        
-                        if chunk_count % 100 == 0:
-                            logger.debug(f"🎵 Fed {chunk_count} audio chunks")
-                        
-                        # CRITICAL: Real-time simulation - don't wait too long between chunks
-                        await asyncio.sleep(0.05)  # 50ms between chunks for faster simulation
-                    
-                logger.info(f"🎭 Demo audio feed completed: {chunk_count} chunks sent")
+            current_speaker = "customer"
+            initial_chunks = 0
             
-            # Start the audio feed task immediately
-            audio_feed_task = asyncio.create_task(feed_audio_data())
+            # Pre-fill with first few chunks immediately
+            for i in range(0, min(len(audio_data), self.chunk_size * 10), self.chunk_size):
+                chunk = audio_data[i:i + self.chunk_size]
+                if len(chunk) > 0:
+                    self._add_audio_chunk({
+                        "session_id": session_id,
+                        "audio_data": chunk,
+                        "speaker": current_speaker
+                    })
+                    initial_chunks += 1
             
-            # Also start live streaming
+            logger.info(f"✅ Pre-filled buffer with {initial_chunks} chunks")
+            
+            # NOW start live streaming with pre-filled buffer
             await self.start_live_streaming(session_id, websocket_callback)
             
-            # Wait for audio feed to complete
-            await audio_feed_task
+            # Continue feeding remaining audio data in real-time
+            logger.info("🎵 Continuing to feed remaining audio data...")
+            
+            chunk_count = initial_chunks
+            for i in range(self.chunk_size * 10, len(audio_data), self.chunk_size):
+                if session_id not in self.active_sessions:
+                    break
+                
+                chunk = audio_data[i:i + self.chunk_size]
+                
+                if len(chunk) > 0:
+                    # Alternate speaker every few chunks (demo)
+                    if chunk_count % 15 == 0 and chunk_count > 0:
+                        current_speaker = "agent" if current_speaker == "customer" else "customer"
+                    
+                    # Add chunk to buffer
+                    self._add_audio_chunk({
+                        "session_id": session_id,
+                        "audio_data": chunk,
+                        "speaker": current_speaker
+                    })
+                    
+                    chunk_count += 1
+                    
+                    if chunk_count % 100 == 0:
+                        logger.debug(f"🎵 Fed {chunk_count} total audio chunks")
+                    
+                    # Real-time simulation
+                    await asyncio.sleep(0.05)  # 50ms between chunks
+                
+            logger.info(f"🎭 Demo audio feed completed: {chunk_count} total chunks sent")
             
         except Exception as e:
             logger.error(f"❌ Demo simulation error: {e}")

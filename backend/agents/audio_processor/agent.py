@@ -665,51 +665,100 @@ class AudioProcessorAgent(BaseAgent):
             logger.error(f"❌ Error processing streaming response: {e}")
     
     def _detect_speaker_v1p1beta1(self, session_id: str, alternative, result) -> str:
-        """Enhanced speaker detection for v1p1beta1 API with diarization"""
+        """Enhanced speaker detection for v1p1beta1 API with improved diarization logic"""
         
-        # Try speaker diarization from words
+        # DEBUG: Log what we're getting from Google Speech API
         if hasattr(alternative, 'words') and alternative.words:
-            # Get speaker tags from diarization
             speaker_tags = []
             for word in alternative.words:
-                if hasattr(word, 'speaker_tag') and word.speaker_tag:
+                if hasattr(word, 'speaker_tag') and word.speaker_tag is not None:
                     speaker_tags.append(word.speaker_tag)
             
             if speaker_tags:
-                # Use most common speaker tag
+                # Use most common speaker tag in this segment
                 most_common_tag = max(set(speaker_tags), key=speaker_tags.count)
-                logger.debug(f"🎯 v1p1beta1 diarization speaker_tag: {most_common_tag}")
+                unique_tags = set(speaker_tags)
                 
-                # Map speaker tags to customer/agent
+                # Enhanced logging for debugging
+                if len(segments := self.active_sessions.get(session_id, {}).get("transcription_segments", [])) < 10:
+                    logger.info(f"🎯 DIARIZATION DEBUG: speaker_tags={unique_tags}, most_common={most_common_tag}, text='{alternative.transcript[:30]}...'")
+                
+                # Map Google's speaker tags to customer/agent
                 if most_common_tag == 1:
-                    return "customer"
+                    return "customer"  # First speaker = customer (calls in)
                 elif most_common_tag == 2:
-                    return "agent"
+                    return "agent"     # Second speaker = agent (answers)
                 else:
                     return f"speaker_{most_common_tag}"
         
-        # Fallback: Smart alternating with context
+        # Enhanced fallback: Intelligent conversation flow detection
         session = self.active_sessions.get(session_id, {})
         segments = session.get("transcription_segments", [])
         
-        # Start with customer for fraud detection priority
+        # For the very first segment, start with customer (they call in)
         if len(segments) == 0:
+            logger.info("🎯 FALLBACK: First segment -> customer")
             return "customer"
         
-        # Get the last speaker
+        # Get recent conversation context
+        recent_segments = segments[-5:] if len(segments) >= 5 else segments
         last_speaker = segments[-1].get("speaker", "customer") if segments else "customer"
         
-        # Intelligent speaker switching based on conversation patterns
-        recent_segments = segments[-5:] if len(segments) >= 5 else segments
-        recent_words = sum(len(seg.get("text", "").split()) for seg in recent_segments)
+        # Count words from each speaker in recent conversation
+        customer_words = 0
+        agent_words = 0
         
-        # Switch speaker every 10-20 words for natural conversation flow
-        if recent_words > 15 and last_speaker == "customer":
+        for seg in recent_segments:
+            word_count = len(seg.get("text", "").split())
+            if seg.get("speaker") == "customer":
+                customer_words += word_count
+            else:
+                agent_words += word_count
+        
+        # Smart switching logic based on conversation patterns
+        current_text = getattr(alternative, 'transcript', '').lower()
+        
+        # Agent response patterns (they typically respond with these phrases)
+        agent_phrases = [
+            'good afternoon', 'good morning', 'hello', 'hi there',
+            'this is', 'my name is', 'i can help', 'how can i help', 'how can i assist',
+            'of course', 'certainly', 'let me help', 'i need to', 'can you', 'could you',
+            'for security', 'to verify', 'i\'ll need', 'thank you', 'thanks'
+        ]
+        
+        # Customer phrases (requests, questions, problems)
+        customer_phrases = [
+            'i need', 'i want', 'i would like', 'can i', 'could i', 'i have a problem',
+            'urgent', 'quickly', 'as soon as possible', 'emergency', 'help me',
+            'my account', 'my card', 'transfer', 'payment', 'yes it\'s', 'it\'s for'
+        ]
+        
+        # Check for strong indicators
+        has_agent_phrase = any(phrase in current_text for phrase in agent_phrases)
+        has_customer_phrase = any(phrase in current_text for phrase in customer_phrases)
+        
+        if has_agent_phrase and not has_customer_phrase:
+            logger.info(f"🎯 PATTERN MATCH: agent phrase detected -> agent ('{current_text[:30]}...')")
             return "agent"
-        elif recent_words > 10 and last_speaker == "agent":
+        elif has_customer_phrase and not has_agent_phrase:
+            logger.info(f"🎯 PATTERN MATCH: customer phrase detected -> customer ('{current_text[:30]}...')")
             return "customer"
-        else:
-            return last_speaker
+        
+        # Natural conversation flow: alternate after sufficient speech
+        if last_speaker == "customer":
+            # Switch to agent if customer has spoken enough (>15 words recently)
+            if customer_words > 15:
+                logger.info(f"🎯 FLOW SWITCH: customer->agent ({customer_words} customer words)")
+                return "agent"
+        elif last_speaker == "agent":
+            # Switch to customer if agent has spoken enough (>10 words recently)
+            if agent_words > 10:
+                logger.info(f"🎯 FLOW SWITCH: agent->customer ({agent_words} agent words)")
+                return "customer"
+        
+        # Default: continue with the same speaker
+        logger.debug(f"🎯 CONTINUE: {last_speaker} (no switch criteria met)")
+        return last_speaker
     
     def _extract_timing_v1p1beta1(self, alternative) -> tuple:
         """Extract timing information from alternative in v1p1beta1 API"""

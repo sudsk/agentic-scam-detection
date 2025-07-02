@@ -25,7 +25,7 @@ import {
   Server
 } from 'lucide-react';
 
-import HSBCLogo from 'hsbc-uk.svg';
+//import HSBCLogo from './hsbc-uk.svg';
 
 // Environment configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -521,7 +521,7 @@ function App() {
         <div className="flex justify-between items-center px-6 py-3">
           <div className="flex items-center space-x-4">
             <div className="bg-red-600 text-white px-3 py-1 rounded text-sm font-medium">
-              <img src={HSBCLogo} />
+              HSBC
             </div>
             <span className="text-lg font-medium text-gray-900">Agent Desktop</span>
           </div>

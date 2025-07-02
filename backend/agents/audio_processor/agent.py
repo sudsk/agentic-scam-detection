@@ -9,6 +9,7 @@ import asyncio
 import logging
 import time
 import wave
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable, AsyncGenerator
@@ -430,7 +431,7 @@ class AudioProcessorAgent(BaseAgent):
                 auto_decoding_config=self.decoding_config if not self.use_explicit_decoding else None,
                 explicit_decoding_config=self.decoding_config if self.use_explicit_decoding else None,
                 language_codes=["en-GB"],  # v2 uses language_codes (list)
-                model="telephony_short",  # v2 telephony model
+                model="telephony",  # v2 telephony model
                 features=recognition_features
             )
             
@@ -452,7 +453,7 @@ class AudioProcessorAgent(BaseAgent):
                 recognizer_path = f"projects/{project_id}/locations/global/recognizers/_"
                 
                 logger.info(f"🎯 Using recognizer path: {recognizer_path}")
-                logger.info(f"🎯 Model: telephony_short (v2 API)")
+                logger.info(f"🎯 Model: telephony (v2 API)")
                 logger.info(f"🎯 Decoding: {'Explicit' if self.use_explicit_decoding else 'Auto'}")
                 
                 yield self.speech_v2.StreamingRecognizeRequest(
@@ -525,7 +526,7 @@ class AudioProcessorAgent(BaseAgent):
                         "error": str(e),
                         "error_type": type(e).__name__,
                         "api_version": "v2_correct",
-                        "model": "telephony_short",
+                        "model": "telephony",
                         "timestamp": get_current_timestamp()
                     }
                 })
@@ -717,3 +718,237 @@ class AudioProcessorAgent(BaseAgent):
             
             if session_id not in self.active_sessions:
                 return {"error": "Session not found"}
+            
+            # Update session status
+            session = self.active_sessions[session_id]
+            session["status"] = "stopping"
+            
+            # Stop audio buffer
+            if session_id in self.audio_buffers:
+                self.audio_buffers[session_id].stop()
+            
+            # Cancel streaming task
+            if session_id in self.streaming_tasks:
+                task = self.streaming_tasks[session_id]
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    logger.info(f"✅ Streaming task cancelled for {session_id}")
+                del self.streaming_tasks[session_id]
+            
+            # Cleanup session data
+            del self.active_sessions[session_id]
+            
+            if session_id in self.audio_buffers:
+                del self.audio_buffers[session_id]
+            
+            if session_id in self.speaker_states:
+                del self.speaker_states[session_id]
+            
+            logger.info(f"✅ Live streaming stopped and cleaned up for {session_id}")
+            
+            return {
+                "session_id": session_id,
+                "status": "stopped",
+                "cleanup_complete": True,
+                "timestamp": get_current_timestamp()
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error stopping live streaming for {session_id}: {e}")
+            return {"error": str(e)}
+    
+    # ===== DEMO FILE PROCESSING METHODS =====
+    
+    async def start_realtime_processing(
+        self,
+        session_id: str,
+        audio_filename: str,
+        websocket_callback: Callable[[Dict], None]
+    ) -> Dict[str, Any]:
+        """Start real-time processing of demo audio file"""
+        
+        try:
+            logger.info(f"🎬 Starting real-time demo processing: {audio_filename}")
+            
+            # Prepare session for live call
+            prepare_result = self._prepare_live_call({"session_id": session_id})
+            if "error" in prepare_result:
+                return prepare_result
+            
+            # Load and validate audio file
+            audio_path = Path(self.config["audio_base_path"]) / audio_filename
+            if not audio_path.exists():
+                return {"error": f"Audio file not found: {audio_filename}"}
+            
+            # Get audio file info
+            try:
+                with wave.open(str(audio_path), 'rb') as wav_file:
+                    frames = wav_file.getnframes()
+                    sample_rate = wav_file.getframerate()
+                    duration = frames / sample_rate
+                    
+                logger.info(f"📁 Demo file: {duration:.1f}s, {sample_rate}Hz")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not read WAV info: {e}")
+                duration = 30.0  # Default estimate
+            
+            # Start live streaming
+            streaming_result = await self.start_live_streaming(session_id, websocket_callback)
+            if "error" in streaming_result:
+                return streaming_result
+            
+            # Start demo file simulation
+            asyncio.create_task(
+                self._simulate_live_audio_from_file(session_id, audio_path, duration)
+            )
+            
+            return {
+                "session_id": session_id,
+                "audio_filename": audio_filename,
+                "audio_duration": duration,
+                "processing_mode": "demo_realtime_simulation",
+                "status": "started"
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error starting realtime processing: {e}")
+            return {"error": str(e)}
+    
+    async def _simulate_live_audio_from_file(
+        self,
+        session_id: str,
+        audio_path: Path,
+        duration: float
+    ) -> None:
+        """Simulate live audio streaming from demo file"""
+        
+        try:
+            logger.info(f"🎬 Simulating live audio stream from {audio_path.name}")
+            
+            # Read audio file
+            with wave.open(str(audio_path), 'rb') as wav_file:
+                # Verify audio format
+                if wav_file.getnchannels() != 1:
+                    logger.warning(f"⚠️ Audio file is not mono, may affect processing")
+                if wav_file.getsampwidth() != 2:
+                    logger.warning(f"⚠️ Audio file is not 16-bit, may affect processing")
+                if wav_file.getframerate() != 16000:
+                    logger.warning(f"⚠️ Audio sample rate is {wav_file.getframerate()}Hz, expected 16000Hz")
+                
+                # Calculate chunk parameters for real-time simulation
+                frames_per_chunk = int(wav_file.getframerate() * self.chunk_duration_ms / 1000)
+                total_chunks = int(wav_file.getnframes() / frames_per_chunk)
+                
+                logger.info(f"🎵 Streaming {total_chunks} chunks at {self.chunk_duration_ms}ms intervals")
+                
+                # Stream chunks in real-time
+                audio_buffer = self.audio_buffers.get(session_id)
+                if not audio_buffer:
+                    logger.error(f"❌ No audio buffer for session {session_id}")
+                    return
+                
+                chunk_count = 0
+                start_time = asyncio.get_event_loop().time()
+                
+                while chunk_count < total_chunks and session_id in self.active_sessions:
+                    # Read audio chunk
+                    audio_chunk = wav_file.readframes(frames_per_chunk)
+                    
+                    if not audio_chunk:
+                        break
+                    
+                    # Add to buffer for streaming recognition
+                    audio_buffer.add_audio_chunk(audio_chunk)
+                    
+                    chunk_count += 1
+                    
+                    # Log progress
+                    if chunk_count % 25 == 0:  # Every 5 seconds at 200ms chunks
+                        elapsed = (chunk_count * self.chunk_duration_ms) / 1000
+                        logger.info(f"🎵 Demo streaming: {elapsed:.1f}s / {duration:.1f}s")
+                    
+                    # Wait for real-time interval
+                    expected_time = start_time + (chunk_count * self.chunk_duration_ms / 1000)
+                    current_time = asyncio.get_event_loop().time()
+                    wait_time = expected_time - current_time
+                    
+                    if wait_time > 0:
+                        await asyncio.sleep(wait_time)
+                
+                logger.info(f"✅ Demo audio simulation complete: {chunk_count} chunks streamed")
+                
+                # Stop the audio buffer after a brief delay
+                await asyncio.sleep(2.0)
+                audio_buffer.stop()
+                
+        except Exception as e:
+            logger.error(f"❌ Error simulating live audio: {e}")
+    
+    async def stop_realtime_processing(self, session_id: str) -> Dict[str, Any]:
+        """Stop real-time processing"""
+        return await self.stop_live_streaming(session_id)
+    
+    # ===== STATUS AND MANAGEMENT METHODS =====
+    
+    def get_all_sessions_status(self) -> Dict[str, Any]:
+        """Get status of all active sessions"""
+        
+        sessions_status = {}
+        for session_id, session in self.active_sessions.items():
+            buffer_stats = self.audio_buffers[session_id].get_stats() if session_id in self.audio_buffers else {}
+            
+            sessions_status[session_id] = {
+                "status": session.get("status", "unknown"),
+                "start_time": session.get("start_time", "").isoformat() if session.get("start_time") else "",
+                "total_audio_received": session.get("total_audio_received", 0),
+                "transcription_segments": len(session.get("transcription_segments", [])),
+                "current_speaker": session.get("current_speaker", "unknown"),
+                "recognition_restart_count": session.get("recognition_restart_count", 0),
+                "buffer_stats": buffer_stats,
+                "has_streaming_task": session_id in self.streaming_tasks
+            }
+        
+        return {
+            "total_active_sessions": len(self.active_sessions),
+            "transcription_engine": self.transcription_source,
+            "google_stt_v2_available": self.google_client is not None,
+            "sessions": sessions_status,
+            "agent_id": self.agent_id,
+            "timestamp": get_current_timestamp()
+        }
+    
+    def get_session_transcription(self, session_id: str) -> Optional[List[Dict]]:
+        """Get transcription segments for a session"""
+        if session_id in self.active_sessions:
+            return self.active_sessions[session_id].get("transcription_segments", [])
+        return None
+    
+    async def cleanup_stale_sessions(self, max_age_hours: int = 2) -> int:
+        """Clean up stale sessions"""
+        current_time = datetime.now()
+        stale_sessions = []
+        
+        for session_id, session in self.active_sessions.items():
+            start_time = session.get("start_time")
+            if start_time:
+                age_hours = (current_time - start_time).total_seconds() / 3600
+                if age_hours > max_age_hours:
+                    stale_sessions.append(session_id)
+        
+        cleaned_count = 0
+        for session_id in stale_sessions:
+            try:
+                await self.stop_live_streaming(session_id)
+                cleaned_count += 1
+            except Exception as e:
+                logger.error(f"❌ Error cleaning stale session {session_id}: {e}")
+        
+        if cleaned_count > 0:
+            logger.info(f"🧹 Cleaned up {cleaned_count} stale sessions")
+        
+        return cleaned_count
+
+# Create global instance
+audio_processor_agent = AudioProcessorAgent()

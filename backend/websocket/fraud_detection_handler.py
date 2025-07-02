@@ -293,11 +293,29 @@ class FraudDetectionWebSocketHandler:
             })
             
             if 'error' not in policy_result:
+                # Extract the complete policy data
+                primary_policy = policy_result.get('primary_policy', {})
+                agent_guidance = policy_result.get('agent_guidance', {})
+                
                 await self.send_message(websocket, client_id, {
                     'type': 'policy_guidance_ready',
                     'data': {
                         'session_id': session_id,
-                        **policy_result.get('agent_guidance', {}),
+                        # Send complete policy information
+                        'policy_id': primary_policy.get('policy_id', ''),
+                        'policy_title': primary_policy.get('title', ''),
+                        'policy_version': primary_policy.get('version', ''),
+                        
+                        # Agent guidance data
+                        'immediate_alerts': agent_guidance.get('immediate_alerts', []),
+                        'recommended_actions': agent_guidance.get('recommended_actions', primary_policy.get('procedures', [])),
+                        'key_questions': agent_guidance.get('key_questions', primary_policy.get('key_questions', [])),
+                        'customer_education': agent_guidance.get('customer_education', primary_policy.get('customer_education', [])),
+                        
+                        # Additional policy data
+                        'escalation_threshold': primary_policy.get('escalation_threshold', 80),
+                        'regulatory_requirements': primary_policy.get('regulatory_requirements', []),
+                        
                         'timestamp': get_current_timestamp()
                     }
                 })

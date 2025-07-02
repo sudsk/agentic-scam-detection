@@ -57,28 +57,38 @@ class LiveAudioBuffer:
                 logger.warning("⚠️ Audio buffer full, dropping chunk to maintain real-time performance")
     
     def get_audio_chunks(self):
-        """Generator for audio chunks with proper flow control"""
+        """Generator for audio chunks with improved flow control"""
         logger.info("🎵 Audio chunk generator started for live streaming")
         
-        while self.is_active:
+        consecutive_empty_reads = 0
+        max_empty_reads = 50  # Allow 5 seconds of no data (50 * 0.1s)
+        
+        while self.is_active and consecutive_empty_reads < max_empty_reads:
             try:
-                # Get chunk with timeout to allow periodic checks
+                # Get chunk with shorter timeout for more responsive streaming
                 chunk = self.buffer.get(timeout=0.1)
                 
                 if chunk and len(chunk) > 0:
                     self.total_chunks_yielded += 1
+                    consecutive_empty_reads = 0  # Reset counter on successful read
                     
-                    if self.total_chunks_yielded <= 10 or self.total_chunks_yielded % 100 == 0:
+                    if self.total_chunks_yielded <= 5 or self.total_chunks_yielded % 50 == 0:
                         logger.debug(f"🎵 Yielding chunk {self.total_chunks_yielded} (size: {len(chunk)} bytes)")
                     
                     yield chunk
+                else:
+                    consecutive_empty_reads += 1
                     
             except queue.Empty:
-                # No audio available, continue waiting
+                # No audio available
+                consecutive_empty_reads += 1
                 continue
             except Exception as e:
                 logger.error(f"❌ Error in audio chunk generator: {e}")
                 break
+        
+        if consecutive_empty_reads >= max_empty_reads:
+            logger.info(f"🎵 Audio generator stopping: no data for {max_empty_reads * 0.1}s")
         
         logger.info(f"🎵 Audio generator completed: {self.total_chunks_yielded} chunks yielded")
     
@@ -443,14 +453,14 @@ class AudioProcessorAgent(BaseAgent):
                 streaming_features=streaming_features
             )
             
-            # Step 4: Create the request generator
+            # Step 4: Create the request generator (FIXED for better timing)
             def audio_generator_v2_correct():
                 # First request with recognizer and config
                 project_id = self._get_project_id()
                 recognizer_path = f"projects/{project_id}/locations/global/recognizers/_"
                 
                 logger.info(f"🎯 Using recognizer path: {recognizer_path}")
-                logger.info(f"🎯 Model: telephony (v2 API)")
+                logger.info(f"🎯 Model: latest_short (v2 API)")
                 logger.info(f"🎯 Decoding: {'Explicit' if self.use_explicit_decoding else 'Auto'}")
                 
                 yield self.speech_v2.StreamingRecognizeRequest(
@@ -458,8 +468,10 @@ class AudioProcessorAgent(BaseAgent):
                     streaming_config=streaming_config
                 )
                 
-                # Then send audio data
+                # Then send audio data with better timing
                 chunk_count = 0
+                last_yield_time = time.time()
+                
                 for audio_chunk in audio_buffer.get_audio_chunks():
                     if session_id not in self.active_sessions:
                         logger.info(f"🛑 Audio generator stopping for {session_id}")
@@ -467,12 +479,22 @@ class AudioProcessorAgent(BaseAgent):
                     
                     if audio_chunk and len(audio_chunk) > 0:
                         chunk_count += 1
-                        if chunk_count <= 5 or chunk_count % 50 == 0:
+                        current_time = time.time()
+                        
+                        # Log first few chunks and periodically
+                        if chunk_count <= 3 or chunk_count % 50 == 0:
                             logger.debug(f"🎵 Sending audio chunk {chunk_count} ({len(audio_chunk)} bytes)")
                         
+                        # Yield the audio chunk
                         yield self.speech_v2.StreamingRecognizeRequest(
                             audio=audio_chunk
                         )
+                        
+                        last_yield_time = current_time
+                        
+                        # Don't yield too frequently to avoid timeout
+                        if chunk_count > 1:
+                            time.sleep(0.02)  # Small delay between chunks
                 
                 logger.info(f"🎵 Audio generator completed: {chunk_count} chunks sent")
             
@@ -603,7 +625,7 @@ class AudioProcessorAgent(BaseAgent):
             logger.error(f"❌ Error processing streaming response: {e}")
     
     def _detect_speaker_v2_correct(self, session_id: str, alternative, result) -> str:
-        """Enhanced speaker detection for v2 API (with fallback logic)"""
+        """Enhanced speaker detection for v2 API (with improved fallback logic)"""
         
         # Try v2 API speaker diarization if available
         if hasattr(result, 'speaker_info') and result.speaker_info:
@@ -640,24 +662,29 @@ class AudioProcessorAgent(BaseAgent):
                     else:
                         return f"speaker_{speaker_tag}"
         
-        # FALLBACK: Simple alternating speaker detection for demo purposes
-        # In real telephony, this would be handled by the telephony system
+        # IMPROVED FALLBACK: Less frequent speaker switching for better demo experience
         session = self.active_sessions.get(session_id, {})
         segments = session.get("transcription_segments", [])
         
-        # Simple heuristic: alternate speakers every few segments
+        # Start with customer for fraud detection priority
         if len(segments) == 0:
-            return "customer"  # First speaker is usually customer
+            return "customer"
         
-        # Look at recent segments to determine pattern
-        recent_customer_count = sum(1 for seg in segments[-3:] if seg.get("speaker") == "customer")
-        recent_agent_count = sum(1 for seg in segments[-3:] if seg.get("speaker") == "agent")
+        # Get the last speaker
+        last_speaker = segments[-1].get("speaker", "customer") if segments else "customer"
         
-        # If no clear pattern, assume customer (most important for fraud detection)
-        if recent_customer_count > recent_agent_count:
-            return "agent"  # Switch to agent
+        # Only switch speakers after accumulating significant speech
+        # Count recent words to decide if it's time to switch
+        recent_segments = segments[-3:] if len(segments) >= 3 else segments
+        recent_words = sum(len(seg.get("text", "").split()) for seg in recent_segments)
+        
+        # Switch speaker every 8-15 words approximately (more realistic conversation flow)
+        if recent_words > 12 and last_speaker == "customer":
+            return "agent"
+        elif recent_words > 8 and last_speaker == "agent":
+            return "customer"
         else:
-            return "customer"  # Default to customer for fraud detection
+            return last_speaker  # Keep same speaker for continuity
     
     def _extract_timing_v2_correct(self, alternative) -> tuple:
         """Extract timing information from alternative in correct v2 API"""
@@ -833,7 +860,7 @@ class AudioProcessorAgent(BaseAgent):
         audio_path: Path,
         duration: float
     ) -> None:
-        """Simulate live audio streaming from demo file"""
+        """Simulate live audio streaming from demo file with proper timing"""
         
         try:
             logger.info(f"🎬 Simulating live audio stream from {audio_path.name}")
@@ -841,18 +868,23 @@ class AudioProcessorAgent(BaseAgent):
             # Read audio file
             with wave.open(str(audio_path), 'rb') as wav_file:
                 # Verify audio format
-                if wav_file.getnchannels() != 1:
-                    logger.warning(f"⚠️ Audio file is not mono, may affect processing")
-                if wav_file.getsampwidth() != 2:
-                    logger.warning(f"⚠️ Audio file is not 16-bit, may affect processing")
-                if wav_file.getframerate() != 16000:
-                    logger.warning(f"⚠️ Audio sample rate is {wav_file.getframerate()}Hz, expected 16000Hz")
+                actual_sample_rate = wav_file.getframerate()
+                actual_channels = wav_file.getnchannels()
+                actual_sample_width = wav_file.getsampwidth()
                 
-                # Calculate chunk parameters for real-time simulation
-                frames_per_chunk = int(wav_file.getframerate() * self.chunk_duration_ms / 1000)
+                logger.info(f"📁 Audio file specs: {actual_sample_rate}Hz, {actual_channels}ch, {actual_sample_width*8}bit")
+                
+                if actual_channels != 1:
+                    logger.warning(f"⚠️ Audio file is not mono, may affect processing")
+                if actual_sample_width != 2:
+                    logger.warning(f"⚠️ Audio file is not 16-bit, may affect processing")
+                
+                # Use the actual sample rate for calculations, not the target rate
+                frames_per_chunk = int(actual_sample_rate * self.chunk_duration_ms / 1000)
                 total_chunks = int(wav_file.getnframes() / frames_per_chunk)
                 
                 logger.info(f"🎵 Streaming {total_chunks} chunks at {self.chunk_duration_ms}ms intervals")
+                logger.info(f"🎵 Chunk size: {frames_per_chunk} frames per chunk")
                 
                 # Stream chunks in real-time
                 audio_buffer = self.audio_buffers.get(session_id)
@@ -862,6 +894,9 @@ class AudioProcessorAgent(BaseAgent):
                 
                 chunk_count = 0
                 start_time = asyncio.get_event_loop().time()
+                
+                # Start with a small delay to ensure recognition is ready
+                await asyncio.sleep(0.5)
                 
                 while chunk_count < total_chunks and session_id in self.active_sessions:
                     # Read audio chunk
@@ -875,20 +910,40 @@ class AudioProcessorAgent(BaseAgent):
                     
                     chunk_count += 1
                     
-                    # Log progress
-                    if chunk_count % 25 == 0:  # Every 5 seconds at 200ms chunks
-                        elapsed = (chunk_count * self.chunk_duration_ms) / 1000
-                        logger.info(f"🎵 Demo streaming: {elapsed:.1f}s / {duration:.1f}s")
+                    # Log progress every 5 seconds instead of every 25 chunks
+                    elapsed_seconds = (chunk_count * self.chunk_duration_ms) / 1000
+                    if elapsed_seconds > 0 and int(elapsed_seconds) % 5 == 0 and elapsed_seconds == int(elapsed_seconds):
+                        logger.info(f"🎵 Demo streaming: {elapsed_seconds:.1f}s / {duration:.1f}s")
                     
-                    # Wait for real-time interval
+                    # Maintain proper real-time timing
                     expected_time = start_time + (chunk_count * self.chunk_duration_ms / 1000)
                     current_time = asyncio.get_event_loop().time()
                     wait_time = expected_time - current_time
                     
                     if wait_time > 0:
                         await asyncio.sleep(wait_time)
+                    elif wait_time < -0.5:  # If we're more than 500ms behind, catch up
+                        logger.debug(f"⚠️ Audio streaming is {-wait_time:.1f}s behind real-time")
                 
                 logger.info(f"✅ Demo audio simulation complete: {chunk_count} chunks streamed")
+                
+                # Signal end of audio with a small delay
+                await asyncio.sleep(1.0)
+                
+                # Send completion notification
+                if session_id in self.active_sessions:
+                    session = self.active_sessions[session_id]
+                    websocket_callback = session.get("websocket_callback")
+                    if websocket_callback:
+                        await websocket_callback({
+                            "type": "audio_simulation_complete",
+                            "data": {
+                                "session_id": session_id,
+                                "chunks_streamed": chunk_count,
+                                "duration": duration,
+                                "timestamp": get_current_timestamp()
+                            }
+                        })
                 
                 # Stop the audio buffer after a brief delay
                 await asyncio.sleep(2.0)

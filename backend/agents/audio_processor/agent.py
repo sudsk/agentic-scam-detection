@@ -450,15 +450,13 @@ class AudioProcessorAgent(BaseAgent):
                 single_utterance=False
             )
             
-            # Create the request generator
+            # Create the request generator - CORRECT v1p1beta1 pattern
             def audio_generator_v1p1beta1():
-                # First request with config
-                yield self.speech_types.StreamingRecognizeRequest(
-                    streaming_config=streaming_config
-                )
-                
-                # Then send audio data
+                # For v1p1beta1 with old API pattern, we only send audio chunks
+                # The config is passed separately to streaming_recognize()
                 chunk_count = 0
+                logger.info("📞 Audio generator: sending audio chunks only (config passed separately)")
+                
                 for audio_chunk in audio_buffer.get_audio_chunks():
                     if session_id not in self.active_sessions:
                         logger.info(f"🛑 Audio generator stopping for {session_id}")
@@ -470,9 +468,10 @@ class AudioProcessorAgent(BaseAgent):
                         if chunk_count <= 3 or chunk_count % 50 == 0:
                             logger.debug(f"🎵 Sending audio chunk {chunk_count} ({len(audio_chunk)} bytes)")
                         
-                        yield self.speech_types.StreamingRecognizeRequest(
-                            audio_content=audio_chunk
-                        )
+                        # Create request with ONLY audio content
+                        request = self.speech_types.StreamingRecognizeRequest()
+                        request.audio_content = audio_chunk
+                        yield request
                         
                         # Small delay for stability
                         time.sleep(0.02)
@@ -482,16 +481,19 @@ class AudioProcessorAgent(BaseAgent):
             # Start streaming recognition
             logger.info(f"🚀 Starting Google STT v1p1beta1 streaming for {session_id}")
             
-            # v1p1beta1 API uses: streaming_recognize(config, requests)
-            # Based on your library version 2.33.0, this is the correct pattern
+            # v1p1beta1 old API pattern: streaming_recognize(config, requests)
+            # config = StreamingRecognitionConfig, requests = iterator of audio-only requests
             try:
-                logger.info("📞 Using v1p1beta1 API pattern: streaming_recognize(config, requests)")
+                logger.info("📞 Using v1p1beta1 old API: streaming_recognize(streaming_config, audio_requests)")
+                
                 responses = self.google_client.streaming_recognize(
-                    config=streaming_config,
-                    requests=audio_generator_v1p1beta1()
+                    config=streaming_config,  # StreamingRecognitionConfig object
+                    requests=audio_generator_v1p1beta1()  # Iterator of audio-only requests
                 )
             except Exception as api_error:
                 logger.error(f"❌ v1p1beta1 streaming API error: {api_error}")
+                logger.error(f"❌ Config type: {type(streaming_config)}")
+                logger.error(f"❌ Error details: {api_error}")
                 raise
             
             # Process responses

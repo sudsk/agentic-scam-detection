@@ -909,8 +909,11 @@ function App() {
               
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <div className="text-xs font-medium text-blue-800 mb-2">
-                  {policyGuidance.policy_title || 'Policy Guidance'} ({policyGuidance.policy_id})
+                  {policyGuidance.policy_title} ({policyGuidance.policy_id})
                 </div>
+                {policyGuidance.policy_version && (
+                  <div className="text-xs text-blue-600 mb-2">Version: {policyGuidance.policy_version}</div>
+                )}
                 {policyGuidance.customer_education && policyGuidance.customer_education.length > 0 && (
                   <ul className="text-xs text-blue-700 space-y-1">
                     {policyGuidance.customer_education.slice(0, 4).map((point: string, index: number) => (

@@ -551,7 +551,7 @@ class AudioProcessorAgent(BaseAgent):
         response, 
         websocket_callback: Callable
     ) -> None:
-        """Process streaming response from v1p1beta1 API"""
+        """Process streaming response from v1p1beta1 API - OPTIMIZED for less noise"""
         
         try:
             # Handle streaming errors
@@ -571,6 +571,24 @@ class AudioProcessorAgent(BaseAgent):
                         
                         # Get timing information
                         start_time, end_time = self._extract_timing_v1p1beta1(alternative)
+                        
+                        # OPTIMIZATION: Only process meaningful transcripts
+                        # Skip very short interim results (< 5 characters)
+                        if not result.is_final and len(transcript) < 5:
+                            continue
+                        
+                        # OPTIMIZATION: Skip interim results that are too similar to previous
+                        session = self.active_sessions[session_id]
+                        last_segments = session.get("transcription_segments", [])
+                        
+                        # Check if this is very similar to the last interim result
+                        if not result.is_final and last_segments:
+                            last_segment = last_segments[-1]
+                            if (last_segment.get("speaker") == detected_speaker and 
+                                not last_segment.get("is_final") and
+                                abs(len(transcript) - len(last_segment.get("text", ""))) < 5):
+                                # Skip very similar interim results
+                                continue
                         
                         # Create segment data
                         segment_data = {
@@ -594,22 +612,30 @@ class AudioProcessorAgent(BaseAgent):
                         })
                         
                         # Store in session
-                        session = self.active_sessions[session_id]
                         session["transcription_segments"].append(segment_data)
                         
                         # Track customer speech for fraud analysis
                         if detected_speaker == "customer":
-                            session["customer_speech_history"].append(transcript)
-                        
-                        # Trigger fraud analysis for customer speech
-                        if result.is_final and detected_speaker == "customer":
-                            await self._trigger_progressive_fraud_analysis(
-                                session_id, transcript, websocket_callback
+                            if result.is_final:
+                                # Only add final results to customer speech history
+                                session["customer_speech_history"].append(transcript)
+                            
+                            # OPTIMIZATION: Only trigger fraud analysis for FINAL customer speech
+                            # or significant interim results (> 15 characters)
+                            should_analyze = (
+                                result.is_final or 
+                                (len(transcript) > 15 and len(transcript) % 20 < 5)  # Every ~20 characters
                             )
+                            
+                            if should_analyze:
+                                await self._trigger_progressive_fraud_analysis(
+                                    session_id, transcript, websocket_callback
+                                )
                         
-                        # Log segment
+                        # Log segment with less noise
                         status = "FINAL" if result.is_final else "interim"
-                        logger.info(f"📝 {status}: {detected_speaker} - '{transcript[:50]}...'")
+                        if result.is_final or len(transcript) > 10:
+                            logger.info(f"📝 {status}: {detected_speaker} - '{transcript[:50]}...'")
         
         except Exception as e:
             logger.error(f"❌ Error processing streaming response: {e}")

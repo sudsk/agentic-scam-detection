@@ -36,6 +36,8 @@ interface AudioSegment {
   duration: number;
   text: string;
   confidence?: number;
+  is_final?: boolean;      // NEW: Track if this is a final result
+  is_interim?: boolean;    // NEW: Track if this is an interim result
 }
 
 interface RealAudioFile {
@@ -178,22 +180,83 @@ function App() {
         setServerProcessing(true);
         break;
         
+      // FINAL transcription segments - add as new segments
       case 'transcription_segment':
         const transcriptData = message.data;
         
-        // Add transcription segment
+        // Add final transcription segment
         setShowingSegments(prev => [...prev, {
           speaker: transcriptData.speaker,
           start: transcriptData.start,
           duration: transcriptData.duration,
           text: transcriptData.text,
-          confidence: transcriptData.confidence
+          confidence: transcriptData.confidence,
+          is_final: true  // Mark as final
         }]);
         
-        // Update full transcription text
-        setTranscription(prev => prev + (prev ? ' ' : '') + transcriptData.text);
+        // Update full transcription text with final results only
+        if (transcriptData.is_final) {
+          setTranscription(prev => {
+            // Get all final segments
+            const finalSegments = [...showingSegments.filter(s => s.is_final), {
+              speaker: transcriptData.speaker,
+              text: transcriptData.text,
+              is_final: true
+            }];
+            
+            // Join final customer segments only
+            const customerText = finalSegments
+              .filter(s => s.speaker === 'customer')
+              .map(s => s.text)
+              .join(' ');
+              
+            return customerText;
+          });
+        }
         
-        setProcessingStage(`🎙️ Processing: ${transcriptData.speaker} speaking...`);
+        setProcessingStage(`🎙️ FINAL: ${transcriptData.speaker} speaking...`);
+        break;
+        
+      // NEW interim result - add as interim segment
+      case 'transcription_interim_new':
+        const interimData = message.data;
+        
+        // Remove any existing interim segments for this speaker
+        setShowingSegments(prev => [
+          ...prev.filter(s => s.is_final), // Keep all final segments
+          {
+            speaker: interimData.speaker,
+            start: interimData.start,
+            duration: interimData.duration,
+            text: interimData.text,
+            confidence: interimData.confidence,
+            is_final: false,  // Mark as interim
+            is_interim: true
+          }
+        ]);
+        
+        setProcessingStage(`🎙️ interim: ${interimData.speaker} - "${interimData.text.slice(0, 30)}..."`);
+        break;
+        
+      // UPDATE existing interim result - replace the interim segment
+      case 'transcription_interim_update':
+        const updateData = message.data;
+        
+        // Replace the interim segment for this speaker
+        setShowingSegments(prev => [
+          ...prev.filter(s => s.is_final), // Keep all final segments
+          {
+            speaker: updateData.speaker,
+            start: updateData.start,
+            duration: updateData.duration,
+            text: updateData.text,
+            confidence: updateData.confidence,
+            is_final: false,  // Mark as interim
+            is_interim: true
+          }
+        ]);
+        
+        setProcessingStage(`🎙️ updating: ${updateData.speaker} - "${updateData.text.slice(0, 30)}..."`);
         break;
         
       case 'fraud_analysis_started':
@@ -646,43 +709,61 @@ function App() {
               </div>
             ) : (
               <div className="space-y-4">
-                {showingSegments.map((segment, index) => (
-                  <div key={index} className="animate-in slide-in-from-bottom duration-500">
-                    <div className="flex items-start space-x-3">
-                      <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium ${
-                        segment.speaker === 'customer' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-green-100 text-green-800'
-                      }`}>
-                        {segment.speaker === 'customer' ? (
-                          <>
-                            <User className="w-3 h-3" />
-                            <span>Customer</span>
-                          </>
-                        ) : (
-                          <>
-                            <Shield className="w-3 h-3" />
-                            <span>Agent</span>
-                          </>
+                {showingSegments.map((segment, index) => {
+                  const isInterim = !segment.is_final;
+                  
+                  return (
+                    <div key={`${segment.speaker}-${index}-${isInterim ? 'interim' : 'final'}`} 
+                         className={`animate-in slide-in-from-bottom duration-500 ${isInterim ? 'opacity-70' : ''}`}>
+                      <div className="flex items-start space-x-3">
+                        <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium ${
+                          segment.speaker === 'customer' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-green-100 text-green-800'
+                        }`}>
+                          {segment.speaker === 'customer' ? (
+                            <>
+                              <User className="w-3 h-3" />
+                              <span>Customer</span>
+                            </>
+                          ) : (
+                            <>
+                              <Shield className="w-3 h-3" />
+                              <span>Agent</span>
+                            </>
+                          )}
+                          {isInterim && <span className="text-xs opacity-60 ml-1">(live)</span>}
+                        </div>
+                        <span className="text-xs text-gray-500 mt-1">
+                          {formatTime(segment.start)}
+                        </span>
+                        {segment.confidence && (
+                          <span className="text-xs text-gray-400 mt-1">
+                            {Math.round(segment.confidence * 100)}%
+                          </span>
+                        )}
+                        <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">
+                          SERVER
+                        </span>
+                        {isInterim && (
+                          <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded animate-pulse">
+                            LIVE
+                          </span>
                         )}
                       </div>
-                      <span className="text-xs text-gray-500 mt-1">
-                        {formatTime(segment.start)}
-                      </span>
-                      {segment.confidence && (
-                        <span className="text-xs text-gray-400 mt-1">
-                          {Math.round(segment.confidence * 100)}%
-                        </span>
-                      )}
-                      <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">
-                        SERVER
-                      </span>
+                      <div className={`mt-2 ml-3 p-3 rounded-lg border-l-4 ${
+                        isInterim 
+                          ? 'bg-yellow-50 border-yellow-400' 
+                          : 'bg-gray-50 border-blue-400'
+                      }`}>
+                        <p className={`text-sm text-gray-800 ${isInterim ? 'italic' : ''}`}>
+                          {segment.text}
+                          {isInterim && <span className="animate-pulse ml-1">|</span>}
+                        </p>
+                      </div>
                     </div>
-                    <div className="mt-2 ml-3 p-3 bg-gray-50 rounded-lg border-l-4 border-blue-400">
-                      <p className="text-sm text-gray-800">{segment.text}</p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 
                 {serverProcessing && (
                   <div className="flex items-center space-x-2 text-gray-500 ml-3">

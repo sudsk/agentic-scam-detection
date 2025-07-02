@@ -163,6 +163,7 @@ class AudioProcessorAgent(BaseAgent):
             self.transcription_source = "google_stt_v1p1beta1_telephony"
             
             logger.info("✅ Google Speech-to-Text v1p1beta1 client initialized successfully")
+            logger.info("📞 Using v1p1beta1 API pattern: streaming_recognize(config, requests)")
             
             # Test telephony model availability
             try:
@@ -442,7 +443,7 @@ class AudioProcessorAgent(BaseAgent):
                 )
                 logger.info("📞 Using default model with basic diarization")
             
-            # Create streaming config
+            # Create streaming config for v1p1beta1 old API pattern
             streaming_config = self.speech_types.StreamingRecognitionConfig(
                 config=recognition_config,
                 interim_results=True,
@@ -481,9 +482,17 @@ class AudioProcessorAgent(BaseAgent):
             # Start streaming recognition
             logger.info(f"🚀 Starting Google STT v1p1beta1 streaming for {session_id}")
             
-            responses = self.google_client.streaming_recognize(
-                requests=audio_generator_v1p1beta1()
-            )
+            # v1p1beta1 API uses: streaming_recognize(config, requests)
+            # Based on your library version 2.33.0, this is the correct pattern
+            try:
+                logger.info("📞 Using v1p1beta1 API pattern: streaming_recognize(config, requests)")
+                responses = self.google_client.streaming_recognize(
+                    config=streaming_config,
+                    requests=audio_generator_v1p1beta1()
+                )
+            except Exception as api_error:
+                logger.error(f"❌ v1p1beta1 streaming API error: {api_error}")
+                raise
             
             # Process responses
             response_count = 0

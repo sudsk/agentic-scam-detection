@@ -805,7 +805,7 @@ class AudioProcessorAgent(BaseAgent):
         audio_filename: str,
         websocket_callback: Callable[[Dict], None]
     ) -> Dict[str, Any]:
-        """Start real-time processing of demo audio file"""
+        """Start real-time processing of demo audio file - FIXED timing"""
         
         try:
             logger.info(f"🎬 Starting real-time demo processing: {audio_filename}")
@@ -832,21 +832,27 @@ class AudioProcessorAgent(BaseAgent):
                 logger.warning(f"⚠️ Could not read WAV info: {e}")
                 duration = 30.0  # Default estimate
             
-            # Start live streaming
-            streaming_result = await self.start_live_streaming(session_id, websocket_callback)
-            if "error" in streaming_result:
-                return streaming_result
-            
-            # Start demo file simulation
-            asyncio.create_task(
+            # FIXED: Start audio simulation BEFORE starting recognition
+            logger.info("🎵 Starting audio file simulation first...")
+            file_simulation_task = asyncio.create_task(
                 self._simulate_live_audio_from_file(session_id, audio_path, duration)
             )
+            
+            # Small delay to let some audio chunks accumulate
+            await asyncio.sleep(1.0)
+            
+            # Then start live streaming recognition
+            logger.info("🎙️ Starting recognition after audio buffer has data...")
+            streaming_result = await self.start_live_streaming(session_id, websocket_callback)
+            if "error" in streaming_result:
+                file_simulation_task.cancel()
+                return streaming_result
             
             return {
                 "session_id": session_id,
                 "audio_filename": audio_filename,
                 "audio_duration": duration,
-                "processing_mode": "demo_realtime_simulation",
+                "processing_mode": "demo_realtime_simulation_fixed",
                 "status": "started"
             }
             
@@ -860,7 +866,7 @@ class AudioProcessorAgent(BaseAgent):
         audio_path: Path,
         duration: float
     ) -> None:
-        """Simulate live audio streaming from demo file with proper timing"""
+        """Simulate live audio streaming from demo file - FIXED for immediate start"""
         
         try:
             logger.info(f"🎬 Simulating live audio stream from {audio_path.name}")
@@ -874,19 +880,14 @@ class AudioProcessorAgent(BaseAgent):
                 
                 logger.info(f"📁 Audio file specs: {actual_sample_rate}Hz, {actual_channels}ch, {actual_sample_width*8}bit")
                 
-                if actual_channels != 1:
-                    logger.warning(f"⚠️ Audio file is not mono, may affect processing")
-                if actual_sample_width != 2:
-                    logger.warning(f"⚠️ Audio file is not 16-bit, may affect processing")
-                
-                # Use the actual sample rate for calculations, not the target rate
+                # Use the actual sample rate for calculations
                 frames_per_chunk = int(actual_sample_rate * self.chunk_duration_ms / 1000)
                 total_chunks = int(wav_file.getnframes() / frames_per_chunk)
                 
                 logger.info(f"🎵 Streaming {total_chunks} chunks at {self.chunk_duration_ms}ms intervals")
                 logger.info(f"🎵 Chunk size: {frames_per_chunk} frames per chunk")
                 
-                # Stream chunks in real-time
+                # Get audio buffer
                 audio_buffer = self.audio_buffers.get(session_id)
                 if not audio_buffer:
                     logger.error(f"❌ No audio buffer for session {session_id}")
@@ -895,8 +896,8 @@ class AudioProcessorAgent(BaseAgent):
                 chunk_count = 0
                 start_time = asyncio.get_event_loop().time()
                 
-                # Start with a small delay to ensure recognition is ready
-                await asyncio.sleep(0.5)
+                # NO INITIAL DELAY - start streaming immediately
+                logger.info("🚀 Starting immediate audio streaming...")
                 
                 while chunk_count < total_chunks and session_id in self.active_sessions:
                     # Read audio chunk
@@ -905,32 +906,29 @@ class AudioProcessorAgent(BaseAgent):
                     if not audio_chunk:
                         break
                     
-                    # Add to buffer for streaming recognition
+                    # Add to buffer for streaming recognition IMMEDIATELY
                     audio_buffer.add_audio_chunk(audio_chunk)
                     
                     chunk_count += 1
                     
-                    # Log progress every 5 seconds instead of every 25 chunks
+                    # Log progress every 5 seconds
                     elapsed_seconds = (chunk_count * self.chunk_duration_ms) / 1000
                     if elapsed_seconds > 0 and int(elapsed_seconds) % 5 == 0 and elapsed_seconds == int(elapsed_seconds):
                         logger.info(f"🎵 Demo streaming: {elapsed_seconds:.1f}s / {duration:.1f}s")
                     
-                    # Maintain proper real-time timing
+                    # Maintain real-time timing (200ms per chunk)
                     expected_time = start_time + (chunk_count * self.chunk_duration_ms / 1000)
                     current_time = asyncio.get_event_loop().time()
                     wait_time = expected_time - current_time
                     
                     if wait_time > 0:
                         await asyncio.sleep(wait_time)
-                    elif wait_time < -0.5:  # If we're more than 500ms behind, catch up
+                    elif wait_time < -1.0:  # If we're more than 1s behind, catch up
                         logger.debug(f"⚠️ Audio streaming is {-wait_time:.1f}s behind real-time")
                 
                 logger.info(f"✅ Demo audio simulation complete: {chunk_count} chunks streamed")
                 
-                # Signal end of audio with a small delay
-                await asyncio.sleep(1.0)
-                
-                # Send completion notification
+                # Signal end of audio with completion notification
                 if session_id in self.active_sessions:
                     session = self.active_sessions[session_id]
                     websocket_callback = session.get("websocket_callback")
@@ -945,8 +943,8 @@ class AudioProcessorAgent(BaseAgent):
                             }
                         })
                 
-                # Stop the audio buffer after a brief delay
-                await asyncio.sleep(2.0)
+                # Keep buffer active for a bit longer to process remaining audio
+                await asyncio.sleep(3.0)
                 audio_buffer.stop()
                 
         except Exception as e:

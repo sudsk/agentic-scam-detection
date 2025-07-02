@@ -1,7 +1,7 @@
-# backend/config/settings.py - UPDATED FOR GOOGLE SPEECH v2 API
+# backend/config/settings.py - UPDATED FOR GOOGLE SPEECH v1p1beta1 API
 """
-Updated configuration settings for Google Speech-to-Text v2 API
-FIXED: Proper telephony model configuration and v2 API settings
+Updated configuration settings for Google Speech-to-Text v1p1beta1 API
+OPTIMIZED: Telephony model configuration and v1p1beta1 API settings for live calls
 """
 
 import os
@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 class Settings:
-    """Application settings with Google Speech v2 API configuration"""
+    """Application settings with Google Speech v1p1beta1 API configuration"""
     
     def __init__(self):
         # Base configuration
@@ -109,99 +109,102 @@ class Settings:
         self.enable_case_management = True
         self.enable_real_time_transcription = True
         
-        # Agent configurations with Google Speech v2 API
-        self._setup_agent_configs_v2()
+        # Agent configurations with Google Speech v1p1beta1 API
+        self._setup_agent_configs_v1p1beta1()
     
-    def _setup_agent_configs_v2(self):
-        """Setup agent configurations with Google Speech v2 API settings"""
+    def _setup_agent_configs_v1p1beta1(self):
+        """Setup agent configurations with Google Speech v1p1beta1 API settings"""
         
-        # ===== GOOGLE SPEECH v2 API CONFIGURATION =====
+        # ===== GOOGLE SPEECH v1p1beta1 API CONFIGURATION =====
         self.audio_agent_config = {
             # === API VERSION SETTINGS ===
-            "api_version": "v2",
-            "transcription_engine": "google_stt_v2",
+            "api_version": "v1p1beta1",
+            "transcription_engine": "google_stt_v1p1beta1_telephony",
             
-            # === PROJECT AND LOCATION SETTINGS ===
+            # === PROJECT SETTINGS ===
             "google_project_id": os.getenv("GOOGLE_CLOUD_PROJECT", os.getenv("GCP_PROJECT_ID", "your-project-id")),
-            "google_location": os.getenv("GOOGLE_SPEECH_LOCATION", "global"),  # or specific region like "us-central1"
-            
-            # === RECOGNIZER SETTINGS (v2 API) ===
-            "recognizer_id": os.getenv("GOOGLE_RECOGNIZER_ID", "_"),  # Use default recognizer
             
             # === MODEL CONFIGURATION ===
-            # See: https://cloud.google.com/speech-to-text/docs/transcription-model
-            "model": os.getenv("GOOGLE_STT_MODEL", "telephony"),  # OPTIMAL for phone calls
-            "model_fallback": "latest_short",  # Fallback if telephony not available
+            # v1p1beta1 optimal models for telephony
+            "model": os.getenv("GOOGLE_STT_MODEL", "phone_call"),  # OPTIMAL for phone calls
+            "model_fallback": "default",  # Fallback if phone_call not available
             
-            # Alternative models available:
-            # - "telephony": Optimized for phone call audio (8kHz-48kHz)
-            # - "latest_long": Best for longer audio (>1min)
-            # - "latest_short": Best for shorter audio (<1min)
-            # - "command_and_search": For voice commands
-            # - "phone_call": Legacy telephony model (deprecated, use "telephony")
+            # Available models in v1p1beta1:
+            # - "phone_call": Best for audio from phone calls (8kHz-16kHz) ✅ RECOMMENDED
+            # - "video": Best for video with multiple speakers (premium model)
+            # - "command_and_search": Best for short queries
+            # - "default": General purpose model
             
             # === AUDIO PROCESSING SETTINGS ===
-            "chunk_duration_seconds": float(os.getenv("CHUNK_DURATION", "2.0")),
-            "overlap_seconds": float(os.getenv("CHUNK_OVERLAP", "0.5")),
-            "processing_delay_ms": int(os.getenv("PROCESSING_DELAY", "200")),
+            "chunk_duration_seconds": float(os.getenv("CHUNK_DURATION", "0.2")),  # 200ms
+            "overlap_seconds": float(os.getenv("CHUNK_OVERLAP", "0.0")),
+            "processing_delay_ms": int(os.getenv("PROCESSING_DELAY", "20")),  # Minimal delay
             
             # === AUDIO FORMAT SETTINGS ===
-            "sample_rate": int(os.getenv("SAMPLE_RATE", "16000")),  # 16kHz standard for telephony
+            "sample_rate": int(os.getenv("SAMPLE_RATE", "16000")),  # 16kHz for high quality
             "channels": int(os.getenv("AUDIO_CHANNELS", "1")),  # Mono for phone calls
-            "audio_encoding": "LINEAR16",  # Best for telephony
+            "audio_encoding": "LINEAR16",  # Best quality for telephony
             
             # === LANGUAGE SETTINGS ===
-            "language_codes": [os.getenv("GOOGLE_LANGUAGE_CODE", "en-GB")],  # v2 uses list
+            "language_code": os.getenv("GOOGLE_LANGUAGE_CODE", "en-GB"),  # Primary language
             "alternative_language_codes": ["en-US"],  # Additional languages
             
-            # === RECOGNITION FEATURES (v2 API) ===
+            # === RECOGNITION FEATURES (v1p1beta1) ===
             "enable_automatic_punctuation": True,
             "enable_word_confidence": True,
             "enable_word_time_offsets": True,
             "enable_profanity_filter": False,  # Keep original for fraud detection
-            "enable_spoken_punctuation": False,
-            "enable_spoken_emojis": False,
             
-            # === SPEAKER DIARIZATION (v2 API) ===
+            # === SPEAKER DIARIZATION (v1p1beta1) ===
             "enable_speaker_diarization": True,
             "min_speaker_count": 1,
             "max_speaker_count": 2,  # Customer + Agent
             
-            # === STREAMING FEATURES (v2 API) ===
+            # === STREAMING FEATURES (v1p1beta1) ===
             "interim_results": True,
-            "enable_voice_activity_events": True,
-            "voice_activity_timeout": {
-                "speech_start_timeout": "5s",
-                "speech_end_timeout": "2s"
-            },
+            "single_utterance": False,  # Continuous recognition
             
-            # === ADAPTATION SETTINGS (v2 API) ===
+            # === SPEECH ADAPTATION (v1p1beta1) ===
             # Custom vocabulary for banking/fraud terms
-            "enable_adaptation": True,
-            "phrase_hints": [
-                # Banking terms
-                "investment", "transfer", "account", "balance", "transaction",
-                "verification", "security", "PIN", "password", "authentication",
-                
-                # Fraud-related terms
-                "guaranteed returns", "margin call", "investment opportunity",
-                "emergency", "urgent", "immediately", "before it's too late",
-                "police", "investigation", "court", "tax office", "HMRC",
-                
-                # Financial amounts
-                "thousand", "million", "pounds", "dollars", "euros",
-                "payment", "deposit", "withdrawal", "fee"
+            "enable_speech_adaptation": True,
+            "speech_contexts": [
+                {
+                    "phrases": [
+                        # Banking terms
+                        "investment", "transfer", "account", "balance", "transaction",
+                        "verification", "security", "PIN", "password", "authentication",
+                        "sort code", "account number", "overdraft", "mortgage",
+                        
+                        # Fraud-related terms
+                        "guaranteed returns", "margin call", "investment opportunity",
+                        "emergency", "urgent", "immediately", "before it's too late",
+                        "police", "investigation", "court", "tax office", "HMRC",
+                        "arrest warrant", "legal action", "prosecution", "bailiff",
+                        
+                        # Romance scam terms
+                        "military", "overseas", "deployed", "medical emergency",
+                        "stuck", "stranded", "visa", "customs", "hospital",
+                        
+                        # Authority impersonation
+                        "bank security", "fraud department", "verification call",
+                        "account compromised", "suspicious activity", "block account",
+                        
+                        # Financial amounts
+                        "thousand", "million", "pounds", "dollars", "euros",
+                        "payment", "deposit", "withdrawal", "fee", "charge"
+                    ],
+                    "boost": 15  # Boost recognition of these terms
+                }
             ],
-            "boost": 20,  # Boost recognition of phrase hints
             
             # === PATHS ===
             "audio_base_path": str(self.sample_audio_path),
             "temp_audio_path": str(self.uploads_path / "temp_audio"),
             
             # === PERFORMANCE SETTINGS ===
-            "max_concurrent_transcriptions": int(os.getenv("MAX_CONCURRENT_TRANSCRIPTIONS", "10")),
-            "transcription_timeout": int(os.getenv("TRANSCRIPTION_TIMEOUT", "60")),
-            "recognition_restart_timeout": int(os.getenv("RESTART_TIMEOUT", "55")),  # v2 API limit
+            "max_concurrent_transcriptions": int(os.getenv("MAX_CONCURRENT_TRANSCRIPTIONS", "50")),
+            "transcription_timeout": int(os.getenv("TRANSCRIPTION_TIMEOUT", "300")),  # 5 minutes
+            "recognition_restart_timeout": int(os.getenv("RESTART_TIMEOUT", "240")),  # 4 minutes for stability
             
             # === ERROR HANDLING ===
             "max_retry_attempts": 3,
@@ -211,6 +214,17 @@ class Settings:
             # === LOGGING ===
             "log_transcription_details": os.getenv("LOG_TRANSCRIPTION_DETAILS", "true").lower() == "true",
             "save_transcription_logs": os.getenv("SAVE_TRANSCRIPTION_LOGS", "false").lower() == "true",
+            
+            # === TELEPHONY SPECIFIC SETTINGS ===
+            "telephony_integration": {
+                "supported_codecs": ["PCMU", "PCMA", "LINEAR16"],
+                "supported_sample_rates": [8000, 16000],
+                "buffer_size_ms": 200,
+                "jitter_buffer_ms": 50,
+                "vad_enabled": True,  # Voice Activity Detection
+                "noise_reduction": True,
+                "echo_cancellation": True
+            },
             
             # === COST OPTIMIZATION ===
             "enable_enhanced_models": os.getenv("ENABLE_ENHANCED_MODELS", "true").lower() == "true",
@@ -299,32 +313,32 @@ class Settings:
         }
         return configs.get(agent_type, base_config)
     
-    def get_google_stt_v2_config(self) -> Dict[str, Any]:
-        """Get Google Speech-to-Text v2 specific configuration"""
+    def get_google_stt_v1p1beta1_config(self) -> Dict[str, Any]:
+        """Get Google Speech-to-Text v1p1beta1 specific configuration"""
         return {
-            "api_version": "v2",
+            "api_version": "v1p1beta1",
             "project_id": self.audio_agent_config["google_project_id"],
-            "location": self.audio_agent_config["google_location"],
-            "recognizer_id": self.audio_agent_config["recognizer_id"],
             "model": self.audio_agent_config["model"],
-            "language_codes": self.audio_agent_config["language_codes"],
+            "language_code": self.audio_agent_config["language_code"],
             "sample_rate": self.audio_agent_config["sample_rate"],
             "encoding": self.audio_agent_config["audio_encoding"],
             "enable_speaker_diarization": self.audio_agent_config["enable_speaker_diarization"],
             "interim_results": self.audio_agent_config["interim_results"],
-            "phrase_hints": self.audio_agent_config["phrase_hints"],
-            "boost": self.audio_agent_config["boost"]
+            "speech_contexts": self.audio_agent_config["speech_contexts"],
+            "enable_automatic_punctuation": self.audio_agent_config["enable_automatic_punctuation"],
+            "enable_word_confidence": self.audio_agent_config["enable_word_confidence"],
+            "enable_word_time_offsets": self.audio_agent_config["enable_word_time_offsets"]
         }
     
     def get_telephony_optimized_config(self) -> Dict[str, Any]:
-        """Get telephony-optimized configuration"""
+        """Get telephony-optimized configuration for v1p1beta1"""
         return {
-            "model": "telephony",  # Optimal for phone calls
-            "sample_rate": 16000,  # Standard telephony
+            "model": "phone_call",  # Optimal for phone calls
+            "sample_rate": 16000,  # High quality telephony
             "channels": 1,  # Mono
             "encoding": "LINEAR16",
             "chunk_duration_ms": 200,  # Fast response
-            "language_codes": ["en-GB"],
+            "language_code": "en-GB",
             "enable_speaker_diarization": True,
             "min_speaker_count": 1,
             "max_speaker_count": 2,
@@ -332,8 +346,9 @@ class Settings:
             "enable_word_confidence": True,
             "enable_word_time_offsets": True,
             "interim_results": True,
-            "enable_voice_activity_events": True,
-            "phrase_hints": self.audio_agent_config["phrase_hints"]
+            "single_utterance": False,
+            "speech_contexts": self.audio_agent_config["speech_contexts"],
+            "telephony_integration": self.audio_agent_config["telephony_integration"]
         }
     
     @property
@@ -363,76 +378,77 @@ class Settings:
         """Check if audio file format is supported"""
         return any(filename.lower().endswith(fmt) for fmt in self.supported_audio_formats)
     
-    def validate_google_stt_v2_setup(self) -> Dict[str, Any]:
-        """Validate Google Speech-to-Text v2 setup"""
+    def validate_google_stt_v1p1beta1_setup(self) -> Dict[str, Any]:
+        """Validate Google Speech-to-Text v1p1beta1 setup"""
         validation_result = {
-            "api_version": "v2",
+            "api_version": "v1p1beta1",
             "status": "unknown",
             "requirements_met": False,
             "missing_dependencies": [],
             "recommendations": [],
-            "auth_method": "gce_service_account",
+            "auth_method": "service_account",
             "model_config": {}
         }
         
         try:
-            from google.cloud.speech_v2 import SpeechClient
-            from google.cloud.speech_v2.types import cloud_speech
+            from google.cloud import speech_v1p1beta1 as speech
             
             try:
-                client = SpeechClient()
+                client = speech.SpeechClient()
                 
-                # Test configuration
-                config = cloud_speech.RecognitionConfig(
-                    encoding=cloud_speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                # Test telephony configuration
+                config = speech.RecognitionConfig(
+                    encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
                     sample_rate_hertz=16000,
-                    language_codes=["en-GB"],
-                    model="telephony",  # Test telephony model
-                    features=cloud_speech.RecognitionFeatures(
-                        enable_automatic_punctuation=True,
-                        enable_word_confidence=True,
+                    language_code="en-GB",
+                    model="phone_call",  # Test telephony model
+                    enable_automatic_punctuation=True,
+                    enable_word_confidence=True,
+                    enable_word_time_offsets=True,
+                    diarization_config=speech.SpeakerDiarizationConfig(
                         enable_speaker_diarization=True,
-                        diarization_config=cloud_speech.SpeakerDiarizationConfig(
-                            min_speaker_count=1,
-                            max_speaker_count=2
-                        )
+                        min_speaker_count=1,
+                        max_speaker_count=2
                     )
                 )
                 
                 validation_result.update({
                     "status": "ready",
                     "requirements_met": True,
-                    "auth_method": "gce_service_account",
+                    "auth_method": "service_account_authenticated",
                     "model_config": {
-                        "primary_model": "telephony",
-                        "fallback_model": "latest_short",
+                        "primary_model": "phone_call",
+                        "fallback_model": "default",
                         "language": "en-GB",
                         "sample_rate": "16kHz",
                         "encoding": "LINEAR16",
-                        "speaker_diarization": True
+                        "speaker_diarization": True,
+                        "streaming_enabled": True,
+                        "max_streaming_duration": "5 minutes"
                     },
                     "recommendations": [
-                        "Using Google Speech-to-Text v2 API",
-                        "Telephony model optimized for phone calls",
+                        "Using Google Speech-to-Text v1p1beta1 API",
+                        "phone_call model optimized for telephony",
                         "Speaker diarization enabled for customer/agent detection",
-                        "Real-time streaming with interim results",
-                        "Custom phrase hints for banking/fraud terms"
+                        "Real-time streaming with 5-minute limit",
+                        "Speech adaptation configured for banking/fraud terms",
+                        "Automatic punctuation and word confidence enabled"
                     ]
                 })
                     
             except Exception as auth_error:
                 validation_result.update({
-                    "status": "service_account_error",
+                    "status": "authentication_error",
                     "requirements_met": False,
-                    "auth_method": "gce_service_account_failed",
-                    "missing_dependencies": [f"VM service account error: {auth_error}"],
+                    "auth_method": "service_account_failed",
+                    "missing_dependencies": [f"Authentication error: {auth_error}"],
                     "recommendations": [
-                        "Ensure your GCE VM has a service account attached",
-                        "Grant the service account 'Cloud Speech Client' role",
-                        "Enable the Speech-to-Text API in your GCP project",
-                        "For v2 API, ensure 'Speech-to-Text v2 API' is enabled",
-                        "Check: gcloud compute instances describe YOUR_VM_NAME --zone=YOUR_ZONE",
-                        "Verify: curl -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+                        "Ensure Google Cloud credentials are properly configured",
+                        "Set GOOGLE_APPLICATION_CREDENTIALS environment variable",
+                        "Grant Speech Client role to service account",
+                        "Enable Speech-to-Text API in your GCP project",
+                        "For v1p1beta1, ensure Speech-to-Text API is enabled",
+                        "Test: gcloud auth application-default print-access-token"
                     ]
                 })
                     
@@ -443,12 +459,64 @@ class Settings:
                 "missing_dependencies": ["google-cloud-speech>=2.33.0"],
                 "recommendations": [
                     "Install with: pip install google-cloud-speech>=2.33.0",
-                    "For v2 API support, use latest version",
-                    "Verify installation: python -c 'from google.cloud.speech_v2 import SpeechClient'"
+                    "For v1p1beta1 support, use latest version",
+                    "Verify installation: python -c 'from google.cloud import speech_v1p1beta1'"
                 ]
             })
         
         return validation_result
+    
+    def get_telephony_integration_guide(self) -> Dict[str, Any]:
+        """Get telephony integration setup guide"""
+        return {
+            "api_version": "v1p1beta1",
+            "optimal_configuration": {
+                "model": "phone_call",
+                "sample_rate": "16000Hz (recommended) or 8000Hz",
+                "encoding": "LINEAR16",
+                "channels": "1 (mono)",
+                "chunk_size": "200ms",
+                "speaker_diarization": "enabled",
+                "streaming_limit": "5 minutes (auto-restart)"
+            },
+            "integration_steps": [
+                "1. Configure telephony system to stream audio in real-time",
+                "2. Set up audio buffering with 200ms chunks",
+                "3. Initialize Google Speech v1p1beta1 client",
+                "4. Create streaming recognition session",
+                "5. Feed audio chunks to buffer",
+                "6. Process transcription results with speaker tags",
+                "7. Trigger fraud analysis on customer speech",
+                "8. Handle automatic recognition restarts"
+            ],
+            "telephony_providers": {
+                "twilio": {
+                    "websocket_streams": "supported",
+                    "sample_rate": "8000Hz or 16000Hz",
+                    "format": "mulaw, linear16",
+                    "integration_complexity": "medium"
+                },
+                "asterisk": {
+                    "real_time_streaming": "supported",
+                    "sample_rate": "8000Hz, 16000Hz",
+                    "format": "linear16, ulaw, alaw",
+                    "integration_complexity": "high"
+                },
+                "freeswitch": {
+                    "websocket_streaming": "supported",
+                    "sample_rate": "8000Hz, 16000Hz, 48000Hz",
+                    "format": "linear16",
+                    "integration_complexity": "medium"
+                }
+            },
+            "performance_considerations": {
+                "latency": "< 200ms for real-time fraud detection",
+                "throughput": "500+ concurrent calls supported",
+                "reliability": "Auto-restart every 4 minutes",
+                "accuracy": "phone_call model optimized for telephony",
+                "speaker_separation": "Customer/agent diarization"
+            }
+        }
 
 # Global settings instance
 _settings = None
@@ -460,67 +528,79 @@ def get_settings() -> Settings:
         _settings = Settings()
     return _settings
 
-def get_google_stt_v2_validation() -> Dict[str, Any]:
-    """Get Google Speech v2 setup validation"""
+def get_google_stt_v1p1beta1_validation() -> Dict[str, Any]:
+    """Get Google Speech v1p1beta1 setup validation"""
     settings = get_settings()
-    return settings.validate_google_stt_v2_setup()
+    return settings.validate_google_stt_v1p1beta1_setup()
 
-# Environment variable examples for Google Speech v2 API setup
+def get_telephony_integration_guide() -> Dict[str, Any]:
+    """Get telephony integration guide"""
+    settings = get_settings()
+    return settings.get_telephony_integration_guide()
+
+# Environment variable examples for Google Speech v1p1beta1 API setup
 ENV_EXAMPLES = {
-    "google_stt_v2_production": {
+    "google_stt_v1p1beta1_production": {
         "GOOGLE_CLOUD_PROJECT": "your-production-project",
-        "GOOGLE_SPEECH_LOCATION": "global",  # or "us-central1"
         "GOOGLE_LANGUAGE_CODE": "en-GB",
-        "GOOGLE_STT_MODEL": "telephony",  # Optimal for phone calls
-        "GOOGLE_RECOGNIZER_ID": "_",  # Use default recognizer
-        "CHUNK_DURATION": "2.0",
-        "PROCESSING_DELAY": "200",
-        "RESTART_TIMEOUT": "55",  # v2 API streaming limit
-        "ENABLE_ENHANCED_MODELS": "true"
+        "GOOGLE_STT_MODEL": "phone_call",  # Optimal for telephony
+        "CHUNK_DURATION": "0.2",  # 200ms chunks
+        "PROCESSING_DELAY": "20",  # Minimal delay
+        "RESTART_TIMEOUT": "240",  # 4 minutes for stability
+        "ENABLE_ENHANCED_MODELS": "true",
+        "MAX_CONCURRENT_TRANSCRIPTIONS": "50"
     },
-    "google_stt_v2_development": {
+    "google_stt_v1p1beta1_development": {
         "GOOGLE_CLOUD_PROJECT": "your-dev-project",
-        "GOOGLE_SPEECH_LOCATION": "global",
         "GOOGLE_LANGUAGE_CODE": "en-US",
-        "GOOGLE_STT_MODEL": "latest_short",  # Good for testing
-        "CHUNK_DURATION": "3.0",
-        "PROCESSING_DELAY": "300",
-        "LOG_TRANSCRIPTION_DETAILS": "true"
+        "GOOGLE_STT_MODEL": "phone_call",
+        "CHUNK_DURATION": "0.2",
+        "PROCESSING_DELAY": "50",
+        "LOG_TRANSCRIPTION_DETAILS": "true",
+        "MAX_CONCURRENT_TRANSCRIPTIONS": "10"
     }
 }
 
-# Model selection guide
-MODEL_SELECTION_GUIDE = {
-    "telephony": {
-        "description": "Optimized for phone call audio quality",
-        "best_for": ["Phone calls", "VOIP", "Call center recordings"],
-        "sample_rates": ["8kHz", "16kHz", "44.1kHz", "48kHz"],
+# Model selection guide for v1p1beta1
+MODEL_SELECTION_GUIDE_V1P1BETA1 = {
+    "phone_call": {
+        "description": "Optimized for audio from phone calls",
+        "best_for": ["Telephony systems", "Call centers", "VoIP calls", "8kHz-16kHz audio"],
+        "sample_rates": ["8kHz", "16kHz"],
         "latency": "Low",
-        "accuracy": "High for telephony audio",
-        "use_case": "Real-time fraud detection on phone calls"
+        "accuracy": "Highest for phone audio",
+        "use_case": "✅ RECOMMENDED for live fraud detection on phone calls",
+        "speaker_diarization": "Excellent",
+        "streaming": "Full support with 5-minute limit"
     },
-    "latest_long": {
-        "description": "Best for longer audio files",
-        "best_for": ["Meetings", "Lectures", "Long recordings"],
+    "video": {
+        "description": "Best for video with multiple speakers",
+        "best_for": ["Video conferences", "Meetings", "Multiple speakers"],
         "sample_rates": ["16kHz", "44.1kHz", "48kHz"],
         "latency": "Medium",
-        "accuracy": "Highest overall",
-        "use_case": "Post-call analysis of long conversations"
-    },
-    "latest_short": {
-        "description": "Best for shorter audio clips",
-        "best_for": ["Voice commands", "Short clips", "Quick queries"],
-        "sample_rates": ["16kHz", "44.1kHz", "48kHz"],
-        "latency": "Low",
-        "accuracy": "High for short audio",
-        "use_case": "Quick fraud alerts and short interactions"
+        "accuracy": "High for video/multi-speaker",
+        "use_case": "Not optimal for telephony fraud detection",
+        "speaker_diarization": "Very good",
+        "cost": "Premium model (higher cost)"
     },
     "command_and_search": {
-        "description": "Optimized for voice commands",
-        "best_for": ["Voice search", "Commands", "Keywords"],
+        "description": "Best for short queries and commands",
+        "best_for": ["Voice commands", "Short queries", "Voice search"],
         "sample_rates": ["16kHz"],
         "latency": "Very low",
-        "accuracy": "High for commands",
-        "use_case": "Voice-activated fraud alerts"
+        "accuracy": "High for short audio",
+        "use_case": "Not suitable for continuous call transcription",
+        "speaker_diarization": "Limited",
+        "streaming": "Limited support"
+    },
+    "default": {
+        "description": "General purpose model",
+        "best_for": ["General audio", "Long-form content", "Mixed audio types"],
+        "sample_rates": ["16kHz", "44.1kHz", "48kHz"],
+        "latency": "Medium",
+        "accuracy": "Good overall",
+        "use_case": "Fallback option if phone_call model unavailable",
+        "speaker_diarization": "Good",
+        "streaming": "Full support"
     }
 }

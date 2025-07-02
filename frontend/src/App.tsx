@@ -25,7 +25,7 @@ import {
   Server
 } from 'lucide-react';
 
-import HSBCLogo from './hsbc-uk.svg';
+import HSBCLogo from 'hsbc-uk.svg';
 
 // Environment configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';

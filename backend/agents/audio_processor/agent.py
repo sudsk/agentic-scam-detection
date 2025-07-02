@@ -551,7 +551,7 @@ class AudioProcessorAgent(BaseAgent):
         response, 
         websocket_callback: Callable
     ) -> None:
-        """Process streaming response from v1p1beta1 API - OPTIMIZED for less noise"""
+        """Process streaming response from v1p1beta1 API - FIXED for clean display"""
         
         try:
             # Handle streaming errors
@@ -572,70 +572,94 @@ class AudioProcessorAgent(BaseAgent):
                         # Get timing information
                         start_time, end_time = self._extract_timing_v1p1beta1(alternative)
                         
-                        # OPTIMIZATION: Only process meaningful transcripts
-                        # Skip very short interim results (< 5 characters)
-                        if not result.is_final and len(transcript) < 5:
-                            continue
-                        
-                        # OPTIMIZATION: Skip interim results that are too similar to previous
+                        # MAJOR FIX: Handle interim vs final results properly
                         session = self.active_sessions[session_id]
-                        last_segments = session.get("transcription_segments", [])
                         
-                        # Check if this is very similar to the last interim result
-                        if not result.is_final and last_segments:
-                            last_segment = last_segments[-1]
-                            if (last_segment.get("speaker") == detected_speaker and 
-                                not last_segment.get("is_final") and
-                                abs(len(transcript) - len(last_segment.get("text", ""))) < 5):
-                                # Skip very similar interim results
-                                continue
-                        
-                        # Create segment data
-                        segment_data = {
-                            "session_id": session_id,
-                            "speaker": detected_speaker,
-                            "text": transcript,
-                            "confidence": getattr(alternative, 'confidence', 0.9),
-                            "is_final": result.is_final,
-                            "start": start_time,
-                            "end": end_time,
-                            "duration": end_time - start_time,
-                            "processing_mode": "live_streaming_v1p1beta1_telephony",
-                            "transcription_source": self.transcription_source,
-                            "timestamp": get_current_timestamp()
-                        }
-                        
-                        # Send to WebSocket
-                        await websocket_callback({
-                            "type": "transcription_segment",
-                            "data": segment_data
-                        })
-                        
-                        # Store in session
-                        session["transcription_segments"].append(segment_data)
-                        
-                        # Track customer speech for fraud analysis
-                        if detected_speaker == "customer":
-                            if result.is_final:
-                                # Only add final results to customer speech history
+                        if result.is_final:
+                            # FINAL RESULT: Add as new segment
+                            segment_data = {
+                                "session_id": session_id,
+                                "speaker": detected_speaker,
+                                "text": transcript,
+                                "confidence": getattr(alternative, 'confidence', 0.9),
+                                "is_final": True,
+                                "start": start_time,
+                                "end": end_time,
+                                "duration": end_time - start_time,
+                                "processing_mode": "live_streaming_v1p1beta1_telephony",
+                                "transcription_source": self.transcription_source,
+                                "timestamp": get_current_timestamp()
+                            }
+                            
+                            # Send final result to WebSocket
+                            await websocket_callback({
+                                "type": "transcription_segment",
+                                "data": segment_data
+                            })
+                            
+                            # Store final result in session
+                            session["transcription_segments"].append(segment_data)
+                            
+                            # Track customer speech for fraud analysis (FINAL ONLY)
+                            if detected_speaker == "customer":
                                 session["customer_speech_history"].append(transcript)
-                            
-                            # OPTIMIZATION: Only trigger fraud analysis for FINAL customer speech
-                            # or significant interim results (> 15 characters)
-                            should_analyze = (
-                                result.is_final or 
-                                (len(transcript) > 15 and len(transcript) % 20 < 5)  # Every ~20 characters
-                            )
-                            
-                            if should_analyze:
+                                
+                                # Trigger fraud analysis for final customer speech
                                 await self._trigger_progressive_fraud_analysis(
                                     session_id, transcript, websocket_callback
                                 )
-                        
-                        # Log segment with less noise
-                        status = "FINAL" if result.is_final else "interim"
-                        if result.is_final or len(transcript) > 10:
-                            logger.info(f"📝 {status}: {detected_speaker} - '{transcript[:50]}...'")
+                            
+                            # Clear any interim state
+                            session.pop("current_interim_segment", None)
+                            
+                            logger.info(f"📝 FINAL: {detected_speaker} - '{transcript[:50]}...'")
+                            
+                        else:
+                            # INTERIM RESULT: Update existing interim or create new one
+                            # Only process if transcript is meaningful (> 8 characters)
+                            if len(transcript) > 8:
+                                
+                                interim_segment_data = {
+                                    "session_id": session_id,
+                                    "speaker": detected_speaker,
+                                    "text": transcript,
+                                    "confidence": getattr(alternative, 'confidence', 0.9),
+                                    "is_final": False,
+                                    "start": start_time,
+                                    "end": end_time,
+                                    "duration": end_time - start_time,
+                                    "processing_mode": "live_streaming_v1p1beta1_telephony",
+                                    "transcription_source": self.transcription_source,
+                                    "timestamp": get_current_timestamp(),
+                                    "is_interim_update": True  # Flag to help frontend
+                                }
+                                
+                                # Check if we should update the current interim or create new
+                                current_interim = session.get("current_interim_segment")
+                                
+                                if (current_interim and 
+                                    current_interim.get("speaker") == detected_speaker and
+                                    len(transcript) > len(current_interim.get("text", ""))):
+                                    
+                                    # UPDATE existing interim result
+                                    await websocket_callback({
+                                        "type": "transcription_interim_update",
+                                        "data": interim_segment_data
+                                    })
+                                    
+                                    logger.debug(f"📝 interim UPDATE: {detected_speaker} - '{transcript[:30]}...'")
+                                    
+                                else:
+                                    # NEW interim result
+                                    await websocket_callback({
+                                        "type": "transcription_interim_new",
+                                        "data": interim_segment_data
+                                    })
+                                    
+                                    logger.debug(f"📝 interim NEW: {detected_speaker} - '{transcript[:30]}...'")
+                                
+                                # Store current interim state
+                                session["current_interim_segment"] = interim_segment_data
         
         except Exception as e:
             logger.error(f"❌ Error processing streaming response: {e}")

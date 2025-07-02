@@ -25,7 +25,7 @@ import {
   Server
 } from 'lucide-react';
 
-//import HSBCLogo from './hsbc-uk.svg';
+import HSBCLogo from '/hsbc-uk.svg';
 
 // Environment configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -520,8 +520,8 @@ function App() {
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="flex justify-between items-center px-6 py-3">
           <div className="flex items-center space-x-4">
-            <div className="bg-red-600 text-white px-3 py-1 rounded text-sm font-medium">
-              HSBC
+            <div className="flex items-center">
+              <img src="/hsbc-uk.svg" alt="HSBC" className="h-8 w-auto" />
             </div>
             <span className="text-lg font-medium text-gray-900">Agent Desktop</span>
           </div>
@@ -895,7 +895,7 @@ function App() {
           )}
 
           {/* HSBC Policy */}
-          {policyGuidance && (
+          {policyGuidance && policyGuidance.policy_id && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <FileText className="w-4 h-4 text-blue-500 mr-2" />
@@ -904,14 +904,15 @@ function App() {
               
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <div className="text-xs font-medium text-blue-800 mb-2">
-                  Investment Scam Response (FP-INV-001)
+                  {policyGuidance.policy_title || 'Policy Guidance'} ({policyGuidance.policy_id})
                 </div>
-                <ul className="text-xs text-blue-700 space-y-1">
-                  <li>• All legitimate investments carry risk - no guarantees possible</li>
-                  <li>• High-pressure sales tactics are warning signs of fraud</li>
-                  <li>• Verify company against FCA register</li>
-                  <li>• Document all details for investigation</li>
-                </ul>
+                {policyGuidance.customer_education && policyGuidance.customer_education.length > 0 && (
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    {policyGuidance.customer_education.slice(0, 4).map((point: string, index: number) => (
+                      <li key={index}>• {point}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           )}

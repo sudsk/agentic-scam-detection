@@ -67,6 +67,11 @@ interface PolicyGuidance {
   recommended_actions: string[];
   key_questions: string[];
   customer_education: string[];
+  policy_id?: string;
+  policy_title?: string;
+  policy_version?: string;
+  escalation_threshold?: number;
+  regulatory_requirements?: string[];
 }
 
 interface WebSocketMessage {

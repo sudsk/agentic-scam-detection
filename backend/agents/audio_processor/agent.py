@@ -412,28 +412,25 @@ class AudioProcessorAgent(BaseAgent):
             logger.info(f"🎙️ Starting CORRECT v2 API recognition cycle for {session_id}")
             
             # Create recognizer configuration using v2 API structure
-            # The v2 API requires creating a Recognizer object first
+            # Note: Speaker diarization support is limited in v2 API
             
-            # Step 1: Create recognition features
+            # Step 1: Create basic recognition features (without diarization first)
             recognition_features = self.speech_v2.RecognitionFeatures(
                 enable_automatic_punctuation=True,
                 enable_word_confidence=True,
-                enable_word_time_offsets=True,
-                enable_speaker_diarization=True,
-                diarization_config=self.speech_v2.SpeakerDiarizationConfig(
-                    min_speaker_count=1,
-                    max_speaker_count=2
-                )
+                enable_word_time_offsets=True
             )
             
-            # Step 2: Create recognition config (without encoding - that's in decoding config)
+            # Step 2: Create recognition config with telephony model
             recognition_config = self.speech_v2.RecognitionConfig(
                 auto_decoding_config=self.decoding_config if not self.use_explicit_decoding else None,
                 explicit_decoding_config=self.decoding_config if self.use_explicit_decoding else None,
                 language_codes=["en-GB"],  # v2 uses language_codes (list)
-                model="telephony",  # v2 telephony model
+                model="latest_short",  # Use latest_short instead of telephony for better compatibility
                 features=recognition_features
             )
+            
+            logger.info("🎯 Using latest_short model (v2 API compatible)")
             
             # Step 3: Create streaming config
             streaming_features = self.speech_v2.StreamingRecognitionFeatures(
@@ -606,9 +603,9 @@ class AudioProcessorAgent(BaseAgent):
             logger.error(f"❌ Error processing streaming response: {e}")
     
     def _detect_speaker_v2_correct(self, session_id: str, alternative, result) -> str:
-        """Enhanced speaker detection using correct v2 API speaker diarization"""
+        """Enhanced speaker detection for v2 API (with fallback logic)"""
         
-        # Try v2 API speaker diarization
+        # Try v2 API speaker diarization if available
         if hasattr(result, 'speaker_info') and result.speaker_info:
             speaker_tag = result.speaker_info.speaker_tag
             logger.debug(f"🎯 v2 API result speaker_tag: {speaker_tag}")
@@ -643,10 +640,24 @@ class AudioProcessorAgent(BaseAgent):
                     else:
                         return f"speaker_{speaker_tag}"
         
-        # Fallback to session-tracked speaker
-        current_speaker = self.speaker_states.get(session_id, "customer")
-        logger.debug(f"🎯 Fallback to session speaker: {current_speaker}")
-        return current_speaker
+        # FALLBACK: Simple alternating speaker detection for demo purposes
+        # In real telephony, this would be handled by the telephony system
+        session = self.active_sessions.get(session_id, {})
+        segments = session.get("transcription_segments", [])
+        
+        # Simple heuristic: alternate speakers every few segments
+        if len(segments) == 0:
+            return "customer"  # First speaker is usually customer
+        
+        # Look at recent segments to determine pattern
+        recent_customer_count = sum(1 for seg in segments[-3:] if seg.get("speaker") == "customer")
+        recent_agent_count = sum(1 for seg in segments[-3:] if seg.get("speaker") == "agent")
+        
+        # If no clear pattern, assume customer (most important for fraud detection)
+        if recent_customer_count > recent_agent_count:
+            return "agent"  # Switch to agent
+        else:
+            return "customer"  # Default to customer for fraud detection
     
     def _extract_timing_v2_correct(self, alternative) -> tuple:
         """Extract timing information from alternative in correct v2 API"""

@@ -777,6 +777,7 @@ function App() {
                 </span>
               </div>
               {/* Additional Demographics */}
+              <!--
               <div className="pt-2 border-t border-gray-100">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Age:</span>
@@ -790,7 +791,8 @@ function App() {
                   <span className="text-gray-600">Relationship:</span>
                   <span className="font-medium">{currentCustomer.demographics.relationship}</span>
                 </div>
-              </div>               
+              </div> 
+              -->               
             </div>
           </div>
 

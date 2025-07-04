@@ -753,22 +753,6 @@ function App() {
                   {currentCustomer.riskProfile}
                 </span>
               </div>
-              
-              {/* Additional Demographics */}
-              <!--div className="pt-2 border-t border-gray-100">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Age:</span>
-                  <span className="font-medium">{currentCustomer.demographics.age || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Location:</span>
-                  <span className="font-medium">{currentCustomer.demographics.location}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Status:</span>
-                  <span className="font-medium">{currentCustomer.demographics.relationship}</span>
-                </div>
-              </div-->
             </div>
           </div>
 

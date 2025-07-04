@@ -209,7 +209,8 @@ const defaultCustomerProfile = {
     age: 0,
     location: "Unknown",
     relationship: "Unknown"
-  }
+  },
+  alerts: []  // ADD THIS LINE - empty array for no alerts
 };
 
 // Utility functions

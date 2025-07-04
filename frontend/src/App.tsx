@@ -116,6 +116,8 @@ function App() {
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [serverProcessing, setServerProcessing] = useState<boolean>(false);
+
+  const [scamType, setScamType] = useState<string>('unknown');  
   
   // Refs
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -272,6 +274,7 @@ function App() {
         const analysis = message.data;
         setRiskScore(analysis.risk_score || 0);
         setRiskLevel(analysis.risk_level || 'MINIMAL');
+        setScamType(analysis.scam_type || 'unknown');  // ADD THIS LINE        
         setDetectedPatterns(analysis.detected_patterns || {});
         setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
         break;
@@ -849,9 +852,16 @@ function App() {
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
                   <div className="flex items-center space-x-2">
                     <AlertTriangle className="w-4 h-4 text-red-600" />
-                    <span className="text-sm font-medium text-red-800">INVESTMENT SCAM DETECTED</span>
+                    <span className="text-sm font-medium text-red-800">
+                      {scamType === 'romance_scam' ? 'ROMANCE SCAM DETECTED' :
+                       scamType === 'investment_scam' ? 'INVESTMENT SCAM DETECTED' :
+                       scamType === 'impersonation_scam' ? 'IMPERSONATION SCAM DETECTED' :
+                       'FRAUD DETECTED'}
+                    </span>
                   </div>
-                  <p className="text-xs text-red-700 mt-1">Server analysis: guaranteed returns, urgency, third-party instructions</p>
+                  <p className="text-xs text-red-700 mt-1">
+                    Server analysis: {Object.keys(detectedPatterns).join(', ') || 'Multiple fraud indicators detected'}
+                  </p>
                 </div>
               )}
               
@@ -859,9 +869,15 @@ function App() {
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
                   <div className="flex items-center space-x-2">
                     <AlertCircle className="w-4 h-4 text-orange-600" />
-                    <span className="text-sm font-medium text-orange-800">URGENCY PRESSURE</span>
+                    <span className="text-sm font-medium text-orange-800">
+                      {scamType === 'romance_scam' ? 'EMOTIONAL MANIPULATION' :
+                       scamType === 'investment_scam' ? 'URGENCY PRESSURE' :
+                       'SUSPICIOUS ACTIVITY'}
+                    </span>
                   </div>
-                  <p className="text-xs text-orange-700 mt-1">Server detected: "immediately" and time pressure patterns</p>
+                  <p className="text-xs text-orange-700 mt-1">
+                    Server detected: {Object.keys(detectedPatterns).slice(0, 2).join(', ')} patterns  
+                  </p>
                 </div>
               )}
             </div>
@@ -918,6 +934,8 @@ function App() {
                       <li key={index}>• {point}</li>
                     ))}
                   </ul>
+                ) : (
+                  <p className="text-xs text-blue-700">Policy guidance loading...</p>
                 )}
               </div>
             </div>

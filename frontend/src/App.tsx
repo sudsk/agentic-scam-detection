@@ -913,7 +913,7 @@ function App() {
             </div>
           )}
 
-          {/* HSBC Policy */}
+          {/* HSBC Policy - FIXED VERSION */}
           {policyGuidance && policyGuidance.policy_id && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
@@ -928,7 +928,7 @@ function App() {
                 {policyGuidance.policy_version && (
                   <div className="text-xs text-blue-600 mb-2">Version: {policyGuidance.policy_version}</div>
                 )}
-                {policyGuidance.customer_education && policyGuidance.customer_education.length > 0 && (
+                {policyGuidance.customer_education && policyGuidance.customer_education.length > 0 ? (
                   <ul className="text-xs text-blue-700 space-y-1">
                     {policyGuidance.customer_education.slice(0, 4).map((point: string, index: number) => (
                       <li key={index}>• {point}</li>

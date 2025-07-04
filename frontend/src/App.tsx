@@ -194,7 +194,28 @@ const customerProfiles: Record<string, {
 };
 
 // Default profile when no audio is selected
-const defaultCustomerProfile = {
+const defaultCustomerProfile: {
+  name: string;
+  account: string;
+  status: string;
+  segment: string;
+  riskProfile: string;
+  recentActivity: {
+    lastCall: string;
+    description: string;
+    additionalInfo?: string;
+  };
+  demographics: {
+    age: number;
+    location: string;
+    relationship: string;
+  };
+  alerts?: {
+    type: string;
+    date: string;
+    description: string;
+  }[];
+} = {
   name: "Customer",
   account: "****0000",
   status: "Active",
@@ -203,14 +224,14 @@ const defaultCustomerProfile = {
   recentActivity: {
     lastCall: "N/A",
     description: "No recent activity",
-    additionalInfo: undefined  // ADD THIS LINE
+    additionalInfo: undefined
   },
   demographics: {
     age: 0,
     location: "Unknown",
     relationship: "Unknown"
   },
-  alerts: []  // ADD THIS LINE - empty array for no alerts
+  alerts: [] // Now TypeScript knows this is an array of alert objects
 };
 
 // Utility functions

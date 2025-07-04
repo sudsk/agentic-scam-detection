@@ -754,6 +754,21 @@ function App() {
                 </span>
               </div>
             </div>
+            {/* Additional Demographics */}
+            <div className="pt-2 border-t border-gray-100">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Age:</span>
+                <span className="font-medium">{currentCustomer.demographics.age || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Location:</span>
+                <span className="font-medium">{currentCustomer.demographics.location}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Relationship:</span>
+                <span className="font-medium">{currentCustomer.demographics.relationship}</span>
+              </div>
+            </div>            
           </div>
 
           {/* Call Controls */}
@@ -808,23 +823,44 @@ function App() {
             </div>
           </div>
 
-          {/* Recent Activity */}
+          {/* Recent Activity - UPDATED VERSION */}
           <div className="p-4 flex-1">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Recent Activity</h3>
             <div className="space-y-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-600">Last Call:</span>
-                <span>2 days ago</span>
+                <span>{currentCustomer.recentActivity.lastCall}</span>
               </div>
-              <div className="text-gray-600">Account balance inquiry</div>
+              <div className="text-gray-600">{currentCustomer.recentActivity.description}</div>
               
-              {riskScore > 0 && (
-                <div className="mt-4 p-2 bg-orange-50 border border-orange-200 rounded">
+              {currentCustomer.recentActivity.additionalInfo && (
+                <div className="text-blue-600 bg-blue-50 p-2 rounded text-xs mt-2">
+                  <strong>Note:</strong> {currentCustomer.recentActivity.additionalInfo}
+                </div>
+              )}
+              
+              {/* Customer-specific alerts */}
+              {currentCustomer.alerts && currentCustomer.alerts.map((alert, index) => (
+                <div key={index} className="mt-4 p-2 bg-orange-50 border border-orange-200 rounded">
                   <div className="flex justify-between">
-                    <span className="text-orange-800 font-medium">Fraud Alert:</span>
-                    <span className="text-orange-600">4 weeks ago</span>
+                    <span className="text-orange-800 font-medium">{alert.type}:</span>
+                    <span className="text-orange-600">{alert.date}</span>
                   </div>
-                  <div className="text-orange-700 text-xs mt-1">Suspicious payment blocked - £1,200 to unknown recipient</div>
+                  <div className="text-orange-700 text-xs mt-1">{alert.description}</div>
+                </div>
+              ))}
+              
+              {/* Risk-based dynamic alert */}
+              {riskScore > 60 && (
+                <div className="mt-4 p-2 bg-red-50 border border-red-200 rounded">
+                  <div className="flex justify-between">
+                    <span className="text-red-800 font-medium">Live Fraud Alert:</span>
+                    <span className="text-red-600">Now</span>
+                  </div>
+                  <div className="text-red-700 text-xs mt-1">
+                    {riskScore >= 80 ? 'HIGH RISK - Immediate intervention required' :
+                     'MEDIUM RISK - Enhanced monitoring active'}
+                  </div>
                 </div>
               )}
             </div>

@@ -77,6 +77,140 @@ interface WebSocketMessage {
   data: any;
 }
 
+// Customer profile mapping based on audio files
+const customerProfiles: Record<string, {
+  name: string;
+  account: string;
+  status: string;
+  segment: string;
+  riskProfile: string;
+  recentActivity: {
+    lastCall: string;
+    description: string;
+    additionalInfo?: string;
+  };
+  demographics: {
+    age: number;
+    location: string;
+    relationship: string;
+  };
+  alerts?: {
+    type: string;
+    date: string;
+    description: string;
+  }[];
+}> = {
+  'romance_scam_live_call.wav': {
+    name: "Mrs Patricia Williams",
+    account: "****3847",
+    status: "Active",
+    segment: "Premier Banking",
+    riskProfile: "Medium",
+    recentActivity: {
+      lastCall: "3 weeks ago",
+      description: "Balance inquiry and international transfer questions",
+      additionalInfo: "Asked about sending money overseas multiple times"
+    },
+    demographics: {
+      age: 67,
+      location: "Bournemouth, UK",
+      relationship: "Widow"
+    },
+    alerts: [
+      {
+        type: "Unusual Activity",
+        date: "2 weeks ago",
+        description: "Attempted £3,000 transfer to Nigeria - blocked by fraud filters"
+      }
+    ]
+  },
+
+  'investment_scam_live_call.wav': {
+    name: "Mr David Chen",
+    account: "****5691",
+    status: "Active", 
+    segment: "Business Banking",
+    riskProfile: "High",
+    recentActivity: {
+      lastCall: "5 days ago",
+      description: "Investment account setup inquiry",
+      additionalInfo: "Mentioned guaranteed returns opportunity"
+    },
+    demographics: {
+      age: 42,
+      location: "Manchester, UK",
+      relationship: "Married"
+    },
+    alerts: [
+      {
+        type: "Investment Warning",
+        date: "1 week ago", 
+        description: "Customer inquired about transferring £25,000 for 'guaranteed 15% monthly returns'"
+      }
+    ]
+  },
+
+  'impersonation_scam_live_call.wav': {
+    name: "Ms Sarah Thompson",
+    account: "****7234",
+    status: "Active",
+    segment: "Personal Banking", 
+    riskProfile: "Low",
+    recentActivity: {
+      lastCall: "1 day ago",
+      description: "Reported suspicious call claiming to be from HSBC security",
+      additionalInfo: "Customer was asked for PIN - correctly refused"
+    },
+    demographics: {
+      age: 34,
+      location: "Birmingham, UK",
+      relationship: "Single"
+    },
+    alerts: [
+      {
+        type: "Security Alert",
+        date: "Yesterday",
+        description: "Customer reported impersonation attempt - no account compromise detected"
+      }
+    ]
+  },
+
+  'legitimate_call.wav': {
+    name: "Mr James Rodriguez",
+    account: "****9102",
+    status: "Active",
+    segment: "Personal Banking",
+    riskProfile: "Low", 
+    recentActivity: {
+      lastCall: "2 weeks ago",
+      description: "Mortgage payment query - resolved successfully"
+    },
+    demographics: {
+      age: 29,
+      location: "London, UK", 
+      relationship: "Single"
+    }
+  }
+};
+
+// Default profile when no audio is selected
+const defaultCustomerProfile = {
+  name: "Customer",
+  account: "****0000",
+  status: "Active",
+  segment: "Personal Banking", 
+  riskProfile: "Unknown",
+  recentActivity: {
+    lastCall: "N/A",
+    description: "No recent activity"
+  },
+  demographics: {
+    age: 0,
+    location: "Unknown",
+    relationship: "Unknown"
+  }
+};
+
 // Utility functions
 const getRiskColor = (riskScore: number): string => {
   if (riskScore >= 80) return 'bg-red-100 text-red-800 border-red-300';
@@ -118,6 +252,8 @@ function App() {
   const [serverProcessing, setServerProcessing] = useState<boolean>(false);
 
   const [scamType, setScamType] = useState<string>('unknown');  
+
+  const [currentCustomer, setCurrentCustomer] = useState(defaultCustomerProfile);
   
   // Refs
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -334,6 +470,11 @@ function App() {
       // Reset state for new analysis
       if (selectedAudioFile?.id !== audioFile.id) {
         setSelectedAudioFile(audioFile);
+
+        // UPDATE CUSTOMER PROFILE BASED ON AUDIO FILE
+        const customerProfile = customerProfiles[audioFile.filename] || defaultCustomerProfile;
+        setCurrentCustomer(customerProfile);
+        
         resetState();
       }
       
@@ -533,8 +674,8 @@ function App() {
           </div>
           
           <div className="flex items-center space-x-6 text-sm text-gray-600">
-            <span>Agent: Sarah Mitchell</span>
-            <span>ID: SM2024</span>
+            <span>Agent: James Bond</span>
+            <span>ID: JB2024</span>
             <span>Shift: 09:00-17:00</span>
             <ProcessingStatus />
             <Settings className="w-4 h-4" />

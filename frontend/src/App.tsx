@@ -723,30 +723,52 @@ function App() {
         
         {/* Left Sidebar - Customer Information */}
         <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-          {/* Customer Information */}
+          {/* Customer Information - UPDATED VERSION */}
           <div className="p-4 border-b border-gray-200">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Customer Information</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600">Name:</span>
-                <span className="font-medium">{customerData.name}</span>
+                <span className="font-medium">{currentCustomer.name}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Account:</span>
-                <span className="font-medium">{customerData.account}</span>
+                <span className="font-medium">{currentCustomer.account}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Status:</span>
-                <span className="text-green-600 font-medium">{customerData.status}</span>
+                <span className="text-green-600 font-medium">{currentCustomer.status}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Segment:</span>
-                <span className="font-medium">{customerData.segment}</span>
+                <span className="font-medium">{currentCustomer.segment}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Risk Profile:</span>
-                <span className="text-yellow-600 font-medium">{customerData.riskProfile}</span>
+                <span className={`font-medium ${
+                  currentCustomer.riskProfile === 'High' ? 'text-red-600' :
+                  currentCustomer.riskProfile === 'Medium' ? 'text-yellow-600' :
+                  'text-green-600'
+                }`}>
+                  {currentCustomer.riskProfile}
+                </span>
               </div>
+              
+              {/* Additional Demographics */}
+              <!--div className="pt-2 border-t border-gray-100">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Age:</span>
+                  <span className="font-medium">{currentCustomer.demographics.age || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Location:</span>
+                  <span className="font-medium">{currentCustomer.demographics.location}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Status:</span>
+                  <span className="font-medium">{currentCustomer.demographics.relationship}</span>
+                </div>
+              </div-->
             </div>
           </div>
 

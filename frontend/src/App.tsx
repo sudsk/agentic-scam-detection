@@ -202,7 +202,8 @@ const defaultCustomerProfile = {
   riskProfile: "Unknown",
   recentActivity: {
     lastCall: "N/A",
-    description: "No recent activity"
+    description: "No recent activity",
+    additionalInfo: undefined  // ADD THIS LINE
   },
   demographics: {
     age: 0,

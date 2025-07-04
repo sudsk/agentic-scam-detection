@@ -100,7 +100,7 @@ const customerProfiles: Record<string, {
     description: string;
   }[];
 }> = {
-  'romance_scam_live_call.wav': {
+  'romance_scam_1.wav': {
     name: "Mrs Patricia Williams",
     account: "****3847",
     status: "Active",

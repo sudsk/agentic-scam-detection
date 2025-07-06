@@ -22,7 +22,9 @@ import {
   Clock,
   Hash,
   Settings,
-  Server
+  Server,
+  UserCheck,
+  Headphones
 } from 'lucide-react';
 
 // Environment configuration
@@ -36,8 +38,10 @@ interface AudioSegment {
   duration: number;
   text: string;
   confidence?: number;
-  is_final?: boolean;      // NEW: Track if this is a final result
-  is_interim?: boolean;    // NEW: Track if this is an interim result
+  is_final?: boolean;
+  is_interim?: boolean;
+  speaker_confidence?: number;  // NEW: Speaker detection confidence
+  segment_id?: string;         // NEW: Unique segment ID
 }
 
 interface RealAudioFile {
@@ -76,6 +80,39 @@ interface WebSocketMessage {
   type: string;
   data: any;
 }
+
+// Enhanced speaker detection and display utilities
+const getSpeakerIcon = (speaker: string, confidence?: number) => {
+  if (speaker === 'customer') {
+    return <User className={`w-3 h-3 ${confidence && confidence < 0.8 ? 'text-blue-400' : 'text-blue-600'}`} />;
+  } else {
+    return <UserCheck className={`w-3 h-3 ${confidence && confidence < 0.8 ? 'text-green-400' : 'text-green-600'}`} />;
+  }
+};
+
+const getSpeakerLabel = (speaker: string, confidence?: number) => {
+  const baseLabel = speaker === 'customer' ? 'Customer' : 'Agent';
+  if (confidence && confidence < 0.8) {
+    return `${baseLabel} (${Math.round(confidence * 100)}%)`;
+  }
+  return baseLabel;
+};
+
+const getSpeakerColor = (speaker: string, isInterim: boolean = false, confidence?: number) => {
+  const isLowConfidence = confidence && confidence < 0.8;
+  
+  if (speaker === 'customer') {
+    if (isLowConfidence) {
+      return isInterim ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-blue-100 text-blue-700 border-blue-300';
+    }
+    return isInterim ? 'bg-blue-100 text-blue-700' : 'bg-blue-100 text-blue-800';
+  } else {
+    if (isLowConfidence) {
+      return isInterim ? 'bg-green-50 text-green-600 border-green-200' : 'bg-green-100 text-green-700 border-green-300';
+    }
+    return isInterim ? 'bg-green-100 text-green-700' : 'bg-green-100 text-green-800';
+  }
+};
 
 // Customer profile mapping based on audio files
 const customerProfiles: Record<string, {
@@ -194,28 +231,7 @@ const customerProfiles: Record<string, {
 };
 
 // Default profile when no audio is selected
-const defaultCustomerProfile: {
-  name: string;
-  account: string;
-  status: string;
-  segment: string;
-  riskProfile: string;
-  recentActivity: {
-    lastCall: string;
-    description: string;
-    additionalInfo?: string;
-  };
-  demographics: {
-    age: number;
-    location: string;
-    relationship: string;
-  };
-  alerts?: {
-    type: string;
-    date: string;
-    description: string;
-  }[];
-} = {
+const defaultCustomerProfile = {
   name: "Customer",
   account: "****0000",
   status: "Active",
@@ -231,7 +247,7 @@ const defaultCustomerProfile: {
     location: "Unknown",
     relationship: "Unknown"
   },
-  alerts: [] // Now TypeScript knows this is an array of alert objects
+  alerts: []
 };
 
 // Utility functions
@@ -246,6 +262,30 @@ const formatTime = (seconds: number): string => {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+// Enhanced segment deduplication and management
+const deduplicateSegments = (segments: AudioSegment[]): AudioSegment[] => {
+  const finalSegments = segments.filter(s => s.is_final);
+  const interimSegments = segments.filter(s => !s.is_final);
+  
+  // Group interim segments by speaker and keep only the latest
+  const latestInterimByTurn: AudioSegment[] = [];
+  const interimBySpeaker: { [key: string]: AudioSegment } = {};
+  
+  interimSegments.forEach(segment => {
+    const key = `${segment.speaker}-${Math.floor(segment.start / 5)}`; // Group by 5-second windows
+    if (!interimBySpeaker[key] || segment.text.length > interimBySpeaker[key].text.length) {
+      interimBySpeaker[key] = segment;
+    }
+  });
+  
+  Object.values(interimBySpeaker).forEach(segment => {
+    latestInterimByTurn.push(segment);
+  });
+  
+  // Combine and sort by start time
+  return [...finalSegments, ...latestInterimByTurn].sort((a, b) => a.start - b.start);
 };
 
 function App() {
@@ -275,20 +315,19 @@ function App() {
   const [serverProcessing, setServerProcessing] = useState<boolean>(false);
 
   const [scamType, setScamType] = useState<string>('unknown');  
-
   const [currentCustomer, setCurrentCustomer] = useState(defaultCustomerProfile);
+  
+  // Enhanced transcription state
+  const [speakerStats, setSpeakerStats] = useState<{
+    customer: { segments: number; confidence: number };
+    agent: { segments: number; confidence: number };
+  }>({
+    customer: { segments: 0, confidence: 0 },
+    agent: { segments: 0, confidence: 0 }
+  });
   
   // Refs
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Mock customer data
-  const customerData = {
-    name: "Michael Thompson",
-    account: "****5678",
-    status: "Active",
-    segment: "Personal Banking",
-    riskProfile: "Medium"
-  };
 
   // ===== WEBSOCKET FUNCTIONS =====
 
@@ -342,87 +381,114 @@ function App() {
     
     switch (message.type) {
       case 'server_processing_started':
-        setProcessingStage('🖥️ Server processing started');
+        setProcessingStage('🖥️ Enhanced server processing started');
         setServerProcessing(true);
         break;
         
-      // FINAL transcription segments - add as new segments
+      // ENHANCED: Final transcription segments with better speaker tracking
       case 'transcription_segment':
         const transcriptData = message.data;
         
-        // Add final transcription segment
-        setShowingSegments(prev => [...prev, {
+        // Create enhanced segment with unique ID
+        const finalSegment: AudioSegment = {
           speaker: transcriptData.speaker,
           start: transcriptData.start,
           duration: transcriptData.duration,
           text: transcriptData.text,
           confidence: transcriptData.confidence,
-          is_final: true  // Mark as final
-        }]);
+          is_final: true,
+          speaker_confidence: transcriptData.speaker_confidence || 0.9,
+          segment_id: `final-${transcriptData.start}-${Date.now()}`
+        };
+        
+        // Add final transcription segment with deduplication
+        setShowingSegments(prev => {
+          const updated = [...prev, finalSegment];
+          return deduplicateSegments(updated);
+        });
+        
+        // Update speaker statistics
+        setSpeakerStats(prev => {
+          const updated = { ...prev };
+          updated[transcriptData.speaker as 'customer' | 'agent'].segments++;
+          updated[transcriptData.speaker as 'customer' | 'agent'].confidence = 
+            (updated[transcriptData.speaker as 'customer' | 'agent'].confidence + (transcriptData.speaker_confidence || 0.9)) / 2;
+          return updated;
+        });
         
         // Update full transcription text with final results only
-        if (transcriptData.is_final) {
+        if (transcriptData.is_final && transcriptData.speaker === 'customer') {
           setTranscription(prev => {
-            // Get all final segments
-            const finalSegments = [...showingSegments.filter(s => s.is_final), {
-              speaker: transcriptData.speaker,
-              text: transcriptData.text,
-              is_final: true
-            }];
-            
-            // Join final customer segments only
-            const customerText = finalSegments
-              .filter(s => s.speaker === 'customer')
-              .map(s => s.text)
-              .join(' ');
-              
-            return customerText;
+            const customerText = prev + ' ' + transcriptData.text;
+            return customerText.trim();
           });
         }
         
-        setProcessingStage(`🎙️ FINAL: ${transcriptData.speaker} speaking...`);
+        setProcessingStage(`🎙️ FINAL: ${transcriptData.speaker} speaking... (Enhanced)`);
         break;
         
-      // NEW interim result - add as interim segment
+      // ENHANCED: New interim result with better handling
       case 'transcription_interim_new':
         const interimData = message.data;
         
-        // Remove any existing interim segments for this speaker
-        setShowingSegments(prev => [
-          ...prev.filter(s => s.is_final), // Keep all final segments
-          {
-            speaker: interimData.speaker,
-            start: interimData.start,
-            duration: interimData.duration,
-            text: interimData.text,
-            confidence: interimData.confidence,
-            is_final: false,  // Mark as interim
-            is_interim: true
-          }
-        ]);
+        // Create enhanced interim segment
+        const interimSegment: AudioSegment = {
+          speaker: interimData.speaker,
+          start: interimData.start,
+          duration: interimData.duration,
+          text: interimData.text,
+          confidence: interimData.confidence,
+          is_final: false,
+          is_interim: true,
+          speaker_confidence: interimData.speaker_confidence || 0.7,
+          segment_id: `interim-${interimData.speaker}-${Date.now()}`
+        };
         
-        setProcessingStage(`🎙️ interim: ${interimData.speaker} - "${interimData.text.slice(0, 30)}..."`);
+        // Enhanced interim handling with deduplication
+        setShowingSegments(prev => {
+          // Remove old interim segments for this speaker and add new one
+          const withoutOldInterim = prev.filter(s => 
+            s.is_final || 
+            s.speaker !== interimData.speaker || 
+            !s.is_interim
+          );
+          const updated = [...withoutOldInterim, interimSegment];
+          return deduplicateSegments(updated);
+        });
+        
+        setProcessingStage(`🎙️ interim: ${interimData.speaker} - "${interimData.text.slice(0, 30)}..." (Enhanced)`);
         break;
         
-      // UPDATE existing interim result - replace the interim segment
+      // ENHANCED: Update existing interim result
       case 'transcription_interim_update':
         const updateData = message.data;
         
-        // Replace the interim segment for this speaker
-        setShowingSegments(prev => [
-          ...prev.filter(s => s.is_final), // Keep all final segments
-          {
-            speaker: updateData.speaker,
-            start: updateData.start,
-            duration: updateData.duration,
-            text: updateData.text,
-            confidence: updateData.confidence,
-            is_final: false,  // Mark as interim
-            is_interim: true
-          }
-        ]);
+        // Create updated interim segment
+        const updatedInterimSegment: AudioSegment = {
+          speaker: updateData.speaker,
+          start: updateData.start,
+          duration: updateData.duration,
+          text: updateData.text,
+          confidence: updateData.confidence,
+          is_final: false,
+          is_interim: true,
+          speaker_confidence: updateData.speaker_confidence || 0.7,
+          segment_id: `interim-update-${updateData.speaker}-${Date.now()}`
+        };
         
-        setProcessingStage(`🎙️ updating: ${updateData.speaker} - "${updateData.text.slice(0, 30)}..."`);
+        // Replace interim segment for this speaker
+        setShowingSegments(prev => {
+          // Remove old interim segments for this speaker and add updated one
+          const withoutOldInterim = prev.filter(s => 
+            s.is_final || 
+            s.speaker !== updateData.speaker || 
+            !s.is_interim
+          );
+          const updated = [...withoutOldInterim, updatedInterimSegment];
+          return deduplicateSegments(updated);
+        });
+        
+        setProcessingStage(`🎙️ updating: ${updateData.speaker} - "${updateData.text.slice(0, 30)}..." (Enhanced)`);
         break;
         
       case 'fraud_analysis_started':
@@ -433,9 +499,9 @@ function App() {
         const analysis = message.data;
         setRiskScore(analysis.risk_score || 0);
         setRiskLevel(analysis.risk_level || 'MINIMAL');
-        setScamType(analysis.scam_type || 'unknown');  // ADD THIS LINE        
+        setScamType(analysis.scam_type || 'unknown');
         setDetectedPatterns(analysis.detected_patterns || {});
-        setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
+        setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}% (Enhanced)`);
         break;
         
       case 'policy_analysis_started':
@@ -456,7 +522,7 @@ function App() {
         break;
         
       case 'processing_complete':
-        setProcessingStage('✅ Server processing complete');
+        setProcessingStage('✅ Enhanced server processing complete');
         setServerProcessing(false);
         break;
         
@@ -505,7 +571,7 @@ function App() {
       setSessionId(newSessionId);
       setIsPlaying(true);
       setServerProcessing(true);
-      setProcessingStage('🖥️ Starting server-side processing...');
+      setProcessingStage('🖥️ Starting enhanced server-side processing...');
       
       // Send WebSocket message to start server processing
       const message = {
@@ -536,7 +602,7 @@ function App() {
       
       audio.addEventListener('ended', () => {
         setIsPlaying(false);
-        setProcessingStage('✅ Audio playback complete - server processing finishing');
+        setProcessingStage('✅ Audio playback complete - enhanced server processing finishing');
       });
       
       audio.addEventListener('error', (e) => {
@@ -591,6 +657,10 @@ function App() {
     setShowingSegments([]);
     setSessionId('');
     setServerProcessing(false);
+    setSpeakerStats({
+      customer: { segments: 0, confidence: 0 },
+      agent: { segments: 0, confidence: 0 }
+    });
   };
 
   const loadAudioFiles = async (): Promise<void> => {
@@ -611,7 +681,7 @@ function App() {
     }
   };
 
-  // ===== COMPONENT FUNCTIONS =====
+  // ===== ENHANCED COMPONENT FUNCTIONS =====
 
   const DemoCallButton = ({ audioFile }: { audioFile: RealAudioFile }) => (
     <button
@@ -639,7 +709,7 @@ function App() {
           </span>
           {serverProcessing && (
             <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">
-              SERVER
+              ENHANCED
             </span>
           )}
         </div>
@@ -652,16 +722,58 @@ function App() {
       {serverProcessing ? (
         <div className="flex items-center space-x-1 text-blue-600">
           <Server className="w-4 h-4 animate-pulse" />
-          <span>Server Processing Active</span>
+          <span>Enhanced Server Processing</span>
         </div>
       ) : (
         <div className="flex items-center space-x-1 text-gray-500">
           <Server className="w-4 h-4" />
-          <span>Server Ready</span>
+          <span>Enhanced Server Ready</span>
         </div>
       )}
     </div>
   );
+
+  // Enhanced Speaker Statistics Component
+  const SpeakerStatsDisplay = () => {
+    const totalSegments = speakerStats.customer.segments + speakerStats.agent.segments;
+    
+    if (totalSegments === 0) return null;
+    
+    return (
+      <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+        <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+          <Headphones className="w-4 h-4 mr-2" />
+          Enhanced Speaker Detection
+        </h4>
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-1">
+              <User className="w-3 h-3 text-blue-600" />
+              <span>Customer</span>
+            </div>
+            <div className="text-right">
+              <div>{speakerStats.customer.segments} segments</div>
+              <div className="text-gray-500">
+                {Math.round(speakerStats.customer.confidence * 100)}% conf
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-1">
+              <UserCheck className="w-3 h-3 text-green-600" />
+              <span>Agent</span>
+            </div>
+            <div className="text-right">
+              <div>{speakerStats.agent.segments} segments</div>
+              <div className="text-gray-500">
+                {Math.round(speakerStats.agent.confidence * 100)}% conf
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // ===== EFFECTS =====
 
@@ -693,7 +805,7 @@ function App() {
             <div className="flex items-center">
               <img src="/hsbc-uk.svg" alt="HSBC" className="h-8 w-auto" />
             </div>
-            <span className="text-lg font-medium text-gray-900">Agent Desktop</span>
+            <span className="text-lg font-medium text-gray-900">Enhanced Agent Desktop</span>
           </div>
           
           <div className="flex items-center space-x-6 text-sm text-gray-600">
@@ -709,7 +821,7 @@ function App() {
       {/* Demo Call Selection - Compact Widget Bar */}
       <div className="bg-white border-b border-gray-200 px-6 py-3">
         <div className="flex items-center space-x-4">
-          <span className="text-sm font-medium text-gray-700">Demo Calls:</span>
+          <span className="text-sm font-medium text-gray-700">Enhanced Demo Calls:</span>
           <div className="flex space-x-2">
             {audioFiles.map((audioFile) => (
               <DemoCallButton key={audioFile.id} audioFile={audioFile} />
@@ -721,7 +833,7 @@ function App() {
               onClick={stopServerProcessing}
               className="ml-4 px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
             >
-              Stop Processing
+              Stop Enhanced Processing
             </button>
           )}
           
@@ -729,7 +841,7 @@ function App() {
             {isConnected ? (
               <div className="flex items-center space-x-1 text-green-600">
                 <Wifi className="w-4 h-4" />
-                <span className="text-xs">Connected</span>
+                <span className="text-xs">Enhanced Connected</span>
               </div>
             ) : (
               <div className="flex items-center space-x-1 text-red-600">
@@ -746,7 +858,7 @@ function App() {
         
         {/* Left Sidebar - Customer Information */}
         <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-          {/* Customer Information - UPDATED VERSION */}
+          {/* Customer Information */}
           <div className="p-4 border-b border-gray-200">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Customer Information</h3>
             <div className="space-y-2 text-sm">
@@ -776,23 +888,6 @@ function App() {
                   {currentCustomer.riskProfile}
                 </span>
               </div>
-              {/* Additional Demographics */}
-              {/*
-              <div className="pt-2 border-t border-gray-100">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Age:</span>
-                  <span className="font-medium">{currentCustomer.demographics.age || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Location:</span>
-                  <span className="font-medium">{currentCustomer.demographics.location}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Relationship:</span>
-                  <span className="font-medium">{currentCustomer.demographics.relationship}</span>
-                </div>
-              </div> 
-              */}               
             </div>
           </div>
 
@@ -848,7 +943,7 @@ function App() {
             </div>
           </div>
 
-          {/* Recent Activity - UPDATED VERSION */}
+          {/* Recent Activity */}
           <div className="p-4 flex-1">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Recent Activity</h3>
             <div className="space-y-2 text-xs">
@@ -892,28 +987,31 @@ function App() {
           </div>
         </div>
 
-        {/* Center - Live Transcription */}
+        {/* Center - Enhanced Live Transcription */}
         <div className="flex-1 bg-white border-r border-gray-200">
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Transcription</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Enhanced Live Transcription</h3>
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-              <span className="text-sm text-red-600 font-medium">Processing</span>
+              <span className="text-sm text-red-600 font-medium">Enhanced Processing</span>
               {serverProcessing && (
                 <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">
-                  SERVER
+                  ENHANCED
                 </span>
               )}
             </div>
           </div>
           
           <div className="p-4 h-full overflow-y-auto">
+            {/* Enhanced Speaker Statistics */}
+            <SpeakerStatsDisplay />
+            
             {showingSegments.length === 0 ? (
               <div className="flex items-center justify-center h-64 text-gray-500">
                 <div className="text-center">
                   <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p>Select a demo call to see transcription</p>
-                  <p className="text-sm text-blue-600 mt-2">Audio plays locally, server processes simultaneously</p>
+                  <p>Select a demo call to see enhanced transcription</p>
+                  <p className="text-sm text-blue-600 mt-2">Enhanced server processing with improved speaker detection</p>
                   {processingStage && (
                     <p className="text-sm text-green-600 mt-2">{processingStage}</p>
                   )}
@@ -921,29 +1019,19 @@ function App() {
               </div>
             ) : (
               <div className="space-y-4">
-                {showingSegments.map((segment, index) => {
+                {deduplicateSegments(showingSegments).map((segment, index) => {
                   const isInterim = !segment.is_final;
+                  const speakerConfidence = segment.speaker_confidence || 0.9;
                   
                   return (
-                    <div key={`${segment.speaker}-${index}-${isInterim ? 'interim' : 'final'}`} 
+                    <div key={segment.segment_id || `${segment.speaker}-${index}-${isInterim ? 'interim' : 'final'}`} 
                          className={`animate-in slide-in-from-bottom duration-500 ${isInterim ? 'opacity-70' : ''}`}>
                       <div className="flex items-start space-x-3">
-                        <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium ${
-                          segment.speaker === 'customer' 
-                            ? 'bg-blue-100 text-blue-800' 
-                            : 'bg-green-100 text-green-800'
+                        <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium border ${
+                          getSpeakerColor(segment.speaker, isInterim, speakerConfidence)
                         }`}>
-                          {segment.speaker === 'customer' ? (
-                            <>
-                              <User className="w-3 h-3" />
-                              <span>Customer</span>
-                            </>
-                          ) : (
-                            <>
-                              <Shield className="w-3 h-3" />
-                              <span>Agent</span>
-                            </>
-                          )}
+                          {getSpeakerIcon(segment.speaker, speakerConfidence)}
+                          <span>{getSpeakerLabel(segment.speaker, speakerConfidence)}</span>
                           {isInterim && <span className="text-xs opacity-60 ml-1">(live)</span>}
                         </div>
                         <span className="text-xs text-gray-500 mt-1">
@@ -955,23 +1043,37 @@ function App() {
                           </span>
                         )}
                         <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">
-                          SERVER
+                          ENHANCED
                         </span>
                         {isInterim && (
                           <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded animate-pulse">
                             LIVE
                           </span>
                         )}
+                        {/* Enhanced speaker confidence indicator */}
+                        {speakerConfidence < 0.8 && (
+                          <span className="text-xs bg-orange-100 text-orange-700 px-1 rounded">
+                            LOW CONF
+                          </span>
+                        )}
                       </div>
                       <div className={`mt-2 ml-3 p-3 rounded-lg border-l-4 ${
                         isInterim 
                           ? 'bg-yellow-50 border-yellow-400' 
-                          : 'bg-gray-50 border-blue-400'
+                          : speakerConfidence < 0.8
+                            ? 'bg-orange-50 border-orange-400'
+                            : 'bg-gray-50 border-blue-400'
                       }`}>
                         <p className={`text-sm text-gray-800 ${isInterim ? 'italic' : ''}`}>
                           {segment.text}
                           {isInterim && <span className="animate-pulse ml-1">|</span>}
                         </p>
+                        {/* Enhanced debugging info for low confidence */}
+                        {speakerConfidence < 0.8 && !isInterim && (
+                          <p className="text-xs text-orange-600 mt-1">
+                            Speaker detection confidence: {Math.round(speakerConfidence * 100)}%
+                          </p>
+                        )}
                       </div>
                     </div>
                   );
@@ -980,7 +1082,7 @@ function App() {
                 {serverProcessing && (
                   <div className="flex items-center space-x-2 text-gray-500 ml-3">
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                    <span className="text-sm">Server processing audio...</span>
+                    <span className="text-sm">Enhanced server processing audio...</span>
                   </div>
                 )}
               </div>
@@ -988,21 +1090,21 @@ function App() {
           </div>
         </div>
 
-        {/* Right Sidebar - AI Agent Assist */}
+        {/* Right Sidebar - Enhanced AI Agent Assist */}
         <div className="w-96 bg-white flex flex-col">
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">AI Agent Assist</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Enhanced AI Agent Assist</h3>
             <div className="flex items-center space-x-2">
               {isConnected ? (
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
               ) : (
                 <div className="w-2 h-2 bg-red-500 rounded-full"></div>
               )}
-              <span className="text-sm text-gray-600">Server Analysis</span>
+              <span className="text-sm text-gray-600">Enhanced Analysis</span>
             </div>
           </div>
 
-          {/* Risk Score Display */}
+          {/* Enhanced Risk Score Display */}
           <div className="p-4 border-b border-gray-200">
             <div className="text-center">
               <div className="relative mx-auto w-24 h-24 mb-3">
@@ -1030,7 +1132,7 @@ function App() {
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center">
                     <div className="text-xl font-bold text-gray-900">{riskScore}%</div>
-                    <div className="text-xs text-gray-600">Fraud Risk</div>
+                    <div className="text-xs text-gray-600">Enhanced Risk</div>
                   </div>
                 </div>
               </div>
@@ -1041,19 +1143,19 @@ function App() {
                 riskScore >= 40 ? 'bg-yellow-100 text-yellow-800' :
                 'bg-green-100 text-green-800'
               }`}>
-                {riskScore >= 80 ? 'HIGH RISK' :
-                 riskScore >= 60 ? 'MEDIUM RISK' :
-                 riskScore >= 40 ? 'LOW RISK' : 'MINIMAL RISK'}
+                {riskScore >= 80 ? 'CRITICAL RISK' :
+                 riskScore >= 60 ? 'HIGH RISK' :
+                 riskScore >= 40 ? 'MEDIUM RISK' : 'LOW RISK'} (Enhanced)
               </div>
             </div>
           </div>
 
-          {/* Live Alerts */}
+          {/* Enhanced Live Alerts */}
           {(riskScore >= 40 || Object.keys(detectedPatterns).length > 0) && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-                Server Alerts
+                Enhanced Server Alerts
               </h4>
               
               {riskScore >= 80 && (
@@ -1064,11 +1166,11 @@ function App() {
                       {scamType === 'romance_scam' ? 'ROMANCE SCAM DETECTED' :
                        scamType === 'investment_scam' ? 'INVESTMENT SCAM DETECTED' :
                        scamType === 'impersonation_scam' ? 'IMPERSONATION SCAM DETECTED' :
-                       'FRAUD DETECTED'}
+                       'FRAUD DETECTED'} (Enhanced)
                     </span>
                   </div>
                   <p className="text-xs text-red-700 mt-1">
-                    Server analysis: {Object.keys(detectedPatterns).join(', ') || 'Multiple fraud indicators detected'}
+                    Enhanced analysis: {Object.keys(detectedPatterns).join(', ') || 'Multiple fraud indicators detected'}
                   </p>
                 </div>
               )}
@@ -1080,23 +1182,23 @@ function App() {
                     <span className="text-sm font-medium text-orange-800">
                       {scamType === 'romance_scam' ? 'EMOTIONAL MANIPULATION' :
                        scamType === 'investment_scam' ? 'URGENCY PRESSURE' :
-                       'SUSPICIOUS ACTIVITY'}
+                       'SUSPICIOUS ACTIVITY'} (Enhanced)
                     </span>
                   </div>
                   <p className="text-xs text-orange-700 mt-1">
-                    Server detected: {Object.keys(detectedPatterns).slice(0, 2).join(', ')} patterns  
+                    Enhanced server detected: {Object.keys(detectedPatterns).slice(0, 2).join(', ')} patterns  
                   </p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Recommended Actions */}
+          {/* Enhanced Recommended Actions */}
           {policyGuidance && policyGuidance.recommended_actions.length > 0 && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                Recommended Actions
+                Enhanced Recommendations
               </h4>
               
               <div className="space-y-2">
@@ -1112,21 +1214,21 @@ function App() {
                 {riskScore >= 80 && (
                   <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg">
                     <div className="flex items-center space-x-2">
-                      <span className="text-xs font-medium text-red-800">1. STOP TRANSACTION</span>
+                      <span className="text-xs font-medium text-red-800">1. ENHANCED ALERT: STOP TRANSACTION</span>
                     </div>
-                    <p className="text-xs text-red-700 mt-1">Do not process any transfers</p>
+                    <p className="text-xs text-red-700 mt-1">Enhanced detection - Do not process any transfers</p>
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* HSBC Policy - FIXED VERSION */}
+          {/* Enhanced HSBC Policy */}
           {policyGuidance && policyGuidance.policy_id && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <FileText className="w-4 h-4 text-blue-500 mr-2" />
-                HSBC Policy
+                Enhanced Policy Guidance
               </h4>
               
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
@@ -1134,7 +1236,7 @@ function App() {
                   {policyGuidance.policy_title} ({policyGuidance.policy_id})
                 </div>
                 {policyGuidance.policy_version && (
-                  <div className="text-xs text-blue-600 mb-2">Version: {policyGuidance.policy_version}</div>
+                  <div className="text-xs text-blue-600 mb-2">Enhanced Version: {policyGuidance.policy_version}</div>
                 )}
                 {policyGuidance.customer_education && policyGuidance.customer_education.length > 0 ? (
                   <ul className="text-xs text-blue-700 space-y-1">
@@ -1143,18 +1245,18 @@ function App() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-xs text-blue-700">Policy guidance loading...</p>
+                  <p className="text-xs text-blue-700">Enhanced policy guidance loading...</p>
                 )}
               </div>
             </div>
           )}
 
-          {/* Key Questions to Ask */}
+          {/* Enhanced Key Questions */}
           {policyGuidance && policyGuidance.key_questions.length > 0 && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <Eye className="w-4 h-4 text-purple-500 mr-2" />
-                Key Questions to Ask
+                Enhanced Key Questions
               </h4>
               
               <div className="space-y-2">
@@ -1167,12 +1269,12 @@ function App() {
             </div>
           )}
 
-          {/* Explain to Customer */}
+          {/* Enhanced Customer Education */}
           {policyGuidance && policyGuidance.customer_education.length > 0 && (
             <div className="p-4 flex-1">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <Users className="w-4 h-4 text-green-500 mr-2" />
-                Explain to Customer
+                Enhanced Customer Education
               </h4>
               
               <div className="space-y-2">
@@ -1185,21 +1287,22 @@ function App() {
             </div>
           )}
 
-          {/* Default State - No Analysis */}
+          {/* Enhanced Default State */}
           {riskScore === 0 && Object.keys(detectedPatterns).length === 0 && !policyGuidance && (
             <div className="flex-1 flex items-center justify-center p-4">
               <div className="text-center text-gray-500">
                 <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h4 className="text-sm font-medium text-gray-900 mb-2">Server-side AI Processing</h4>
+                <h4 className="text-sm font-medium text-gray-900 mb-2">Enhanced AI Processing</h4>
                 <p className="text-xs text-gray-600">
-                  Start a demo call to see server-side fraud detection and policy guidance
+                  Start a demo call to see enhanced fraud detection with improved speaker identification
                 </p>
                 <div className="mt-4 space-y-2 text-xs">
                   <div className="flex items-center justify-center space-x-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>6 Agents Ready</span>
+                    <span>6 Enhanced Agents Ready</span>
                   </div>
-                  <div className="text-gray-400">Server Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
+                  <div className="text-gray-400">Enhanced Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
+                  <div className="text-blue-600">✨ Large file support • Better speaker detection • Context tracking</div>
                   {processingStage && (
                     <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
                       <p className="text-blue-700">{processingStage}</p>

@@ -534,7 +534,7 @@ class AudioProcessorAgent(BaseAgent):
                 most_common_tag = max(set(confident_tags), key=confident_tags.count)
                 unique_tags = set(confident_tags)
                 
-                logger.debug(f"🎯 ENHANCED DIARIZATION: confident_tags={unique_tags}, most_common={most_common_tag}")
+                logger.debug(f"🎯 DIARIZATION SUCCESS: confident_tags={unique_tags}, most_common={most_common_tag}")
                 
                 # Map Google's speaker tags with enhanced logic
                 if most_common_tag == 1:
@@ -547,115 +547,111 @@ class AudioProcessorAgent(BaseAgent):
                 most_common_tag = max(set(speaker_tags), key=speaker_tags.count)
                 unique_tags = set(speaker_tags)
                 
-                logger.debug(f"🎯 BASIC DIARIZATION: speaker_tags={unique_tags}, most_common={most_common_tag}")
+                logger.debug(f"🎯 DIARIZATION BASIC: speaker_tags={unique_tags}, most_common={most_common_tag}")
                 
                 if most_common_tag == 1:
                     return "customer"
                 elif most_common_tag == 2:
                     return "agent"
         
-        # ENHANCED fallback with conversation context
-        session = self.active_sessions.get(session_id, {})
-        segments = session.get("transcription_segments", [])
+        # CONTENT-BASED DETECTION (primary method when Google diarization fails)
         current_text = getattr(alternative, 'transcript', '').lower()
         
-        # Use conversation context for better speaker detection
+        # Strong agent indicators (they answer the phone)
+        agent_phrases = [
+            'good morning', 'good afternoon', 'customer service', 'customer services',
+            'this is', 'speaking', 'hsbc', 'how can i help', 'how can i assist',
+            'can i assist', 'thank you for calling', 'for security', 'i need to verify',
+            'can you confirm', 'thank you', 'i\'ll help you', 'let me check',
+            'i understand', 'i can see', 'i\'ll transfer you', 'one moment please',
+            'can i take your', 'i can help with that'
+        ]
+        
+        # Strong customer indicators (they make requests)
+        customer_phrases = [
+            'i need to', 'i want to', 'i would like', 'help me', 'i have a problem',
+            'urgent', 'quickly', 'emergency', 'my boyfriend', 'my girlfriend', 'my partner',
+            'transfer money', 'send money', 'investment', 'guaranteed returns',
+            'police called', 'investigation', 'stuck overseas', 'medical emergency',
+            'hi,', 'hello,', 'yes,', 'it\'s for', 'it\'s mrs', 'it\'s mr'
+        ]
+        
+        # Check for strong content indicators FIRST
+        agent_matches = [phrase for phrase in agent_phrases if phrase in current_text]
+        customer_matches = [phrase for phrase in customer_phrases if phrase in current_text]
+        
+        if agent_matches and not customer_matches:
+            logger.info(f"🎯 CONTENT: Agent phrase detected -> agent ('{agent_matches[0]}')")
+            return "agent"
+        elif customer_matches and not agent_matches:
+            logger.info(f"🎯 CONTENT: Customer phrase detected -> customer ('{customer_matches[0]}')")
+            return "customer"
+        elif agent_matches and customer_matches:
+            # Both detected, use stronger signal
+            if len(agent_matches) > len(customer_matches):
+                logger.info(f"🎯 CONTENT: Stronger agent signal -> agent ({len(agent_matches)} vs {len(customer_matches)})")
+                return "agent"
+            else:
+                logger.info(f"🎯 CONTENT: Stronger customer signal -> customer ({len(customer_matches)} vs {len(agent_matches)})")
+                return "customer"
+        
+        # CONVERSATION FLOW ANALYSIS
+        session = self.active_sessions.get(session_id, {})
+        segments = session.get("transcription_segments", [])
         conversation_context = self.conversation_context.get(session_id, [])
         
-        # For the very first segment, use enhanced detection
+        # For very first utterance, use smarter detection
         if len(segments) == 0 and len(conversation_context) == 0:
-            # Analyze first utterance content to determine speaker
-            agent_opening_phrases = [
-                'good morning', 'good afternoon', 'customer service', 'this is',
-                'hsbc customer service', 'how can i help', 'can i assist',
-                'thank you for calling', 'speaking'
-            ]
-            
-            customer_opening_phrases = [
-                'hello', 'hi', 'i need', 'i want', 'help me', 'i have a problem',
-                'i would like', 'can you help', 'i\'m calling about'
-            ]
-            
-            agent_match = any(phrase in current_text for phrase in agent_opening_phrases)
-            customer_match = any(phrase in current_text for phrase in customer_opening_phrases)
-            
-            if agent_match and not customer_match:
-                logger.info("🎯 ENHANCED FIRST: Agent opening detected")
+            # First utterance content analysis
+            if any(phrase in current_text for phrase in ['good morning', 'good afternoon', 'customer service', 'this is']):
+                logger.info("🎯 FIRST: Agent greeting detected")
                 return "agent"
-            elif customer_match and not agent_match:
-                logger.info("🎯 ENHANCED FIRST: Customer opening detected")
+            elif any(phrase in current_text for phrase in ['hi', 'hello', 'i need', 'help me']):
+                logger.info("🎯 FIRST: Customer opening detected")
                 return "customer"
             else:
                 # Default: customer calls first
-                logger.info("🎯 ENHANCED FIRST: Default to customer")
+                logger.info("🎯 FIRST: Default to customer (caller)")
                 return "customer"
         
-        # Enhanced pattern matching with conversation context
-        last_speaker = segments[-1].get("speaker", "customer") if segments else "customer"
-        
-        # Strong agent indicators
-        agent_phrases = [
-            'good afternoon', 'good morning', 'customer service', 'this is',
-            'how can i help', 'how can i assist', 'for security', 'i need to verify',
-            'can you confirm', 'thank you', 'i\'ll help you', 'let me check',
-            'i understand', 'i can see', 'i\'ll transfer you', 'one moment please'
-        ]
-        
-        # Strong customer indicators  
-        customer_phrases = [
-            'i need', 'i want', 'i would like', 'help me', 'i have a problem',
-            'urgent', 'quickly', 'emergency', 'my boyfriend', 'my girlfriend',
-            'transfer money', 'send money', 'investment', 'guaranteed returns',
-            'police called', 'investigation', 'stuck overseas', 'medical emergency'
-        ]
-        
-        # Check for strong indicators
-        strong_agent = any(phrase in current_text for phrase in agent_phrases)
-        strong_customer = any(phrase in current_text for phrase in customer_phrases)
-        
-        if strong_agent and not strong_customer:
-            logger.debug(f"🎯 ENHANCED PATTERN: Strong agent phrase -> agent")
-            return "agent"
-        elif strong_customer and not strong_agent:
-            logger.debug(f"🎯 ENHANCED PATTERN: Strong customer phrase -> customer")
-            return "customer"
-        
-        # Enhanced conversation flow with context
+        # Natural conversation flow with enhanced logic
         if conversation_context:
             recent_context = conversation_context[-3:]  # Last 3 turns
-            
-            # Analyze conversation flow
-            last_speaker_in_context = recent_context[-1]["speaker"] if recent_context else "customer"
+            last_speaker = recent_context[-1]["speaker"] if recent_context else "customer"
             
             # Count recent turns by each speaker
             agent_turns = sum(1 for turn in recent_context if turn["speaker"] == "agent")
             customer_turns = sum(1 for turn in recent_context if turn["speaker"] == "customer")
             
-            # Natural alternation logic
+            # Smart alternation with bias correction
             if agent_turns > customer_turns + 1:
-                # Agent has spoken too much, likely customer turn
-                logger.debug(f"🎯 CONTEXT SWITCH: Agent->Customer (agent turns: {agent_turns})")
+                logger.info(f"🎯 FLOW: Too many agent turns -> customer")
                 return "customer"
             elif customer_turns > agent_turns + 1:
-                # Customer has spoken too much, likely agent turn
-                logger.debug(f"🎯 CONTEXT SWITCH: Customer->Agent (customer turns: {customer_turns})")
+                logger.info(f"🎯 FLOW: Too many customer turns -> agent")
                 return "agent"
             else:
                 # Natural alternation
-                if last_speaker_in_context == "agent":
-                    logger.debug(f"🎯 NATURAL ALTERNATION: Agent->Customer")
-                    return "customer"
-                else:
-                    logger.debug(f"🎯 NATURAL ALTERNATION: Customer->Agent")
-                    return "agent"
+                next_speaker = "agent" if last_speaker == "customer" else "customer"
+                logger.info(f"🎯 FLOW: Natural alternation {last_speaker} -> {next_speaker}")
+                return next_speaker
         
-        # Ultimate fallback: alternate speakers
-        if last_speaker == "customer":
-            logger.debug(f"🎯 ALTERNATION FALLBACK: Customer->Agent")
-            return "agent"
-        else:
-            logger.debug(f"🎯 ALTERNATION FALLBACK: Agent->Customer")
-            return "customer"
+        # Final fallback: check if this looks like a continuation
+        if segments:
+            last_speaker = segments[-1].get("speaker", "customer")
+            # If text is very short, might be continuation of same speaker
+            if len(current_text.split()) < 3:
+                logger.info(f"🎯 CONTINUATION: Short text -> {last_speaker}")
+                return last_speaker
+            else:
+                # Longer text, likely speaker change
+                next_speaker = "agent" if last_speaker == "customer" else "customer"
+                logger.info(f"🎯 ALTERNATION: Longer text {last_speaker} -> {next_speaker}")
+                return next_speaker
+        
+        # Ultimate fallback
+        logger.info("🎯 ULTIMATE FALLBACK: customer")
+        return "customer"
     
     # ... [rest of the methods remain the same as in the original file] ...
     

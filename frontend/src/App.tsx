@@ -114,8 +114,8 @@ const getSpeakerColor = (speaker: string, isInterim: boolean = false, confidence
   }
 };
 
-// Customer profile mapping based on audio files
-const customerProfiles: Record<string, {
+// Customer profile interface
+interface CustomerProfile {
   name: string;
   account: string;
   status: string;
@@ -131,12 +131,15 @@ const customerProfiles: Record<string, {
     location: string;
     relationship: string;
   };
-  alerts?: {
+  alerts: {
     type: string;
     date: string;
     description: string;
   }[];
-}> = {
+}
+
+// Customer profile mapping based on audio files
+const customerProfiles: Record<string, CustomerProfile> = {
   'romance_scam_1.wav': {
     name: "Mrs Patricia Williams",
     account: "****3847",
@@ -226,12 +229,13 @@ const customerProfiles: Record<string, {
       age: 29,
       location: "London, UK", 
       relationship: "Single"
-    }
+    },
+    alerts: []
   }
 };
 
 // Default profile when no audio is selected
-const defaultCustomerProfile = {
+const defaultCustomerProfile: CustomerProfile = {
   name: "Customer",
   account: "****0000",
   status: "Active",
@@ -239,8 +243,7 @@ const defaultCustomerProfile = {
   riskProfile: "Unknown",
   recentActivity: {
     lastCall: "N/A",
-    description: "No recent activity",
-    additionalInfo: undefined
+    description: "No recent activity"
   },
   demographics: {
     age: 0,
@@ -315,7 +318,7 @@ function App() {
   const [serverProcessing, setServerProcessing] = useState<boolean>(false);
 
   const [scamType, setScamType] = useState<string>('unknown');  
-  const [currentCustomer, setCurrentCustomer] = useState(defaultCustomerProfile);
+  const [currentCustomer, setCurrentCustomer] = useState<CustomerProfile>(defaultCustomerProfile);
   
   // Enhanced transcription state
   const [speakerStats, setSpeakerStats] = useState<{
@@ -960,7 +963,7 @@ function App() {
               )}
               
               {/* Customer-specific alerts */}
-              {currentCustomer.alerts && currentCustomer.alerts.map((alert, index) => (
+              {currentCustomer.alerts.length > 0 && currentCustomer.alerts.map((alert, index) => (
                 <div key={index} className="mt-4 p-2 bg-orange-50 border border-orange-200 rounded">
                   <div className="flex justify-between">
                     <span className="text-orange-800 font-medium">{alert.type}:</span>

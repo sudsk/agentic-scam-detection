@@ -815,7 +815,7 @@ class AudioProcessorAgent(BaseAgent):
         audio_path: Path,
         duration: float
     ) -> None:
-        """Simulate audio file - SIMPLIFIED with NO DELAYS"""
+        """Simulate audio file - SIMPLIFIED with NO DELAYS but PROPER TIMING"""
         
         try:
             logger.info(f"🎬 SIMPLIFIED audio simulation: {audio_path.name}")
@@ -828,12 +828,12 @@ class AudioProcessorAgent(BaseAgent):
                 
                 logger.info(f"📁 Audio specs: {actual_sample_rate}Hz, {actual_channels}ch, {actual_sample_width*8}bit")
                 
-                # Calculate chunks
+                # Calculate chunks based on ACTUAL sample rate
                 frames_per_chunk = int(actual_sample_rate * self.chunk_duration_ms / 1000)
                 total_frames = wav_file.getnframes()
                 total_chunks = int(total_frames / frames_per_chunk)
                 
-                logger.info(f"🎵 Streaming {total_chunks} chunks")
+                logger.info(f"🎵 Streaming {total_chunks} chunks (frames_per_chunk: {frames_per_chunk})")
                 
                 # Get audio buffer
                 audio_buffer = self.audio_buffers.get(session_id)
@@ -844,34 +844,37 @@ class AudioProcessorAgent(BaseAgent):
                 chunk_count = 0
                 start_time = asyncio.get_event_loop().time()
                 
-                # Start streaming - MINIMAL DELAYS
-                logger.info("🚀 Starting audio streaming...")
+                # Start streaming with PROPER timing
+                logger.info("🚀 Starting audio streaming with proper timing...")
                 
                 while chunk_count < total_chunks and session_id in self.active_sessions:
                     # Read audio chunk
                     audio_chunk = wav_file.readframes(frames_per_chunk)
                     
                     if not audio_chunk:
+                        logger.warning(f"⚠️ No audio data at chunk {chunk_count}/{total_chunks}")
                         break
                     
-                    # Add to buffer immediately
+                    # Add to buffer IMMEDIATELY
                     audio_buffer.add_audio_chunk(audio_chunk)
                     
                     chunk_count += 1
                     
-                    # Progress logging
-                    if chunk_count % 100 == 0:  # Every 20 seconds
+                    # Progress logging every 25 chunks (5 seconds at 200ms)
+                    if chunk_count % 25 == 0:
                         elapsed_seconds = (chunk_count * self.chunk_duration_ms) / 1000
-                        logger.info(f"🎵 Progress: {elapsed_seconds:.1f}s / {duration:.1f}s")
+                        logger.info(f"🎵 Progress: {elapsed_seconds:.1f}s / {duration:.1f}s ({chunk_count}/{total_chunks})")
                     
-                    # MINIMAL timing control - just maintain rough real-time
+                    # PROPER timing control - maintain real-time pace
                     expected_time = start_time + (chunk_count * self.chunk_duration_ms / 1000)
                     current_time = asyncio.get_event_loop().time()
                     wait_time = expected_time - current_time
                     
                     if wait_time > 0:
-                        # Very small sleep to maintain roughly real-time pace
-                        await asyncio.sleep(min(wait_time, 0.01))  # Max 10ms sleep
+                        # Sleep to maintain real-time pace - NOT too small
+                        await asyncio.sleep(min(wait_time, 0.2))  # Max 200ms sleep = chunk duration
+                    elif wait_time < -1.0:
+                        logger.debug(f"⚠️ Audio simulation running {-wait_time:.1f}s behind")
                 
                 logger.info(f"✅ Audio simulation complete: {chunk_count} chunks streamed")
                 
@@ -890,12 +893,14 @@ class AudioProcessorAgent(BaseAgent):
                             }
                         })
                 
-                # Keep buffer active briefly
-                await asyncio.sleep(2.0)
+                # Keep buffer active for a bit longer
+                await asyncio.sleep(3.0)
                 audio_buffer.stop()
                 
         except Exception as e:
             logger.error(f"❌ Error simulating audio: {e}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
     
     async def stop_realtime_processing(self, session_id: str) -> Dict[str, Any]:
         """Stop real-time processing"""

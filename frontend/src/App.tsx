@@ -384,7 +384,7 @@ function App() {
     
     switch (message.type) {
       case 'server_processing_started':
-        setProcessingStage('🖥️ Enhanced server processing started');
+        setProcessingStage('🖥️ Server processing started');
         setServerProcessing(true);
         break;
         
@@ -427,7 +427,7 @@ function App() {
           });
         }
         
-        setProcessingStage(`🎙️ FINAL: ${transcriptData.speaker} speaking... (Enhanced)`);
+        setProcessingStage(`🎙️ FINAL: ${transcriptData.speaker} speaking...`);
         break;
         
       // ENHANCED: New interim result with better handling
@@ -459,7 +459,7 @@ function App() {
           return deduplicateSegments(updated);
         });
         
-        setProcessingStage(`🎙️ interim: ${interimData.speaker} - "${interimData.text.slice(0, 30)}..." (Enhanced)`);
+        setProcessingStage(`🎙️ interim: ${interimData.speaker} - "${interimData.text.slice(0, 30)}..."`);
         break;
         
       // ENHANCED: Update existing interim result
@@ -491,7 +491,7 @@ function App() {
           return deduplicateSegments(updated);
         });
         
-        setProcessingStage(`🎙️ updating: ${updateData.speaker} - "${updateData.text.slice(0, 30)}..." (Enhanced)`);
+        setProcessingStage(`🎙️ updating: ${updateData.speaker} - "${updateData.text.slice(0, 30)}..."`);
         break;
         
       case 'fraud_analysis_started':
@@ -504,7 +504,7 @@ function App() {
         setRiskLevel(analysis.risk_level || 'MINIMAL');
         setScamType(analysis.scam_type || 'unknown');
         setDetectedPatterns(analysis.detected_patterns || {});
-        setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}% (Enhanced)`);
+        setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
         break;
         
       case 'policy_analysis_started':
@@ -525,7 +525,7 @@ function App() {
         break;
         
       case 'processing_complete':
-        setProcessingStage('✅ Enhanced server processing complete');
+        setProcessingStage('✅ Server processing complete');
         setServerProcessing(false);
         break;
         
@@ -574,7 +574,7 @@ function App() {
       setSessionId(newSessionId);
       setIsPlaying(true);
       setServerProcessing(true);
-      setProcessingStage('🖥️ Starting enhanced server-side processing...');
+      setProcessingStage('🖥️ Starting server-side processing...');
       
       // Send WebSocket message to start server processing
       const message = {
@@ -605,7 +605,7 @@ function App() {
       
       audio.addEventListener('ended', () => {
         setIsPlaying(false);
-        setProcessingStage('✅ Audio playback complete - enhanced server processing finishing');
+        setProcessingStage('✅ Audio playback complete - server processing finishing');
       });
       
       audio.addEventListener('error', (e) => {
@@ -808,7 +808,7 @@ function App() {
             <div className="flex items-center">
               <img src="/hsbc-uk.svg" alt="HSBC" className="h-8 w-auto" />
             </div>
-            <span className="text-lg font-medium text-gray-900">Enhanced Agent Desktop</span>
+            <span className="text-lg font-medium text-gray-900">Agent Desktop</span>
           </div>
           
           <div className="flex items-center space-x-6 text-sm text-gray-600">
@@ -824,7 +824,7 @@ function App() {
       {/* Demo Call Selection - Compact Widget Bar */}
       <div className="bg-white border-b border-gray-200 px-6 py-3">
         <div className="flex items-center space-x-4">
-          <span className="text-sm font-medium text-gray-700">Enhanced Demo Calls:</span>
+          <span className="text-sm font-medium text-gray-700">Demo Calls:</span>
           <div className="flex space-x-2">
             {audioFiles.map((audioFile) => (
               <DemoCallButton key={audioFile.id} audioFile={audioFile} />
@@ -836,7 +836,7 @@ function App() {
               onClick={stopServerProcessing}
               className="ml-4 px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
             >
-              Stop Enhanced Processing
+              Stop Processing
             </button>
           )}
           
@@ -844,7 +844,7 @@ function App() {
             {isConnected ? (
               <div className="flex items-center space-x-1 text-green-600">
                 <Wifi className="w-4 h-4" />
-                <span className="text-xs">Enhanced Connected</span>
+                <span className="text-xs">Connected</span>
               </div>
             ) : (
               <div className="flex items-center space-x-1 text-red-600">
@@ -993,13 +993,13 @@ function App() {
         {/* Center - Enhanced Live Transcription */}
         <div className="flex-1 bg-white border-r border-gray-200">
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Enhanced Live Transcription</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Live Transcription</h3>
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-              <span className="text-sm text-red-600 font-medium">Enhanced Processing</span>
+              <span className="text-sm text-red-600 font-medium">Processing</span>
               {serverProcessing && (
                 <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">
-                  ENHANCED
+                  SERVER
                 </span>
               )}
             </div>
@@ -1013,8 +1013,8 @@ function App() {
               <div className="flex items-center justify-center h-64 text-gray-500">
                 <div className="text-center">
                   <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p>Select a demo call to see enhanced transcription</p>
-                  <p className="text-sm text-blue-600 mt-2">Enhanced server processing with improved speaker detection</p>
+                  <p>Select a demo call to see live transcription</p>
+                  <p className="text-sm text-blue-600 mt-2">Server processing with improved speaker detection</p>
                   {processingStage && (
                     <p className="text-sm text-green-600 mt-2">{processingStage}</p>
                   )}
@@ -1046,7 +1046,7 @@ function App() {
                           </span>
                         )}
                         <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">
-                          ENHANCED
+                          SERVER
                         </span>
                         {isInterim && (
                           <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded animate-pulse">
@@ -1085,7 +1085,7 @@ function App() {
                 {serverProcessing && (
                   <div className="flex items-center space-x-2 text-gray-500 ml-3">
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                    <span className="text-sm">Enhanced server processing audio...</span>
+                    <span className="text-sm">Server processing audio...</span>
                   </div>
                 )}
               </div>
@@ -1096,7 +1096,7 @@ function App() {
         {/* Right Sidebar - Enhanced AI Agent Assist */}
         <div className="w-96 bg-white flex flex-col">
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Enhanced AI Agent Assist</h3>
+            <h3 className="text-lg font-semibold text-gray-900">AI Agent Assist</h3>
             <div className="flex items-center space-x-2">
               {isConnected ? (
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>

@@ -725,12 +725,12 @@ function App() {
       {serverProcessing ? (
         <div className="flex items-center space-x-1 text-blue-600">
           <Server className="w-4 h-4 animate-pulse" />
-          <span>Enhanced Server Processing</span>
+          <span>Server Processing</span>
         </div>
       ) : (
         <div className="flex items-center space-x-1 text-gray-500">
           <Server className="w-4 h-4" />
-          <span>Enhanced Server Ready</span>
+          <span>Server Ready</span>
         </div>
       )}
     </div>
@@ -1103,7 +1103,7 @@ function App() {
               ) : (
                 <div className="w-2 h-2 bg-red-500 rounded-full"></div>
               )}
-              <span className="text-sm text-gray-600">Enhanced Analysis</span>
+              <span className="text-sm text-gray-600">Analysis</span>
             </div>
           </div>
 
@@ -1135,7 +1135,7 @@ function App() {
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center">
                     <div className="text-xl font-bold text-gray-900">{riskScore}%</div>
-                    <div className="text-xs text-gray-600">Enhanced Risk</div>
+                    <div className="text-xs text-gray-600">Risk</div>
                   </div>
                 </div>
               </div>
@@ -1148,7 +1148,7 @@ function App() {
               }`}>
                 {riskScore >= 80 ? 'CRITICAL RISK' :
                  riskScore >= 60 ? 'HIGH RISK' :
-                 riskScore >= 40 ? 'MEDIUM RISK' : 'LOW RISK'} (Enhanced)
+                 riskScore >= 40 ? 'MEDIUM RISK' : 'LOW RISK'}
               </div>
             </div>
           </div>
@@ -1158,7 +1158,7 @@ function App() {
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
-                Enhanced Server Alerts
+                Live Alerts
               </h4>
               
               {riskScore >= 80 && (
@@ -1169,11 +1169,11 @@ function App() {
                       {scamType === 'romance_scam' ? 'ROMANCE SCAM DETECTED' :
                        scamType === 'investment_scam' ? 'INVESTMENT SCAM DETECTED' :
                        scamType === 'impersonation_scam' ? 'IMPERSONATION SCAM DETECTED' :
-                       'FRAUD DETECTED'} (Enhanced)
+                       'FRAUD DETECTED'}
                     </span>
                   </div>
                   <p className="text-xs text-red-700 mt-1">
-                    Enhanced analysis: {Object.keys(detectedPatterns).join(', ') || 'Multiple fraud indicators detected'}
+                    Analysis: {Object.keys(detectedPatterns).join(', ') || 'Multiple fraud indicators detected'}
                   </p>
                 </div>
               )}
@@ -1185,11 +1185,11 @@ function App() {
                     <span className="text-sm font-medium text-orange-800">
                       {scamType === 'romance_scam' ? 'EMOTIONAL MANIPULATION' :
                        scamType === 'investment_scam' ? 'URGENCY PRESSURE' :
-                       'SUSPICIOUS ACTIVITY'} (Enhanced)
+                       'SUSPICIOUS ACTIVITY'}
                     </span>
                   </div>
                   <p className="text-xs text-orange-700 mt-1">
-                    Enhanced server detected: {Object.keys(detectedPatterns).slice(0, 2).join(', ')} patterns  
+                    Server detected: {Object.keys(detectedPatterns).slice(0, 2).join(', ')} patterns  
                   </p>
                 </div>
               )}
@@ -1201,7 +1201,7 @@ function App() {
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                Enhanced Recommendations
+                Recommendations
               </h4>
               
               <div className="space-y-2">
@@ -1217,9 +1217,9 @@ function App() {
                 {riskScore >= 80 && (
                   <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg">
                     <div className="flex items-center space-x-2">
-                      <span className="text-xs font-medium text-red-800">1. ENHANCED ALERT: STOP TRANSACTION</span>
+                      <span className="text-xs font-medium text-red-800">1. ALERT: STOP TRANSACTION</span>
                     </div>
-                    <p className="text-xs text-red-700 mt-1">Enhanced detection - Do not process any transfers</p>
+                    <p className="text-xs text-red-700 mt-1">Detection alert - Do not process any transfers</p>
                   </div>
                 )}
               </div>
@@ -1231,7 +1231,7 @@ function App() {
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <FileText className="w-4 h-4 text-blue-500 mr-2" />
-                Enhanced Policy Guidance
+                Policy Guidance
               </h4>
               
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
@@ -1239,7 +1239,7 @@ function App() {
                   {policyGuidance.policy_title} ({policyGuidance.policy_id})
                 </div>
                 {policyGuidance.policy_version && (
-                  <div className="text-xs text-blue-600 mb-2">Enhanced Version: {policyGuidance.policy_version}</div>
+                  <div className="text-xs text-blue-600 mb-2">Version: {policyGuidance.policy_version}</div>
                 )}
                 {policyGuidance.customer_education && policyGuidance.customer_education.length > 0 ? (
                   <ul className="text-xs text-blue-700 space-y-1">
@@ -1248,7 +1248,7 @@ function App() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-xs text-blue-700">Enhanced policy guidance loading...</p>
+                  <p className="text-xs text-blue-700">Policy guidance loading...</p>
                 )}
               </div>
             </div>
@@ -1259,7 +1259,7 @@ function App() {
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <Eye className="w-4 h-4 text-purple-500 mr-2" />
-                Enhanced Key Questions
+                Key Questions
               </h4>
               
               <div className="space-y-2">
@@ -1277,7 +1277,7 @@ function App() {
             <div className="p-4 flex-1">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <Users className="w-4 h-4 text-green-500 mr-2" />
-                Enhanced Customer Education
+                Customer Education
               </h4>
               
               <div className="space-y-2">
@@ -1295,17 +1295,17 @@ function App() {
             <div className="flex-1 flex items-center justify-center p-4">
               <div className="text-center text-gray-500">
                 <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h4 className="text-sm font-medium text-gray-900 mb-2">Enhanced AI Processing</h4>
+                <h4 className="text-sm font-medium text-gray-900 mb-2">AI Processing</h4>
                 <p className="text-xs text-gray-600">
-                  Start a demo call to see enhanced fraud detection with improved speaker identification
+                  Start a demo call to see fraud detection with Google STT speaker identification
                 </p>
                 <div className="mt-4 space-y-2 text-xs">
                   <div className="flex items-center justify-center space-x-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>6 Enhanced Agents Ready</span>
+                    <span>6 Agents Ready</span>
                   </div>
-                  <div className="text-gray-400">Enhanced Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
-                  <div className="text-blue-600">✨ Large file support • Better speaker detection • Context tracking</div>
+                  <div className="text-gray-400">Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
+                  <div className="text-blue-600">✨ Simplified Google STT • Forced 2-speaker diarization</div>
                   {processingStage && (
                     <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
                       <p className="text-blue-700">{processingStage}</p>

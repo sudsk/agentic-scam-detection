@@ -83,7 +83,7 @@ class SpeakerTracker:
         self.speaker_transitions = []
         
     def detect_speaker(self, google_speaker_tag: Optional[int], transcript: str) -> str:
-        """IMPROVED speaker detection with better customer detection"""
+        """ENHANCED speaker detection with content-based fallback"""
         
         self.segment_count += 1
         
@@ -93,75 +93,100 @@ class SpeakerTracker:
             self.turn_count["agent"] += 1
             self.speaker_history.append("agent")
             self.last_speaker_tag = google_speaker_tag
+            logger.info(f"🎯 First segment: agent (tag:{google_speaker_tag})")
             return "agent"
         
-        # RULE 2: Use Google's speaker tag changes more aggressively
+        # RULE 2: If Google provides speaker tags, use them
         if google_speaker_tag is not None:
             if self.last_speaker_tag is not None and google_speaker_tag != self.last_speaker_tag:
                 # Speaker tag changed - switch speakers
                 detected_speaker = "customer" if self.current_speaker == "agent" else "agent"
                 
-                # Log the transition
-                self.speaker_transitions.append({
-                    "segment": self.segment_count,
-                    "from": self.current_speaker,
-                    "to": detected_speaker,
-                    "text_preview": transcript[:30],
-                    "speaker_tag": google_speaker_tag,
-                    "last_tag": self.last_speaker_tag
-                })
+                logger.info(f"🔄 Google tag change: {self.last_speaker_tag} → {google_speaker_tag}, switching to {detected_speaker}")
                 
                 self.current_speaker = detected_speaker
                 self.turn_count[detected_speaker] += 1
                 self.last_speaker_tag = google_speaker_tag
                 
-                logger.info(f"🔄 Speaker change: {self.speaker_transitions[-1]['from']} → {detected_speaker} (tag: {self.last_speaker_tag} → {google_speaker_tag})")
-                
-            elif self.last_speaker_tag is None:
-                # First time getting a tag
-                self.last_speaker_tag = google_speaker_tag
-                detected_speaker = self.current_speaker
+                self.speaker_history.append(detected_speaker)
+                return detected_speaker
             else:
-                # Same tag - continue with current speaker
-                detected_speaker = self.current_speaker
+                # Same tag or first tag - keep current or use content
+                if self.last_speaker_tag is None:
+                    self.last_speaker_tag = google_speaker_tag
+                
+                # Use content detection as backup even with same tag
+                content_speaker = self._detect_by_content(transcript)
+                if content_speaker != self.current_speaker:
+                    logger.info(f"🔍 Content override: Google tag:{google_speaker_tag} but content suggests {content_speaker}")
+                    self.current_speaker = content_speaker
+                    self.turn_count[content_speaker] += 1
+                
+                self.speaker_history.append(self.current_speaker)
+                return self.current_speaker
         else:
-            # RULE 3: No speaker tag - use content-based detection
+            # RULE 3: No Google tag - use content-based detection
+            logger.info(f"🏷️ No Google tag for: '{transcript[:20]}...', using content detection")
             detected_speaker = self._detect_by_content(transcript)
-        
-        self.speaker_history.append(detected_speaker)
-        return detected_speaker
+            
+            if detected_speaker != self.current_speaker:
+                logger.info(f"🔍 Content detection switch: {self.current_speaker} → {detected_speaker}")
+                self.current_speaker = detected_speaker
+                self.turn_count[detected_speaker] += 1
+            
+            self.speaker_history.append(detected_speaker)
+            return detected_speaker
     
     def _detect_by_content(self, transcript: str) -> str:
-        """Detect speaker based on conversation content"""
+        """Detect speaker based on conversation content - ENHANCED"""
         
         transcript_lower = transcript.lower()
         
-        # Agent phrases (banking agent typical language)
-        agent_phrases = [
-            "good morning", "good afternoon", "good evening",
-            "hsbc", "customer services", "how can i assist",
-            "can i take your", "for security purposes", 
-            "i'll need to verify", "let me help you",
-            "i can help", "certainly", "absolutely",
-            "thank you for calling", "is there anything else"
+        # Strong customer indicators
+        strong_customer_phrases = [
+            "hi", "hello", "yes", "i need", "i want", "can you", "please",
+            "i'd like to", "my name is", "urgent", "emergency", "help me",
+            "i have to", "i must", "it's for", "he's stuck", "she's stuck",
+            "we've been together", "we met", "dating", "boyfriend", "girlfriend",
+            "partner", "alex", "patricia", "williams", "turkey", "istanbul",
+            "hospital", "treatment", "money", "transfer", "send", "£", "pounds"
         ]
         
-        # Customer phrases (typical customer language)
-        customer_phrases = [
-            "hi", "hello", "yes", "i need", "i want", "can you",
-            "i'd like to", "my name is", "it's urgent",
-            "please help", "i have a problem", "emergency"
+        # Strong agent indicators  
+        strong_agent_phrases = [
+            "good morning", "good afternoon", "good evening", "hsbc", "customer services",
+            "how can i assist", "how may i help", "can i take your", "for security purposes",
+            "i'll need to verify", "let me help you", "i can help", "certainly", "absolutely",
+            "thank you for calling", "is there anything else", "mrs williams", "mr", "mrs",
+            "i understand", "i see", "can you tell me", "have you", "mrs", "williams",
+            "i want to make sure", "i need to share", "i'm concerned", "fraud", "scam"
         ]
         
-        agent_score = sum(1 for phrase in agent_phrases if phrase in transcript_lower)
-        customer_score = sum(1 for phrase in customer_phrases if phrase in transcript_lower)
+        # Count strong indicators
+        customer_score = sum(1 for phrase in strong_customer_phrases if phrase in transcript_lower)
+        agent_score = sum(1 for phrase in strong_agent_phrases if phrase in transcript_lower)
         
-        if agent_score > customer_score:
-            return "agent"
-        elif customer_score > agent_score:
+        # Additional logic for specific patterns
+        if any(phrase in transcript_lower for phrase in ["hi", "hello", "yes"]) and len(transcript.split()) <= 3:
+            # Short responses like "Hi", "Yes" are likely customer
+            customer_score += 2
+            
+        if "williams" in transcript_lower or "patricia" in transcript_lower or "alex" in transcript_lower:
+            # Names mentioned are often customer context
+            customer_score += 1
+            
+        if any(phrase in transcript_lower for phrase in ["hsbc", "customer services", "can i take", "mrs williams"]):
+            # Professional banking language is agent
+            agent_score += 2
+        
+        logger.debug(f"🔍 Content detection: '{transcript[:30]}...' -> Customer:{customer_score}, Agent:{agent_score}")
+        
+        if customer_score > agent_score:
             return "customer"
+        elif agent_score > customer_score:
+            return "agent"
         else:
-            # If no clear indicators, alternate speakers based on recent history
+            # If no clear indicators, use alternation logic
             if len(self.speaker_history) >= 2:
                 last_two = self.speaker_history[-2:]
                 if last_two[-1] == last_two[-2]:
@@ -639,7 +664,7 @@ class AudioProcessorAgent(BaseAgent):
     # === DEMO FILE PROCESSING ===
     
     async def start_realtime_processing(self, session_id: str, audio_filename: str, websocket_callback: Callable) -> Dict[str, Any]:
-        """Start real-time processing with better timing control"""
+        """Start real-time processing with FAST audio start and parallel transcription"""
         try:
             logger.info(f"🎵 Starting realtime processing: {audio_filename}")
             
@@ -662,42 +687,108 @@ class AudioProcessorAgent(BaseAgent):
                 
                 logger.info(f"📁 Audio: {duration:.1f}s, {sample_rate}Hz, {channels}ch")
             
-            # CONSERVATIVE APPROACH: Start streaming first, then audio with proper timing
-            streaming_result = await self.start_streaming(session_id, websocket_callback)
-            if "error" in streaming_result:
-                logger.error(f"❌ Failed to start streaming: {streaming_result['error']}")
-                return streaming_result
+            # FAST START: Start audio processing immediately (like before)
+            logger.info("🚀 Starting audio immediately with parallel transcription")
             
-            logger.info("✅ Streaming started, now starting audio with real-time timing")
-            
-            # Wait a bit for streaming to be ready
-            await asyncio.sleep(0.8)
-            
-            # Start audio processing with REAL-TIME timing (not fast)
             if channels == 2:
                 audio_task = asyncio.create_task(
                     self._process_stereo_audio(session_id, audio_path, websocket_callback)
                 )
             else:
                 audio_task = asyncio.create_task(
-                    self._process_mono_audio_realtime(session_id, audio_path, websocket_callback)
+                    self._process_mono_audio_fast_fixed(session_id, audio_path, websocket_callback)
                 )
             
             # Store the task
             self.active_sessions[session_id]["audio_task"] = audio_task
+            
+            # Start transcription in parallel with small delay
+            await asyncio.sleep(0.3)  # Reduced from 0.8s to 0.3s
+            
+            transcription_task = asyncio.create_task(
+                self._start_transcription_parallel(session_id, websocket_callback)
+            )
+            self.active_sessions[session_id]["transcription_task"] = transcription_task
             
             return {
                 "session_id": session_id,
                 "audio_filename": audio_filename,
                 "audio_duration": duration,
                 "channels": channels,
-                "processing_mode": f"{'stereo' if channels == 2 else 'mono'}_conservative",
+                "processing_mode": f"{'stereo' if channels == 2 else 'mono'}_fast_parallel",
                 "status": "started"
             }
             
         except Exception as e:
             logger.error(f"❌ Error starting processing: {e}")
             return {"error": str(e)}
+    
+    async def _start_transcription_parallel(self, session_id: str, websocket_callback: Callable):
+        """Start transcription in parallel with audio playback"""
+        try:
+            logger.info(f"🎙️ Starting parallel transcription for {session_id}")
+            
+            # Start streaming recognition
+            streaming_result = await self.start_streaming(session_id, websocket_callback)
+            if "error" in streaming_result:
+                logger.error(f"❌ Failed to start transcription: {streaming_result['error']}")
+                await websocket_callback({
+                    "type": "transcription_error", 
+                    "data": {
+                        "session_id": session_id,
+                        "error": streaming_result['error'],
+                        "timestamp": get_current_timestamp()
+                    }
+                })
+            
+        except Exception as e:
+            logger.error(f"❌ Error in parallel transcription: {e}")
+    
+    async def _process_mono_audio_fast_fixed(self, session_id: str, audio_path: Path, websocket_callback: Callable):
+        """Process mono audio with fast start and proper completion detection"""
+        try:
+            logger.info(f"🎵 Starting FAST mono audio processing for {session_id}")
+            
+            with wave.open(str(audio_path), 'rb') as wav_file:
+                sample_rate = wav_file.getframerate()
+                frames_per_chunk = int(sample_rate * self.chunk_duration_ms / 1000)
+                audio_buffer = self.audio_buffers[session_id]
+                
+                if not audio_buffer.is_active:
+                    audio_buffer.start()
+                
+                chunk_count = 0
+                total_frames = wav_file.getnframes()
+                total_chunks = total_frames // frames_per_chunk
+                
+                logger.info(f"🎵 Fast processing: {total_chunks} chunks total")
+                
+                while True:
+                    audio_chunk = wav_file.readframes(frames_per_chunk)
+                    if not audio_chunk:
+                        logger.info(f"📁 Audio file completed: {chunk_count} chunks processed")
+                        break
+                    
+                    audio_buffer.add_chunk(audio_chunk)
+                    chunk_count += 1
+                    
+                    # Fast processing with minimal delay
+                    await asyncio.sleep(0.02)  # 20ms delay only
+                    
+                    if chunk_count % 50 == 0:
+                        progress = (chunk_count / total_chunks) * 100 if total_chunks > 0 else 0
+                        logger.info(f"🎵 Fast audio: {progress:.1f}% complete")
+                        
+            logger.info(f"✅ Fast audio complete: {chunk_count}/{total_chunks} chunks")
+            
+            # Wait for processing to complete, then stop buffer
+            await asyncio.sleep(6.0)
+            audio_buffer.stop()
+            logger.info(f"🛑 Audio buffer stopped after completion")
+            
+        except Exception as e:
+            logger.error(f"❌ Error in fast mono audio: {e}")
+            raise
     
     async def _process_mono_audio_realtime(self, session_id: str, audio_path: Path, websocket_callback: Callable):
         """Process mono audio with CONSERVATIVE real-time timing and proper completion"""

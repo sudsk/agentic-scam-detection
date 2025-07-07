@@ -1,4 +1,302 @@
-# backend/agents/audio_processor/agent.py - IMPROVED VERSION
+async def _process_stereo_response(
+        self, 
+        session_id: str, 
+        response, 
+        speaker_tracker, 
+        websocket_callback: Callable,
+        last_final_text: str
+    ) -> Optional[Dict]:
+        """Process stereo streaming response using channel information"""
+        try:
+            for result in response.results:
+                if not result.alternatives:
+                    continue
+                
+                alternative = result.alternatives[0]
+                transcript = alternative.transcript.strip()
+                
+                if not transcript:
+                    continue
+                
+                # Skip exact duplicates only
+                if result.is_final and transcript == last_final_text:
+                    logger.debug(f"🚫 Skipping exact duplicate: '{transcript[:30]}...'")
+                    continue
+                
+                # Extract channel and speaker information
+                channel_tag = None
+                speaker_tag = None
+                
+                if hasattr(alternative, 'words') and alternative.words:
+                    # Get channel tags (for stereo)
+                    channel_tags = [w.channel_tag for w in alternative.words 
+                                   if hasattr(w, 'channel_tag') and w.channel_tag is not None]
+                    if channel_tags:
+                        channel_tag = max(set(channel_tags), key=channel_tags.count)
+                    
+                    # Get speaker tags (backup)
+                    speaker_tags = [w.speaker_tag for w in alternative.words 
+                                   if hasattr(w, 'speaker_tag') and w.speaker_tag is not None]
+                    if speaker_tags:
+                        speaker_tag = max(set(speaker_tags), key=speaker_tags.count)
+                
+                # Detect speaker using channel information
+                detected_speaker = speaker_tracker.detect_speaker_stereo(channel_tag, speaker_tag, transcript)
+                
+                # Extract timing
+                start_time, end_time = self._extract_timing(alternative)
+                
+                # Create segment data
+                segment_data = {
+                    "session_id": session_id,
+                    "speaker": detected_speaker,
+                    "text": transcript,
+                    "confidence": getattr(alternative, 'confidence', 0.9),
+                    "is_final": result.is_final,
+                    "start": start_time,
+                    "end": end_time,
+                    "channel_tag": channel_tag,
+                    "speaker_tag": speaker_tag,
+                    "timestamp": get_current_timestamp()
+                }
+                
+                if result.is_final:
+                    # Store final segment
+                    session = self.active_sessions[session_id]
+                    session["transcription_segments"].append(segment_data)
+                    
+                    await websocket_callback({
+                        "type": "transcription_segment",
+                        "data": segment_data
+                    })
+                    
+                    logger.info(f"📝 STEREO FINAL [{detected_speaker}] (ch:{channel_tag}, spk:{speaker_tag}): '{transcript[:50]}...'")
+                    
+                    # Trigger fraud analysis for customer speech
+                    if detected_speaker == "customer":
+                        await self._trigger_fraud_analysis(
+                            session_id, transcript, websocket_callback
+                        )
+                    
+                    return segment_data
+                else:
+                    # Send interim results
+                    if len(transcript) > 5:
+                        await websocket_callback({
+                            "type": "transcription_interim",
+                            "data": segment_data
+                        })
+        
+        except Exception as e:
+            logger.error(f"❌ Error processing stereo response: {e}")
+        
+        return None
+
+
+class StereoChannelTracker:
+    """Speaker tracker for stereo audio using Google's channel information"""
+    
+    def __init__(self):
+        self.speaker_history = []
+        self.turn_count = {"agent": 0, "customer": 0}
+        self.segment_count = 0
+        
+    def detect_speaker_stereo(self, channel_tag: Optional[int], speaker_tag: Optional[int], transcript: str) -> str:
+        """Detect speaker using channel information (100% accurate for proper stereo)"""
+        
+        self.segment_count += 1
+        
+        # PRIMARY: Use channel information if available
+        if channel_tag is not None:
+            if channel_tag == 0:
+                detected_speaker = "agent"     # Left channel = Agent
+            elif channel_tag == 1:
+                detected_speaker = "customer"  # Right channel = Customer
+            else:
+                # Unexpected channel, fallback to content
+                detected_speaker = self._detect_by_content(transcript)
+            
+            logger.info(f"🎯 STEREO channel detection: Channel {channel_tag} → {detected_speaker}")
+            
+        # FALLBACK: Use speaker tag if no channel info
+        elif speaker_tag is not None:
+            # First segment is always agent
+            if self.segment_count == 1:
+                detected_speaker = "agent"
+            else:
+                # Use content detection with speaker tag as hint
+                detected_speaker = self._detect_by_content(transcript)
+            
+            logger.info(f"🎯 STEREO fallback: Speaker tag {speaker_tag} + content → {detected_speaker}")
+            
+        # LAST RESORT: Content-based detection
+        else:
+            detected_speaker = self._detect_by_content(transcript)
+            logger.info(f"🎯 STEREO content-only: '{transcript[:20]}...' → {detected_speaker}")
+        
+        # Update tracking
+        self.turn_count[detected_speaker] += 1
+        self.speaker_history.append(detected_speaker)
+        
+        return detected_speaker
+    
+    def _detect_by_content(self, transcript: str) -> str:
+        """Content-based detection for stereo fallback"""
+        transcript_lower = transcript.lower()
+        
+        # Strong customer indicators
+        customer_phrases = [
+            "hi", "hello", "yes", "i need", "i want", "please", "urgent", "emergency",
+            "alex", "patricia", "williams", "turkey", "istanbul", "stuck", "hospital",
+            "boyfriend", "girlfriend", "partner", "dating", "money", "help"
+        ]
+        
+        # Strong agent indicators
+        agent_phrases = [
+            "good morning", "good afternoon", "hsbc", "customer services",
+            "how can i assist", "mrs williams", "i understand", "i see",
+            "can you tell me", "fraud", "scam", "protection", "verify"
+        ]
+        
+        customer_score = sum(1 for phrase in customer_phrases if phrase in transcript_lower)
+        agent_score = sum(1 for phrase in agent_phrases if phrase in transcript_lower)
+        
+        if customer_score > agent_score:
+            return "customer"
+        elif agent_score > customer_score:
+            return "agent"
+        else:
+            # Default based on segment position
+            return "agent" if self.segment_count <= 2 else "customer"
+    
+    def get_stats(self) -> Dict:
+        return {
+            "type": "stereo_channel_tracker",
+            "turn_count": self.turn_count.copy(),
+            "total_segments": len(self.speaker_history),
+            "detection_method": "channel_based"
+        }
+
+
+class EnhancedSpeakerTracker(SpeakerTracker):
+    """Enhanced speaker tracker for mono audio with better content detection"""
+    
+    def __init__(self):
+        super().__init__()
+        self.confidence_scores = []
+        
+    def detect_speaker(self, google_speaker_tag: Optional[int], transcript: str) -> str:
+        """Enhanced speaker detection for mono audio"""
+        
+        self.segment_count += 1
+        
+        # First segment is always agent
+        if self.segment_count == 1:
+            self.current_speaker = "agent"
+            self.turn_count["agent"] += 1
+            self.speaker_history.append("agent")
+            self.last_speaker_tag = google_speaker_tag
+            self.confidence_scores.append(1.0)  # 100% confident about first segment
+            logger.info(f"🎯 MONO first segment: agent (tag:{google_speaker_tag})")
+            return "agent"
+        
+        # Use Google tags if they change
+        if google_speaker_tag is not None and self.last_speaker_tag is not None:
+            if google_speaker_tag != self.last_speaker_tag:
+                detected_speaker = "customer" if self.current_speaker == "agent" else "agent"
+                confidence = 0.9  # High confidence in Google tag changes
+                
+                logger.info(f"🔄 MONO tag change: {self.last_speaker_tag} → {google_speaker_tag}, switching to {detected_speaker}")
+                
+                self.current_speaker = detected_speaker
+                self.turn_count[detected_speaker] += 1
+                self.last_speaker_tag = google_speaker_tag
+                self.confidence_scores.append(confidence)
+                self.speaker_history.append(detected_speaker)
+                return detected_speaker
+        
+        # Enhanced content-based detection
+        content_speaker, confidence = self._enhanced_content_detection(transcript)
+        
+        # Use content detection if confident or if Google tags are unreliable
+        if confidence > 0.7 or google_speaker_tag is None:
+            if content_speaker != self.current_speaker:
+                logger.info(f"🔍 MONO content switch: {self.current_speaker} → {content_speaker} (confidence: {confidence:.2f})")
+                self.current_speaker = content_speaker
+                self.turn_count[content_speaker] += 1
+            
+            self.confidence_scores.append(confidence)
+            self.speaker_history.append(content_speaker)
+            return content_speaker
+        
+        # Default: keep current speaker
+        self.confidence_scores.append(0.5)
+        self.speaker_history.append(self.current_speaker)
+        return self.current_speaker
+    
+    def _enhanced_content_detection(self, transcript: str) -> tuple:
+        """Enhanced content detection with confidence scoring"""
+        transcript_lower = transcript.lower()
+        
+        # High-confidence customer phrases
+        strong_customer = ["hi", "hello", "yes", "i need", "urgent", "emergency", "alex", "patricia", "stuck"]
+        # High-confidence agent phrases  
+        strong_agent = ["hsbc", "customer services", "mrs williams", "fraud", "scam", "i understand"]
+        
+        # Medium-confidence phrases
+        medium_customer = ["please", "help", "money", "transfer", "turkey", "hospital", "boyfriend"]
+        medium_agent = ["can you tell me", "verify", "security", "protection", "policy"]
+        
+        # Calculate weighted scores
+        strong_customer_score = sum(2 for phrase in strong_customer if phrase in transcript_lower)
+        strong_agent_score = sum(2 for phrase in strong_agent if phrase in transcript_lower)
+        medium_customer_score = sum(1 for phrase in medium_customer if phrase in transcript_lower)
+        medium_agent_score = sum(1 for phrase in medium_agent if phrase in transcript_lower)
+        
+        total_customer = strong_customer_score + medium_customer_score
+        total_agent = strong_agent_score + medium_agent_score
+        
+        # Determine speaker and confidence
+        if total_customer > total_agent:
+            confidence = min(0.9, 0.6 + (total_customer - total_agent) * 0.1)
+            return "customer", confidence
+        elif total_agent > total_customer:
+            confidence = min(0.9, 0.6 + (total_agent - total_customer) * 0.1)
+            return "agent", confidence
+        else:
+            # No clear winner - use alternation logic with low confidence
+            if len(self.speaker_history) >= 2:
+                last_speaker = self.speaker_history[-1]
+                return "customer" if last_speaker == "agent" else "agent", 0.4
+            return self.current_speaker, 0.3
+    
+    def get_stats(self) -> Dict:
+        avg_confidence = sum(self.confidence_scores) / len(self.confidence_scores) if self.confidence_scores else 0
+        return {
+            "type": "enhanced_mono_tracker",
+            "turn_count": self.turn_count.copy(),
+            "total_segments": len(self.speaker_history),
+            "detection_method": "google_tags_plus_enhanced_content",
+            "average_confidence": round(avg_confidence, 2),
+            "transitions": len(self.speaker_transitions)
+        }
+
+
+# Update the original StereoSpeakerTracker to be compatible
+class StereoSpeakerTracker(SpeakerTracker):
+    """Legacy stereo speaker tracker - now redirects to StereoChannelTracker"""
+    
+    def __init__(self):
+        super().__init__()
+        self.channel_tracker = StereoChannelTracker()
+        
+    def detect_speaker(self, google_speaker_tag: Optional[int], transcript: str) -> str:
+        """Redirect to stereo channel detection"""
+        return self.channel_tracker.detect_speaker_stereo(None, google_speaker_tag, transcript)
+    
+    def detect_speaker_stereo(self, channel_tag: Optional[int], speaker_tag: Optional[int], transcript: str) -> str:
+        """Use the new stereo channel tracker"""
+        return self.channel_tracker.detect_speaker_stereo(channel_tag, speaker_tag, transcript)# backend/agents/audio_processor/agent.py - IMPROVED VERSION
 """
 Improved Audio Processing Agent for Google Speech-to-Text v1p1beta1
 - Simplified speaker diarization logic
@@ -401,46 +699,77 @@ class AudioProcessorAgent(BaseAgent):
                 await asyncio.sleep(2.0)
     
     async def _do_streaming_recognition(self, session_id: str):
-        """Core streaming recognition logic with improved quality settings"""
+        """Core streaming recognition logic with automatic mono/stereo detection"""
         session = self.active_sessions[session_id]
         websocket_callback = session["websocket_callback"]
         audio_buffer = self.audio_buffers[session_id]
         speaker_tracker = self.speaker_trackers[session_id]
         
-        logger.info(f"🎙️ Starting Google STT streaming for {session_id}")
+        # Detect if we're processing stereo or mono
+        is_stereo = isinstance(speaker_tracker, StereoSpeakerTracker)
         
-        # IMPROVED recognition config for better quality
-        recognition_config = self.speech_types.RecognitionConfig(
-            encoding=self.speech_types.RecognitionConfig.AudioEncoding.LINEAR16,
-            sample_rate_hertz=self.sample_rate,
-            language_code="en-GB",
-            model="phone_call",  # Optimal for telephony
-            use_enhanced=True,   # Use enhanced model for better accuracy
-            enable_automatic_punctuation=True,
-            enable_word_confidence=True,
-            enable_word_time_offsets=True,
-            # Improved diarization settings
-            diarization_config=self.speech_types.SpeakerDiarizationConfig(
-                enable_speaker_diarization=True,
-                min_speaker_count=2,
-                max_speaker_count=2
-            ),
-            # Add speech context for banking/fraud terms
-            speech_contexts=[
-                self.speech_types.SpeechContext(
-                    phrases=[
-                        # Banking terms
-                        "HSBC", "customer services", "account", "transfer", "payment",
-                        "verification", "security", "PIN", "sort code",
-                        # Common names
-                        "Patricia Williams", "James", "Mrs Williams",
-                        # Fraud-related terms
-                        "urgent", "emergency", "Turkey", "pounds", "international transfer"
-                    ],
-                    boost=15
-                )
-            ]
-        )
+        logger.info(f"🎙️ Starting Google STT streaming for {session_id} ({'STEREO' if is_stereo else 'MONO'} mode)")
+        
+        # Create recognition config based on audio type
+        if is_stereo:
+            recognition_config = self.speech_types.RecognitionConfig(
+                encoding=self.speech_types.RecognitionConfig.AudioEncoding.LINEAR16,
+                sample_rate_hertz=self.sample_rate,
+                language_code="en-GB",
+                audio_channel_count=2,  # STEREO: 2 channels
+                enable_separate_recognition_per_channel=True,  # STEREO: Process channels separately
+                model="phone_call",
+                use_enhanced=True,
+                enable_automatic_punctuation=True,
+                enable_word_confidence=True,
+                enable_word_time_offsets=True,
+                # Optional diarization as backup
+                diarization_config=self.speech_types.SpeakerDiarizationConfig(
+                    enable_speaker_diarization=True,
+                    min_speaker_count=2,
+                    max_speaker_count=2
+                ),
+                speech_contexts=[
+                    self.speech_types.SpeechContext(
+                        phrases=[
+                            "HSBC", "customer services", "Patricia Williams", "Alex",
+                            "urgent", "emergency", "Turkey", "Istanbul", "hospital",
+                            "transfer", "pounds", "investment", "fraud", "scam"
+                        ],
+                        boost=15
+                    )
+                ]
+            )
+            logger.info("🔧 Using STEREO config: 2 channels, separate recognition")
+        else:
+            recognition_config = self.speech_types.RecognitionConfig(
+                encoding=self.speech_types.RecognitionConfig.AudioEncoding.LINEAR16,
+                sample_rate_hertz=self.sample_rate,
+                language_code="en-GB",
+                audio_channel_count=1,  # MONO: 1 channel
+                model="phone_call",
+                use_enhanced=True,
+                enable_automatic_punctuation=True,
+                enable_word_confidence=True,
+                enable_word_time_offsets=True,
+                # Strong diarization for mono
+                diarization_config=self.speech_types.SpeakerDiarizationConfig(
+                    enable_speaker_diarization=True,
+                    min_speaker_count=2,
+                    max_speaker_count=2
+                ),
+                speech_contexts=[
+                    self.speech_types.SpeechContext(
+                        phrases=[
+                            "HSBC", "customer services", "Patricia Williams", "Alex",
+                            "urgent", "emergency", "Turkey", "Istanbul", "hospital",
+                            "transfer", "pounds", "investment", "fraud", "scam"
+                        ],
+                        boost=15
+                    )
+                ]
+            )
+            logger.info("🔧 Using MONO config: 1 channel, diarization enabled")
         
         streaming_config = self.speech_types.StreamingRecognitionConfig(
             config=recognition_config,
@@ -450,10 +779,10 @@ class AudioProcessorAgent(BaseAgent):
         
         # Audio request generator with better chunk management
         def audio_generator():
-            logger.info(f"🎵 Audio generator starting for {session_id}")
+            logger.info(f"🎵 Audio generator starting for {session_id} ({'STEREO' if is_stereo else 'MONO'})")
             chunk_count = 0
             empty_count = 0
-            max_empty = 30  # Reduced timeout
+            max_empty = 30
             
             for chunk in audio_buffer.get_chunks():
                 if session_id not in self.active_sessions:
@@ -468,10 +797,10 @@ class AudioProcessorAgent(BaseAgent):
                     continue
                 
                 chunk_count += 1
-                empty_count = 0  # Reset empty counter
+                empty_count = 0
                 
                 if chunk_count <= 3 or chunk_count % 25 == 0:
-                    logger.info(f"🎵 Sending audio chunk {chunk_count} ({len(chunk)} bytes)")
+                    logger.info(f"🎵 Sending {'stereo' if is_stereo else 'mono'} chunk {chunk_count} ({len(chunk)} bytes)")
                 
                 request = self.speech_types.StreamingRecognizeRequest()
                 request.audio_content = chunk
@@ -479,7 +808,7 @@ class AudioProcessorAgent(BaseAgent):
             
             logger.info(f"🎵 Audio generator completed: {chunk_count} chunks sent")
         
-        # Start streaming with better error handling
+        # Start streaming with error handling
         try:
             logger.info(f"🚀 Starting Google STT v1p1beta1 streaming for {session_id}")
             
@@ -488,7 +817,7 @@ class AudioProcessorAgent(BaseAgent):
                 requests=audio_generator()
             )
             
-            # Process responses with deduplication
+            # Process responses with stereo/mono logic
             response_count = 0
             last_final_text = ""
             
@@ -499,16 +828,21 @@ class AudioProcessorAgent(BaseAgent):
                 
                 response_count += 1
                 if response_count <= 3 or response_count % 10 == 0:
-                    logger.info(f"📨 Processing response {response_count} for {session_id}")
+                    logger.info(f"📨 Processing {'stereo' if is_stereo else 'mono'} response {response_count}")
                 
-                # Process with deduplication
-                processed = await self._process_response_with_dedup(
-                    session_id, response, speaker_tracker, websocket_callback, last_final_text
-                )
+                # Process with appropriate logic
+                if is_stereo:
+                    processed = await self._process_stereo_response(
+                        session_id, response, speaker_tracker, websocket_callback, last_final_text
+                    )
+                else:
+                    processed = await self._process_response_with_dedup(
+                        session_id, response, speaker_tracker, websocket_callback, last_final_text
+                    )
                 
                 if processed and processed.get("is_final"):
                     last_final_text = processed.get("text", "")
-                
+            
             logger.info(f"✅ Google STT streaming completed for {session_id}: {response_count} responses processed")
                 
         except Exception as e:
@@ -521,6 +855,7 @@ class AudioProcessorAgent(BaseAgent):
                     "data": {
                         "session_id": session_id,
                         "error": str(e),
+                        "audio_type": "stereo" if is_stereo else "mono",
                         "timestamp": get_current_timestamp()
                     }
                 })

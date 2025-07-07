@@ -1,7 +1,8 @@
-# backend/agents/audio_processor/agent.py - FIXED TIMING VERSION
+# backend/agents/audio_processor/agent.py - UPDATED FOR v1p1beta1 API
 """
-Audio Processing Agent - FIXED: Proper timing and no delays in transcription
-Fixed: Audio simulation timing to prevent Google STT timeout errors
+Audio Processing Agent for LIVE PHONE CALLS
+UPDATED: Correct Google Speech-to-Text v1p1beta1 API implementation for optimal telephony support
+Real-time streaming recognition with speaker diarization for live fraud detection
 """
 
 import asyncio
@@ -25,22 +26,19 @@ from ...utils import get_current_timestamp
 logger = logging.getLogger(__name__)
 
 class LiveAudioBuffer:
-    """Thread-safe audio buffer for live streaming - FIXED timing"""
+    """Thread-safe audio buffer for live streaming with proper chunk management"""
     
     def __init__(self, chunk_size: int = 3200):  # 200ms at 16kHz, 16-bit
         self.chunk_size = chunk_size
-        self.buffer = queue.Queue(maxsize=200)
+        self.buffer = queue.Queue(maxsize=100)  # Limit buffer size
         self.is_active = False
         self.total_chunks_added = 0
         self.total_chunks_yielded = 0
-        self.last_activity = time.time()
         
     def add_audio_chunk(self, audio_data: bytes):
         """Add audio chunk from telephony system or file simulation"""
         if self.is_active and len(audio_data) > 0:
             try:
-                self.last_activity = time.time()
-                
                 if self.buffer.full():
                     try:
                         self.buffer.get_nowait()  # Remove oldest chunk
@@ -49,46 +47,49 @@ class LiveAudioBuffer:
                 
                 self.buffer.put(audio_data, block=False)
                 self.total_chunks_added += 1
+                
+                if self.total_chunks_added % 50 == 0:
+                    logger.debug(f"📊 Audio buffer: {self.total_chunks_added} chunks added, queue size: {self.buffer.qsize()}")
                     
             except queue.Full:
-                logger.warning("⚠️ Audio buffer full, dropping chunk")
+                logger.warning("⚠️ Audio buffer full, dropping chunk to maintain real-time performance")
     
     def get_audio_chunks(self):
-        """Generator for audio chunks - FIXED timing"""
-        logger.info("🎵 Audio chunk generator started")
+        """Generator for audio chunks with improved flow control"""
+        logger.info("🎵 Audio chunk generator started for live streaming")
         
         consecutive_empty_reads = 0
-        max_empty_reads = 50  # FIXED: Reduced from 100 to 50 (5 seconds)
+        max_empty_reads = 50  # Allow 5 seconds of no data
         
-        while self.is_active:
+        while self.is_active and consecutive_empty_reads < max_empty_reads:
             try:
                 chunk = self.buffer.get(timeout=0.1)
                 
                 if chunk and len(chunk) > 0:
                     self.total_chunks_yielded += 1
                     consecutive_empty_reads = 0
+                    
+                    if self.total_chunks_yielded <= 5 or self.total_chunks_yielded % 50 == 0:
+                        logger.debug(f"🎵 Yielding chunk {self.total_chunks_yielded} (size: {len(chunk)} bytes)")
+                    
                     yield chunk
                 else:
                     consecutive_empty_reads += 1
                     
             except queue.Empty:
                 consecutive_empty_reads += 1
-                
-                # FIXED: Check if we should stop due to inactivity - reduced timeout
-                if time.time() - self.last_activity > 5.0:  # FIXED: 5 seconds instead of 10
-                    logger.info(f"🎵 Audio generator stopping: no new data for 5s")
-                    break
-                    
                 continue
             except Exception as e:
                 logger.error(f"❌ Error in audio chunk generator: {e}")
                 break
         
+        if consecutive_empty_reads >= max_empty_reads:
+            logger.info(f"🎵 Audio generator stopping: no data for {max_empty_reads * 0.1}s")
+        
         logger.info(f"🎵 Audio generator completed: {self.total_chunks_yielded} chunks yielded")
     
     def start(self):
         self.is_active = True
-        self.last_activity = time.time()
         logger.info("▶️ Audio buffer started")
         
     def stop(self):
@@ -97,32 +98,37 @@ class LiveAudioBuffer:
 
 class AudioProcessorAgent(BaseAgent):
     """
-    SIMPLIFIED Audio Processor - FIXED timing for Google STT
+    Live Audio Processor for Real-time Phone Calls
+    UPDATED: Optimized Google Speech-to-Text v1p1beta1 API for telephony
     """
     
     def __init__(self):
         super().__init__(
             agent_type="audio_processor",
-            agent_name="Simplified Audio Processor (Google STT Only)"
+            agent_name="Live Telephony Audio Processor (v1p1beta1 Optimized)"
         )
         
         self.active_sessions: Dict[str, Dict] = {}
         self.streaming_tasks: Dict[str, asyncio.Task] = {}
         self.audio_buffers: Dict[str, LiveAudioBuffer] = {}
         
-        # FIXED: Audio settings for better timing
-        self.chunk_duration_ms = 100  # FIXED: 100ms chunks instead of 200ms
-        self.sample_rate = 16000
-        self.channels = 1
+        # Telephony-optimized settings
+        self.chunk_duration_ms = 200  # 200ms chunks for responsiveness
+        self.sample_rate = 16000  # Standard telephony rate
+        self.channels = 1  # Mono audio
         self.chunk_size = int(self.sample_rate * self.channels * 2 * self.chunk_duration_ms / 1000)
         
-        # Initialize Google STT
-        self._initialize_google_stt()
+        # Speaker tracking
+        self.speaker_states: Dict[str, str] = {}
+        
+        # Initialize Google STT v1p1beta1
+        self._initialize_google_stt_v1p1beta1()
               
         # Register with global registry
         agent_registry.register_agent(self)
         
-        logger.info(f"📞 {self.agent_name} initialized (FIXED TIMING)")
+        logger.info(f"📞 {self.agent_name} initialized")
+        logger.info(f"🎙️ Audio config: {self.chunk_duration_ms}ms chunks, {self.sample_rate}Hz, {self.chunk_size} bytes")
     
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration"""
@@ -133,8 +139,8 @@ class AudioProcessorAgent(BaseAgent):
             "audio_base_path": "data/sample_audio",
             "enable_interim_results": True,
             "single_utterance": False,
-            "max_streaming_duration": 300,  # FIXED: 5 minutes instead of 10
-            "restart_recognition_timeout": 120  # FIXED: 2 minutes instead of 5
+            "max_streaming_duration": 300,
+            "restart_recognition_timeout": 240  # 4 minutes for v1p1beta1 stability
         }
     
     def _get_capabilities(self) -> List[AgentCapability]:
@@ -144,46 +150,49 @@ class AudioProcessorAgent(BaseAgent):
             AgentCapability.REAL_TIME_PROCESSING
         ]
     
-    def _initialize_google_stt(self):
-        """Initialize Google Speech-to-Text v1p1beta1 API"""
+    def _initialize_google_stt_v1p1beta1(self):
+        """Initialize Google Speech-to-Text v1p1beta1 API - OPTIMAL FOR TELEPHONY"""
         
         try:
-            logger.info("🔄 Initializing Google Speech-to-Text v1p1beta1...")
+            logger.info("🔄 Initializing Google Speech-to-Text v1p1beta1 API (telephony optimized)...")
             
             from google.cloud import speech_v1p1beta1 as speech
             
             self.google_client = speech.SpeechClient()
             self.speech_types = speech
-            self.transcription_source = "google_stt_v1p1beta1_simplified"
+            self.transcription_source = "google_stt_v1p1beta1_telephony"
             
-            logger.info("✅ Google Speech-to-Text v1p1beta1 client initialized")
+            logger.info("✅ Google Speech-to-Text v1p1beta1 client initialized successfully")
+            logger.info("📞 Using v1p1beta1 API pattern: streaming_recognize(config, requests)")
             
-            # Test configuration
+            # Test telephony model availability
             try:
                 test_config = speech.RecognitionConfig(
                     encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
                     sample_rate_hertz=self.sample_rate,
                     language_code="en-GB",
-                    model="phone_call",
+                    model="phone_call",  # Optimal for telephony
                     enable_automatic_punctuation=True,
                     enable_word_confidence=True,
                     enable_word_time_offsets=True,
-                    # FORCED 2-speaker diarization
+                    # Speaker diarization config
                     diarization_config=speech.SpeakerDiarizationConfig(
                         enable_speaker_diarization=True,
-                        min_speaker_count=2,  # FORCE 2 speakers
-                        max_speaker_count=2   # FORCE 2 speakers
+                        min_speaker_count=1,
+                        max_speaker_count=2
                     )
                 )
-                logger.info("✅ Phone call model with FORCED 2-speaker diarization configured")
+                logger.info("✅ v1p1beta1: phone_call model with diarization configured successfully")
                 self.telephony_config_available = True
                 
             except Exception as config_error:
                 logger.warning(f"⚠️ Telephony config issue: {config_error}")
+                logger.info("📞 Falling back to default model with diarization")
                 self.telephony_config_available = False
             
         except ImportError as e:
             logger.error(f"❌ Google STT v1p1beta1 import failed: {e}")
+            logger.error("Please install: pip install google-cloud-speech>=2.33.0")
             self.google_client = None
             self.speech_types = None
             self.transcription_source = "unavailable"
@@ -194,7 +203,7 @@ class AudioProcessorAgent(BaseAgent):
             self.speech_types = None
             self.transcription_source = "failed"
             self.telephony_config_available = False
-
+    
     def process(self, input_data: Any) -> Dict[str, Any]:
         """Main processing method"""
         if isinstance(input_data, dict):
@@ -216,7 +225,7 @@ class AudioProcessorAgent(BaseAgent):
             "active_calls": len(self.active_sessions),
             "agent_id": self.agent_id,
             "google_stt_available": self.google_client is not None,
-            "api_version": "v1p1beta1_simplified",
+            "api_version": "v1p1beta1_telephony_optimized",
             "telephony_model_available": self.telephony_config_available,
             "timestamp": datetime.now().isoformat()
         }
@@ -237,6 +246,7 @@ class AudioProcessorAgent(BaseAgent):
             "status": "ready",
             "total_audio_received": 0,
             "transcription_segments": [],
+            "current_speaker": "customer",
             "recognition_restart_count": 0,
             "customer_speech_history": []
         }
@@ -244,8 +254,9 @@ class AudioProcessorAgent(BaseAgent):
         # Initialize audio buffer
         self.audio_buffers[session_id] = LiveAudioBuffer(self.chunk_size)
         self.audio_buffers[session_id].start()
+        self.speaker_states[session_id] = "customer"
         
-        logger.info(f"✅ Live call session {session_id} prepared (SIMPLIFIED)")
+        logger.info(f"✅ Live call session {session_id} prepared and ready")
         
         return {
             "session_id": session_id,
@@ -254,13 +265,14 @@ class AudioProcessorAgent(BaseAgent):
             "sample_rate": self.sample_rate,
             "channels": self.channels,
             "buffer_active": True,
-            "api_version": "v1p1beta1_simplified"
+            "api_version": "v1p1beta1_telephony"
         }
     
     def _add_audio_chunk(self, data: Dict) -> Dict[str, Any]:
         """Add audio chunk from telephony system"""
         session_id = data.get('session_id')
         audio_data = data.get('audio_data')
+        speaker = data.get('speaker', 'customer')
         
         if not session_id or session_id not in self.active_sessions:
             return {"error": "Invalid or unknown session"}
@@ -274,6 +286,8 @@ class AudioProcessorAgent(BaseAgent):
         # Update session stats
         session = self.active_sessions[session_id]
         session["total_audio_received"] += len(audio_data)
+        session["current_speaker"] = speaker
+        self.speaker_states[session_id] = speaker
         
         return {
             "status": "audio_received",
@@ -287,16 +301,16 @@ class AudioProcessorAgent(BaseAgent):
         session_id: str,
         websocket_callback: Callable[[Dict], None]
     ) -> Dict[str, Any]:
-        """Start live streaming recognition"""
+        """Start live streaming recognition using v1p1beta1 API"""
         
         try:
-            logger.info(f"📞 Starting SIMPLIFIED live streaming for {session_id}")
+            logger.info(f"📞 Starting live streaming recognition for session {session_id}")
             
             if session_id not in self.active_sessions:
                 raise ValueError(f"Session {session_id} not prepared")
             
             if not self.google_client:
-                raise Exception("Google Speech-to-Text not available")
+                raise Exception("Google Speech-to-Text v1p1beta1 not available")
             
             # Get audio buffer
             audio_buffer = self.audio_buffers[session_id]
@@ -308,9 +322,9 @@ class AudioProcessorAgent(BaseAgent):
             session["status"] = "streaming"
             session["websocket_callback"] = websocket_callback
             
-            # Start streaming task
+            # Start streaming task with restart capability
             streaming_task = asyncio.create_task(
-                self._live_streaming_with_restart(session_id)
+                self._live_streaming_with_restart_v1p1beta1(session_id)
             )
             self.streaming_tasks[session_id] = streaming_task
             
@@ -319,12 +333,13 @@ class AudioProcessorAgent(BaseAgent):
                 "type": "live_streaming_started",
                 "data": {
                     "session_id": session_id,
-                    "processing_mode": "simplified_google_stt_only",
+                    "processing_mode": "live_telephony_streaming_v1p1beta1",
                     "transcription_engine": self.transcription_source,
                     "sample_rate": self.sample_rate,
-                    "api_version": "v1p1beta1_simplified",
+                    "chunk_duration_ms": self.chunk_duration_ms,
+                    "api_version": "v1p1beta1_telephony",
                     "model": "phone_call" if self.telephony_config_available else "default",
-                    "speaker_diarization": "forced_2_speakers_only",
+                    "speaker_diarization": True,
                     "timestamp": get_current_timestamp()
                 }
             })
@@ -332,25 +347,25 @@ class AudioProcessorAgent(BaseAgent):
             return {
                 "session_id": session_id,
                 "status": "streaming",
-                "processing_mode": "simplified_google_stt_only"
+                "processing_mode": "live_telephony_streaming_v1p1beta1"
             }
             
         except Exception as e:
-            logger.error(f"❌ Error starting simplified streaming: {e}")
+            logger.error(f"❌ Error starting live streaming: {e}")
             return {"error": str(e)}
-
-    async def _live_streaming_with_restart(self, session_id: str) -> None:
-        """Live streaming with automatic restart - FIXED timing"""
+    
+    async def _live_streaming_with_restart_v1p1beta1(self, session_id: str) -> None:
+        """Live streaming with automatic restart for long calls"""
         session = self.active_sessions[session_id]
-        restart_interval = self.config.get("restart_recognition_timeout", 120)  # FIXED: 2 minutes
+        restart_interval = self.config.get("restart_recognition_timeout", 240)
         
         while session_id in self.active_sessions and session.get("status") == "streaming":
             try:
                 logger.info(f"🔄 Starting recognition cycle for {session_id}")
                 
-                # FIXED: Run recognition for shorter interval to prevent timeout
+                # Run recognition for the specified interval
                 await asyncio.wait_for(
-                    self._live_streaming_recognition(session_id),
+                    self._live_streaming_recognition_v1p1beta1(session_id),
                     timeout=restart_interval
                 )
                 
@@ -358,20 +373,20 @@ class AudioProcessorAgent(BaseAgent):
                 # Normal restart due to timeout
                 session["recognition_restart_count"] += 1
                 logger.info(f"🔄 Restarting recognition for {session_id} (restart #{session['recognition_restart_count']})")
-                await asyncio.sleep(0.5)  # FIXED: Shorter delay
+                await asyncio.sleep(1.0)
                 
             except Exception as e:
                 logger.error(f"❌ Recognition error for {session_id}: {e}")
                 session["recognition_restart_count"] += 1
-                await asyncio.sleep(1.0)  # FIXED: Shorter delay
+                await asyncio.sleep(2.0)
                 
-                if session["recognition_restart_count"] > 3:  # FIXED: Fewer retries
+                if session["recognition_restart_count"] > 3:
                     logger.error(f"❌ Too many restart attempts for {session_id}, stopping")
                     break
-
-    async def _live_streaming_recognition(self, session_id: str) -> None:
+    
+    async def _live_streaming_recognition_v1p1beta1(self, session_id: str) -> None:
         """
-        SIMPLIFIED v1p1beta1 streaming recognition - FIXED timing
+        v1p1beta1 API streaming recognition with telephony optimization
         """
         
         session = self.active_sessions[session_id]
@@ -379,29 +394,40 @@ class AudioProcessorAgent(BaseAgent):
         audio_buffer = self.audio_buffers[session_id]
         
         try:
-            logger.info(f"🎙️ Starting SIMPLIFIED v1p1beta1 recognition for {session_id}")
+            logger.info(f"🎙️ Starting v1p1beta1 recognition cycle for {session_id}")
             
-            # Create SIMPLIFIED recognition config
+            # Create telephony-optimized recognition config
             if self.telephony_config_available:
                 recognition_config = self.speech_types.RecognitionConfig(
                     encoding=self.speech_types.RecognitionConfig.AudioEncoding.LINEAR16,
                     sample_rate_hertz=self.sample_rate,
                     language_code="en-GB",
-                    model="phone_call",
+                    model="phone_call",  # Optimal for telephony
                     enable_automatic_punctuation=True,
                     enable_word_confidence=True,
                     enable_word_time_offsets=True,
-                    # FORCED 2-speaker diarization
+                    # Enhanced speaker diarization for phone calls
                     diarization_config=self.speech_types.SpeakerDiarizationConfig(
                         enable_speaker_diarization=True,
-                        min_speaker_count=2,
-                        max_speaker_count=2,
-                        speaker_tag=1
+                        min_speaker_count=1,
+                        max_speaker_count=2
                     ),
-                    use_enhanced=True
+                    # Speech adaptation for banking/fraud terms
+                    speech_contexts=[
+                        self.speech_types.SpeechContext(
+                            phrases=[
+                                "investment", "guaranteed returns", "margin call", "transfer money",
+                                "emergency", "urgent", "immediately", "police", "investigation",
+                                "bank security", "verification", "PIN", "password", "account details",
+                                "romance", "military", "overseas", "stuck", "medical emergency"
+                            ],
+                            boost=15  # Boost recognition of fraud-related terms
+                        )
+                    ]
                 )
-                logger.info("📞 Using phone_call model with FORCED 2-speaker diarization")
+                logger.info("📞 Using phone_call model with enhanced diarization")
             else:
+                # Fallback configuration
                 recognition_config = self.speech_types.RecognitionConfig(
                     encoding=self.speech_types.RecognitionConfig.AudioEncoding.LINEAR16,
                     sample_rate_hertz=self.sample_rate,
@@ -411,75 +437,95 @@ class AudioProcessorAgent(BaseAgent):
                     enable_word_time_offsets=True,
                     diarization_config=self.speech_types.SpeakerDiarizationConfig(
                         enable_speaker_diarization=True,
-                        min_speaker_count=2,
+                        min_speaker_count=1,
                         max_speaker_count=2
-                    ),
-                    use_enhanced=True
+                    )
                 )
-                logger.info("📞 Using default model with FORCED 2-speaker diarization")
+                logger.info("📞 Using default model with basic diarization")
             
-            # Create streaming config
+            # Create streaming config for v1p1beta1 old API pattern
             streaming_config = self.speech_types.StreamingRecognitionConfig(
                 config=recognition_config,
                 interim_results=True,
                 single_utterance=False
             )
             
-            # FIXED: Audio generator with immediate streaming
-            def audio_generator():
+            # Create the request generator - CORRECT v1p1beta1 pattern
+            def audio_generator_v1p1beta1():
+                # For v1p1beta1 with old API pattern, we only send audio chunks
+                # The config is passed separately to streaming_recognize()
                 chunk_count = 0
-                logger.info("📞 FIXED audio generator: Immediate streaming with proper timing")
+                logger.info("📞 Audio generator: sending audio chunks only (config passed separately)")
                 
                 for audio_chunk in audio_buffer.get_audio_chunks():
                     if session_id not in self.active_sessions:
+                        logger.info(f"🛑 Audio generator stopping for {session_id}")
                         break
                     
                     if audio_chunk and len(audio_chunk) > 0:
                         chunk_count += 1
                         
-                        # Create request with audio content
+                        if chunk_count <= 3 or chunk_count % 50 == 0:
+                            logger.debug(f"🎵 Sending audio chunk {chunk_count} ({len(audio_chunk)} bytes)")
+                        
+                        # Create request with ONLY audio content
                         request = self.speech_types.StreamingRecognizeRequest()
                         request.audio_content = audio_chunk
                         yield request
                         
-                        # FIXED: No delay - immediate streaming
+                        # Small delay for stability
+                        time.sleep(0.02)
                 
-                logger.info(f"🎵 FIXED audio generator completed: {chunk_count} chunks")
+                logger.info(f"🎵 Audio generator completed: {chunk_count} chunks sent")
             
             # Start streaming recognition
-            logger.info(f"🚀 Starting FIXED Google STT streaming for {session_id}")
+            logger.info(f"🚀 Starting Google STT v1p1beta1 streaming for {session_id}")
             
-            responses = self.google_client.streaming_recognize(
-                config=streaming_config,
-                requests=audio_generator()
-            )
+            # v1p1beta1 old API pattern: streaming_recognize(config, requests)
+            # config = StreamingRecognitionConfig, requests = iterator of audio-only requests
+            try:
+                logger.info("📞 Using v1p1beta1 old API: streaming_recognize(streaming_config, audio_requests)")
+                
+                responses = self.google_client.streaming_recognize(
+                    config=streaming_config,  # StreamingRecognitionConfig object
+                    requests=audio_generator_v1p1beta1()  # Iterator of audio-only requests
+                )
+            except Exception as api_error:
+                logger.error(f"❌ v1p1beta1 streaming API error: {api_error}")
+                logger.error(f"❌ Config type: {type(streaming_config)}")
+                logger.error(f"❌ Error details: {api_error}")
+                raise
             
             # Process responses
             response_count = 0
-            final_count = 0
             interim_count = 0
+            final_count = 0
             
             for response in responses:
                 if session_id not in self.active_sessions:
+                    logger.info(f"🛑 Session {session_id} ended, stopping recognition")
                     break
                 
                 response_count += 1
                 
-                # Count responses
+                # Count interim vs final results
                 for result in response.results:
                     if result.is_final:
                         final_count += 1
                     else:
                         interim_count += 1
                 
-                # Process with SIMPLIFIED logic
-                await self._process_streaming_response_simplified(session_id, response, websocket_callback)
+                if response_count % 20 == 0:
+                    logger.debug(f"📨 Processed {response_count} responses for {session_id} (Final: {final_count}, Interim: {interim_count})")
+                
+                await self._process_streaming_response_v1p1beta1(session_id, response, websocket_callback)
             
-            logger.info(f"✅ FIXED recognition completed for {session_id}")
+            logger.info(f"✅ v1p1beta1 recognition cycle completed for {session_id}")
             logger.info(f"📊 Stats: {response_count} responses, {final_count} final, {interim_count} interim")
             
         except Exception as e:
-            logger.error(f"❌ FIXED streaming error for {session_id}: {e}")
+            logger.error(f"❌ v1p1beta1 streaming recognition error for {session_id}: {e}")
+            logger.error(f"📋 Error details: {type(e).__name__}: {str(e)}")
             
             # Send error notification
             try:
@@ -488,6 +534,9 @@ class AudioProcessorAgent(BaseAgent):
                     "data": {
                         "session_id": session_id,
                         "error": str(e),
+                        "error_type": type(e).__name__,
+                        "api_version": "v1p1beta1_telephony",
+                        "model": "phone_call" if self.telephony_config_available else "default",
                         "timestamp": get_current_timestamp()
                     }
                 })
@@ -495,38 +544,39 @@ class AudioProcessorAgent(BaseAgent):
                 pass
             
             raise
-
-    async def _process_streaming_response_simplified(
+    
+    async def _process_streaming_response_v1p1beta1(
         self, 
         session_id: str, 
         response, 
         websocket_callback: Callable
     ) -> None:
-        """SIMPLIFIED response processing - Google STT diarization ONLY"""
+        """Process streaming response from v1p1beta1 API - FIXED for clean display"""
         
         try:
             # Handle streaming errors
             if hasattr(response, 'error') and response.error.code != 0:
-                logger.error(f"❌ STT streaming error for {session_id}: {response.error}")
+                logger.error(f"❌ STT v1p1beta1 streaming error for {session_id}: {response.error}")
                 return
             
-            # Process results with SIMPLIFIED speaker detection
+            # Process results
             for result in response.results:
                 if result.alternatives:
                     alternative = result.alternatives[0]
                     transcript = alternative.transcript.strip()
                     
                     if transcript:
-                        # SIMPLIFIED speaker detection - ONLY Google STT
-                        detected_speaker = self._get_google_speaker_only(alternative)
+                        # Enhanced speaker detection for v1p1beta1
+                        detected_speaker = self._detect_speaker_v1p1beta1(session_id, alternative, result)
                         
                         # Get timing information
-                        start_time, end_time = self._extract_timing(alternative)
+                        start_time, end_time = self._extract_timing_v1p1beta1(alternative)
                         
+                        # MAJOR FIX: Handle interim vs final results properly
                         session = self.active_sessions[session_id]
                         
                         if result.is_final:
-                            # FINAL RESULT
+                            # FINAL RESULT: Add as new segment
                             segment_data = {
                                 "session_id": session_id,
                                 "speaker": detected_speaker,
@@ -536,36 +586,40 @@ class AudioProcessorAgent(BaseAgent):
                                 "start": start_time,
                                 "end": end_time,
                                 "duration": end_time - start_time,
-                                "processing_mode": "simplified_google_stt_only",
+                                "processing_mode": "live_streaming_v1p1beta1_telephony",
                                 "transcription_source": self.transcription_source,
                                 "timestamp": get_current_timestamp()
                             }
                             
-                            # Send final result - NO DELAY
+                            # Send final result to WebSocket
                             await websocket_callback({
                                 "type": "transcription_segment",
                                 "data": segment_data
                             })
                             
-                            # Store final result
+                            # Store final result in session
                             session["transcription_segments"].append(segment_data)
                             
-                            # Track customer speech for fraud analysis
+                            # Track customer speech for fraud analysis (FINAL ONLY)
                             if detected_speaker == "customer":
                                 session["customer_speech_history"].append(transcript)
                                 
-                                # Trigger fraud analysis - NO DELAY
-                                await self._trigger_fraud_analysis(
+                                # Trigger fraud analysis for final customer speech
+                                await self._trigger_progressive_fraud_analysis(
                                     session_id, transcript, websocket_callback
                                 )
+                            
+                            # Clear any interim state
+                            session.pop("current_interim_segment", None)
                             
                             logger.info(f"📝 FINAL: {detected_speaker} - '{transcript[:50]}...'")
                             
                         else:
-                            # INTERIM RESULT
+                            # INTERIM RESULT: Update existing interim or create new one
+                            # Only process if transcript is meaningful (> 8 characters)
                             if len(transcript) > 8:
                                 
-                                interim_data = {
+                                interim_segment_data = {
                                     "session_id": session_id,
                                     "speaker": detected_speaker,
                                     "text": transcript,
@@ -574,68 +628,140 @@ class AudioProcessorAgent(BaseAgent):
                                     "start": start_time,
                                     "end": end_time,
                                     "duration": end_time - start_time,
-                                    "processing_mode": "simplified_google_stt_only",
+                                    "processing_mode": "live_streaming_v1p1beta1_telephony",
                                     "transcription_source": self.transcription_source,
                                     "timestamp": get_current_timestamp(),
-                                    "is_interim_update": True
+                                    "is_interim_update": True  # Flag to help frontend
                                 }
                                 
-                                # Send interim result - NO DELAY
+                                # Check if we should update the current interim or create new
                                 current_interim = session.get("current_interim_segment")
                                 
                                 if (current_interim and 
                                     current_interim.get("speaker") == detected_speaker and
                                     len(transcript) > len(current_interim.get("text", ""))):
                                     
+                                    # UPDATE existing interim result
                                     await websocket_callback({
                                         "type": "transcription_interim_update",
-                                        "data": interim_data
+                                        "data": interim_segment_data
                                     })
                                     
+                                    logger.debug(f"📝 interim UPDATE: {detected_speaker} - '{transcript[:30]}...'")
+                                    
                                 else:
+                                    # NEW interim result
                                     await websocket_callback({
                                         "type": "transcription_interim_new",
-                                        "data": interim_data
+                                        "data": interim_segment_data
                                     })
+                                    
+                                    logger.debug(f"📝 interim NEW: {detected_speaker} - '{transcript[:30]}...'")
                                 
                                 # Store current interim state
-                                session["current_interim_segment"] = interim_data
+                                session["current_interim_segment"] = interim_segment_data
         
         except Exception as e:
-            logger.error(f"❌ Error processing SIMPLIFIED response: {e}")
+            logger.error(f"❌ Error processing streaming response: {e}")
     
-    def _get_google_speaker_only(self, alternative) -> str:
-        """SIMPLIFIED speaker detection - ONLY Google STT diarization, NO FALLBACK"""
+    def _detect_speaker_v1p1beta1(self, session_id: str, alternative, result) -> str:
+        """Enhanced speaker detection for v1p1beta1 API with improved diarization logic"""
         
-        # ONLY use Google's speaker diarization - NO FALLBACK LOGIC
+        # DEBUG: Log what we're getting from Google Speech API
         if hasattr(alternative, 'words') and alternative.words:
             speaker_tags = []
-            
             for word in alternative.words:
                 if hasattr(word, 'speaker_tag') and word.speaker_tag is not None:
                     speaker_tags.append(word.speaker_tag)
             
             if speaker_tags:
-                # Use most common speaker tag
+                # Use most common speaker tag in this segment
                 most_common_tag = max(set(speaker_tags), key=speaker_tags.count)
+                unique_tags = set(speaker_tags)
                 
-                logger.debug(f"🎯 GOOGLE STT ONLY: speaker_tag={most_common_tag}")
+                # Enhanced logging for debugging
+                if len(segments := self.active_sessions.get(session_id, {}).get("transcription_segments", [])) < 10:
+                    logger.info(f"🎯 DIARIZATION DEBUG: speaker_tags={unique_tags}, most_common={most_common_tag}, text='{alternative.transcript[:30]}...'")
                 
-                # Map speaker tags: 1 = customer, 2 = agent
+                # Map Google's speaker tags to customer/agent
                 if most_common_tag == 1:
-                    return "customer"
+                    return "customer"  # First speaker = customer (calls in)
                 elif most_common_tag == 2:
-                    return "agent"
+                    return "agent"     # Second speaker = agent (answers)
                 else:
                     return f"speaker_{most_common_tag}"
         
-        # If Google STT provides no speaker tags, return unknown
-        # NO FALLBACK LOGIC - let Google STT handle it
-        logger.debug("🎯 GOOGLE STT: No speaker tags provided")
-        return "unknown"
+        # Enhanced fallback: Intelligent conversation flow detection
+        session = self.active_sessions.get(session_id, {})
+        segments = session.get("transcription_segments", [])
+        
+        # For the very first segment, start with customer (they call in)
+        if len(segments) == 0:
+            logger.info("🎯 FALLBACK: First segment -> customer")
+            return "customer"
+        
+        # Get recent conversation context
+        recent_segments = segments[-5:] if len(segments) >= 5 else segments
+        last_speaker = segments[-1].get("speaker", "customer") if segments else "customer"
+        
+        # Count words from each speaker in recent conversation
+        customer_words = 0
+        agent_words = 0
+        
+        for seg in recent_segments:
+            word_count = len(seg.get("text", "").split())
+            if seg.get("speaker") == "customer":
+                customer_words += word_count
+            else:
+                agent_words += word_count
+        
+        # Smart switching logic based on conversation patterns
+        current_text = getattr(alternative, 'transcript', '').lower()
+        
+        # Agent response patterns (they typically respond with these phrases)
+        agent_phrases = [
+            'good afternoon', 'good morning', 'hello', 'hi there',
+            'this is', 'my name is', 'i can help', 'how can i help', 'how can i assist',
+            'of course', 'certainly', 'let me help', 'i need to', 'can you', 'could you',
+            'for security', 'to verify', 'i\'ll need', 'thank you', 'thanks'
+        ]
+        
+        # Customer phrases (requests, questions, problems)
+        customer_phrases = [
+            'i need', 'i want', 'i would like', 'can i', 'could i', 'i have a problem',
+            'urgent', 'quickly', 'as soon as possible', 'emergency', 'help me',
+            'my account', 'my card', 'transfer', 'payment', 'yes it\'s', 'it\'s for'
+        ]
+        
+        # Check for strong indicators
+        has_agent_phrase = any(phrase in current_text for phrase in agent_phrases)
+        has_customer_phrase = any(phrase in current_text for phrase in customer_phrases)
+        
+        if has_agent_phrase and not has_customer_phrase:
+            logger.info(f"🎯 PATTERN MATCH: agent phrase detected -> agent ('{current_text[:30]}...')")
+            return "agent"
+        elif has_customer_phrase and not has_agent_phrase:
+            logger.info(f"🎯 PATTERN MATCH: customer phrase detected -> customer ('{current_text[:30]}...')")
+            return "customer"
+        
+        # Natural conversation flow: alternate after sufficient speech
+        if last_speaker == "customer":
+            # Switch to agent if customer has spoken enough (>15 words recently)
+            if customer_words > 15:
+                logger.info(f"🎯 FLOW SWITCH: customer->agent ({customer_words} customer words)")
+                return "agent"
+        elif last_speaker == "agent":
+            # Switch to customer if agent has spoken enough (>10 words recently)
+            if agent_words > 10:
+                logger.info(f"🎯 FLOW SWITCH: agent->customer ({agent_words} agent words)")
+                return "customer"
+        
+        # Default: continue with the same speaker
+        logger.debug(f"🎯 CONTINUE: {last_speaker} (no switch criteria met)")
+        return last_speaker
     
-    def _extract_timing(self, alternative) -> tuple:
-        """Extract timing information"""
+    def _extract_timing_v1p1beta1(self, alternative) -> tuple:
+        """Extract timing information from alternative in v1p1beta1 API"""
         start_time = 0.0
         end_time = 0.0
         
@@ -643,30 +769,34 @@ class AudioProcessorAgent(BaseAgent):
             first_word = alternative.words[0]
             last_word = alternative.words[-1]
             
+            # v1p1beta1 uses start_time and end_time
             if hasattr(first_word, 'start_time') and first_word.start_time:
                 start_time = first_word.start_time.total_seconds()
             if hasattr(last_word, 'end_time') and last_word.end_time:
                 end_time = last_word.end_time.total_seconds()
+                
+            logger.debug(f"⏱️ v1p1beta1 timing: {start_time:.2f}s - {end_time:.2f}s")
         
         return start_time, end_time
     
-    async def _trigger_fraud_analysis(
+    async def _trigger_progressive_fraud_analysis(
         self, 
         session_id: str, 
         customer_text: str, 
         websocket_callback: Callable
     ) -> None:
-        """Trigger fraud analysis - NO DELAY"""
+        """Trigger progressive fraud analysis as customer speaks"""
         
         try:
+            # Get session's customer speech history
             session = self.active_sessions[session_id]
             customer_history = session.get("customer_speech_history", [])
             
-            # Combine recent customer speech
-            recent_speech = " ".join(customer_history[-5:])
+            # Combine recent customer speech for analysis
+            recent_speech = " ".join(customer_history[-5:])  # Last 5 segments
             
-            if len(recent_speech.strip()) >= 20:
-                # Send to fraud detection - NO DELAY
+            if len(recent_speech.strip()) >= 20:  # Minimum text for analysis
+                # Send to fraud detection system
                 await websocket_callback({
                     "type": "progressive_fraud_analysis_trigger",
                     "data": {
@@ -678,15 +808,15 @@ class AudioProcessorAgent(BaseAgent):
                     }
                 })
                 
-                logger.info(f"🔍 Fraud analysis triggered: {len(recent_speech)} chars")
+                logger.info(f"🔍 Triggered fraud analysis: {len(recent_speech)} chars from {len(customer_history)} segments")
         
         except Exception as e:
             logger.error(f"❌ Error triggering fraud analysis: {e}")
     
     async def stop_live_streaming(self, session_id: str) -> Dict[str, Any]:
-        """Stop live streaming"""
+        """Stop live streaming for a session with proper cleanup"""
         try:
-            logger.info(f"🛑 Stopping SIMPLIFIED streaming for {session_id}")
+            logger.info(f"🛑 Stopping live streaming for {session_id}")
             
             if session_id not in self.active_sessions:
                 return {"error": "Session not found"}
@@ -706,16 +836,19 @@ class AudioProcessorAgent(BaseAgent):
                 try:
                     await task
                 except asyncio.CancelledError:
-                    logger.info(f"✅ SIMPLIFIED streaming task cancelled for {session_id}")
+                    logger.info(f"✅ Streaming task cancelled for {session_id}")
                 del self.streaming_tasks[session_id]
             
-            # Cleanup
+            # Cleanup session data
             del self.active_sessions[session_id]
             
             if session_id in self.audio_buffers:
                 del self.audio_buffers[session_id]
             
-            logger.info(f"✅ SIMPLIFIED streaming stopped for {session_id}")
+            if session_id in self.speaker_states:
+                del self.speaker_states[session_id]
+            
+            logger.info(f"✅ Live streaming stopped and cleaned up for {session_id}")
             
             return {
                 "session_id": session_id,
@@ -725,10 +858,10 @@ class AudioProcessorAgent(BaseAgent):
             }
             
         except Exception as e:
-            logger.error(f"❌ Error stopping SIMPLIFIED streaming: {e}")
+            logger.error(f"❌ Error stopping live streaming for {session_id}: {e}")
             return {"error": str(e)}
     
-    # ===== DEMO FILE PROCESSING =====
+    # ===== DEMO FILE PROCESSING METHODS =====
     
     async def start_realtime_processing(
         self,
@@ -736,41 +869,44 @@ class AudioProcessorAgent(BaseAgent):
         audio_filename: str,
         websocket_callback: Callable[[Dict], None]
     ) -> Dict[str, Any]:
-        """Start real-time processing - SIMPLIFIED"""
+        """Start real-time processing of demo audio file"""
         
         try:
-            logger.info(f"🎬 Starting SIMPLIFIED demo processing: {audio_filename}")
+            logger.info(f"🎬 Starting real-time demo processing: {audio_filename}")
             
-            # Prepare session
+            # Prepare session for live call
             prepare_result = self._prepare_live_call({"session_id": session_id})
             if "error" in prepare_result:
                 return prepare_result
             
-            # Load audio file
+            # Load and validate audio file
             audio_path = Path(self.config["audio_base_path"]) / audio_filename
             if not audio_path.exists():
                 return {"error": f"Audio file not found: {audio_filename}"}
             
-            # Get audio info
+            # Get audio file info
             try:
                 with wave.open(str(audio_path), 'rb') as wav_file:
                     frames = wav_file.getnframes()
                     sample_rate = wav_file.getframerate()
                     duration = frames / sample_rate
                     
-                logger.info(f"📁 Audio file: {duration:.1f}s, {sample_rate}Hz")
+                logger.info(f"📁 Demo file: {duration:.1f}s, {sample_rate}Hz")
             except Exception as e:
                 logger.warning(f"⚠️ Could not read WAV info: {e}")
-                duration = 30.0
+                duration = 30.0  # Default estimate
             
-            # Start audio simulation - NO DELAY
-            logger.info("🎵 Starting audio simulation...")
+            # Start audio simulation BEFORE starting recognition
+            logger.info("🎵 Starting audio file simulation...")
             file_simulation_task = asyncio.create_task(
-                self._simulate_audio_file(session_id, audio_path, duration)
+                self._simulate_live_audio_from_file(session_id, audio_path, duration)
             )
             
-            # Start recognition immediately - NO DELAY
-            logger.info("🎙️ Starting recognition...")
+            # Small delay to let some audio chunks accumulate
+            await asyncio.sleep(1.0)
+            
+            # Then start live streaming recognition
+            logger.info("🎙️ Starting v1p1beta1 recognition...")
             streaming_result = await self.start_live_streaming(session_id, websocket_callback)
             if "error" in streaming_result:
                 file_simulation_task.cancel()
@@ -780,48 +916,41 @@ class AudioProcessorAgent(BaseAgent):
                 "session_id": session_id,
                 "audio_filename": audio_filename,
                 "audio_duration": duration,
-                "processing_mode": "simplified_google_stt_only",
+                "processing_mode": "demo_realtime_v1p1beta1_telephony",
                 "status": "started",
-                "api_version": "v1p1beta1_simplified",
-                "model": "phone_call" if self.telephony_config_available else "default",
-                "speaker_diarization": "forced_2_speakers_google_only"
+                "api_version": "v1p1beta1",
+                "model": "phone_call" if self.telephony_config_available else "default"
             }
             
         except Exception as e:
-            logger.error(f"❌ Error starting SIMPLIFIED processing: {e}")
+            logger.error(f"❌ Error starting realtime processing: {e}")
             return {"error": str(e)}
-            
-            # Cleanup on error
-            if session_id in self.active_sessions:
-                del self.active_sessions[session_id]
-            if session_id in self.audio_buffers:
-                del self.audio_buffers[session_id]
-
-    async def _simulate_audio_file(
+    
+    async def _simulate_live_audio_from_file(
         self,
         session_id: str,
         audio_path: Path,
         duration: float
     ) -> None:
-        """Simulate audio file - FIXED with immediate streaming and proper timing"""
+        """Simulate live audio streaming from demo file"""
         
         try:
-            logger.info(f"🎬 FIXED audio simulation: {audio_path.name}")
+            logger.info(f"🎬 Simulating live audio stream from {audio_path.name}")
             
             # Read audio file
             with wave.open(str(audio_path), 'rb') as wav_file:
+                # Verify audio format
                 actual_sample_rate = wav_file.getframerate()
                 actual_channels = wav_file.getnchannels()
                 actual_sample_width = wav_file.getsampwidth()
                 
-                logger.info(f"📁 Audio specs: {actual_sample_rate}Hz, {actual_channels}ch, {actual_sample_width*8}bit")
+                logger.info(f"📁 Audio file specs: {actual_sample_rate}Hz, {actual_channels}ch, {actual_sample_width*8}bit")
                 
-                # FIXED: Calculate chunks based on ACTUAL sample rate and smaller chunks
-                frames_per_chunk = int(actual_sample_rate * self.chunk_duration_ms / 1000)  # 100ms chunks
-                total_frames = wav_file.getnframes()
-                total_chunks = int(total_frames / frames_per_chunk)
+                # Use the actual sample rate for calculations
+                frames_per_chunk = int(actual_sample_rate * self.chunk_duration_ms / 1000)
+                total_chunks = int(wav_file.getnframes() / frames_per_chunk)
                 
-                logger.info(f"🎵 FIXED: Streaming {total_chunks} chunks (frames_per_chunk: {frames_per_chunk})")
+                logger.info(f"🎵 Streaming {total_chunks} chunks at {self.chunk_duration_ms}ms intervals")
                 
                 # Get audio buffer
                 audio_buffer = self.audio_buffers.get(session_id)
@@ -832,41 +961,39 @@ class AudioProcessorAgent(BaseAgent):
                 chunk_count = 0
                 start_time = asyncio.get_event_loop().time()
                 
-                # FIXED: Start immediate streaming with minimal delay
-                logger.info("🚀 FIXED: Starting immediate audio streaming...")
+                # Start streaming immediately
+                logger.info("🚀 Starting immediate audio streaming...")
                 
                 while chunk_count < total_chunks and session_id in self.active_sessions:
                     # Read audio chunk
                     audio_chunk = wav_file.readframes(frames_per_chunk)
                     
                     if not audio_chunk:
-                        logger.warning(f"⚠️ No audio data at chunk {chunk_count}/{total_chunks}")
                         break
                     
-                    # FIXED: Add to buffer IMMEDIATELY with no delay
+                    # Add to buffer for streaming recognition
                     audio_buffer.add_audio_chunk(audio_chunk)
                     
                     chunk_count += 1
                     
-                    # Progress logging every 50 chunks (5 seconds at 100ms)
-                    if chunk_count % 50 == 0:
-                        elapsed_seconds = (chunk_count * self.chunk_duration_ms) / 1000
-                        logger.info(f"🎵 FIXED Progress: {elapsed_seconds:.1f}s / {duration:.1f}s ({chunk_count}/{total_chunks})")
+                    # Log progress every 5 seconds
+                    elapsed_seconds = (chunk_count * self.chunk_duration_ms) / 1000
+                    if elapsed_seconds > 0 and int(elapsed_seconds) % 5 == 0 and elapsed_seconds == int(elapsed_seconds):
+                        logger.info(f"🎵 Demo streaming: {elapsed_seconds:.1f}s / {duration:.1f}s")
                     
-                    # FIXED: Minimal timing control to maintain real-time pace
+                    # Maintain real-time timing
                     expected_time = start_time + (chunk_count * self.chunk_duration_ms / 1000)
                     current_time = asyncio.get_event_loop().time()
                     wait_time = expected_time - current_time
                     
                     if wait_time > 0:
-                        # FIXED: Very small sleep to maintain timing without causing delays
-                        await asyncio.sleep(min(wait_time, 0.05))  # Max 50ms sleep
-                    
-                    # FIXED: Don't wait if we're behind - keep streaming
+                        await asyncio.sleep(wait_time)
+                    elif wait_time < -1.0:
+                        logger.debug(f"⚠️ Audio streaming is {-wait_time:.1f}s behind real-time")
                 
-                logger.info(f"✅ FIXED Audio simulation complete: {chunk_count} chunks streamed")
+                logger.info(f"✅ Demo audio simulation complete: {chunk_count} chunks streamed")
                 
-                # Signal completion
+                # Signal end of audio
                 if session_id in self.active_sessions:
                     session = self.active_sessions[session_id]
                     websocket_callback = session.get("websocket_callback")
@@ -881,18 +1008,18 @@ class AudioProcessorAgent(BaseAgent):
                             }
                         })
                 
-                # FIXED: Keep buffer active for shorter time
-                await asyncio.sleep(1.0)  # Only 1 second instead of 3
+                # Keep buffer active for a bit longer
+                await asyncio.sleep(3.0)
                 audio_buffer.stop()
                 
         except Exception as e:
-            logger.error(f"❌ Error in FIXED audio simulation: {e}")
-            import traceback
-            logger.error(f"❌ Traceback: {traceback.format_exc()}")
-
+            logger.error(f"❌ Error simulating live audio: {e}")
+    
     async def stop_realtime_processing(self, session_id: str) -> Dict[str, Any]:
         """Stop real-time processing"""
         return await self.stop_live_streaming(session_id)
+    
+    # ===== STATUS AND MANAGEMENT METHODS =====
     
     def get_all_sessions_status(self) -> Dict[str, Any]:
         """Get status of all active sessions"""
@@ -907,18 +1034,18 @@ class AudioProcessorAgent(BaseAgent):
                 "total_audio_received": session.get("total_audio_received", 0),
                 "transcription_segments": len(session.get("transcription_segments", [])),
                 "customer_speech_segments": len(session.get("customer_speech_history", [])),
+                "current_speaker": session.get("current_speaker", "unknown"),
                 "recognition_restart_count": session.get("recognition_restart_count", 0),
-                "has_streaming_task": session_id in self.streaming_tasks,
-                "buffer_stats": buffer_stats
+                "buffer_stats": buffer_stats,
+                "has_streaming_task": session_id in self.streaming_tasks
             }
         
         return {
             "total_active_sessions": len(self.active_sessions),
             "transcription_engine": self.transcription_source,
-            "google_stt_available": self.google_client is not None,
+            "google_stt_v1p1beta1_available": self.google_client is not None,
             "telephony_model_available": self.telephony_config_available,
-            "api_version": "v1p1beta1_simplified",
-            "processing_mode": "google_stt_diarization_only",
+            "api_version": "v1p1beta1_telephony_optimized",
             "sessions": sessions_status,
             "agent_id": self.agent_id,
             "timestamp": get_current_timestamp()
@@ -969,7 +1096,10 @@ class AudioProcessorAgent(BaseAgent):
         telephony_stream_config: Dict[str, Any],
         websocket_callback: Callable[[Dict], None]
     ) -> Dict[str, Any]:
-        """Connect to live telephony stream for real phone calls"""
+        """
+        Connect to live telephony stream for real phone calls
+        This method will be used when integrating with actual telephony systems
+        """
         
         try:
             logger.info(f"📞 Connecting to telephony stream for session {session_id}")
@@ -979,6 +1109,8 @@ class AudioProcessorAgent(BaseAgent):
             if "error" in prepare_result:
                 return prepare_result
             
+            # TODO: Implement actual telephony integration
+            # This will depend on your telephony provider (Twilio, Asterisk, etc.)
             telephony_config = {
                 "stream_url": telephony_stream_config.get("stream_url"),
                 "codec": telephony_stream_config.get("codec", "PCMU"),
@@ -1000,7 +1132,7 @@ class AudioProcessorAgent(BaseAgent):
                 "session_id": session_id,
                 "status": "connected_to_telephony",
                 "telephony_config": telephony_config,
-                "processing_mode": "simplified_telephony",
+                "processing_mode": "live_telephony_v1p1beta1",
                 "timestamp": get_current_timestamp()
             }
             
@@ -1014,7 +1146,10 @@ class AudioProcessorAgent(BaseAgent):
         audio_chunk: bytes,
         metadata: Optional[Dict] = None
     ) -> bool:
-        """Add audio chunk from live telephony stream"""
+        """
+        Add audio chunk from live telephony stream
+        This will be called by telephony integration layer
+        """
         
         if session_id not in self.active_sessions:
             logger.warning(f"⚠️ Received telephony audio for unknown session: {session_id}")
@@ -1059,8 +1194,7 @@ class AudioProcessorAgent(BaseAgent):
             "telephony_integration_ready": True,
             "active_telephony_sessions": len(telephony_sessions),
             "total_telephony_sessions": len(telephony_sessions),
-            "api_version": "v1p1beta1_simplified",
-            "processing_mode": "simplified_google_stt_only",
+            "api_version": "v1p1beta1_telephony_optimized",
             "supported_codecs": ["PCMU", "PCMA", "LINEAR16"],
             "supported_sample_rates": [8000, 16000],
             "max_concurrent_calls": self.config.get("max_concurrent_sessions", 500),
@@ -1074,31 +1208,6 @@ class AudioProcessorAgent(BaseAgent):
                 }
                 for session_id, session in telephony_sessions.items()
             },
-            "timestamp": get_current_timestamp()
-        }
-    
-    def get_status(self) -> Dict[str, Any]:
-        """Get agent status"""
-        return {
-            "agent_id": self.agent_id,
-            "agent_type": self.agent_type,
-            "agent_name": self.agent_name,
-            "status": "active",
-            "transcription_source": self.transcription_source,
-            "google_stt_available": self.google_client is not None,
-            "telephony_model_available": self.telephony_config_available,
-            "api_version": "v1p1beta1_simplified",
-            "processing_mode": "simplified_google_stt_only",
-            "active_sessions": len(self.active_sessions),
-            "capabilities": [cap.value for cap in self.capabilities],
-            "config": {
-                "sample_rate": self.sample_rate,
-                "chunk_duration_ms": self.chunk_duration_ms,
-                "channels": self.channels,
-                "forced_2_speaker_diarization": True,
-                "no_fallback_logic": True
-            },
-            "metrics": self.metrics,
             "timestamp": get_current_timestamp()
         }
 

@@ -1007,7 +1007,7 @@ function App() {
           
           <div className="p-4 h-full overflow-y-auto">
             {/* Enhanced Speaker Statistics */}
-            <SpeakerStatsDisplay />
+            {/* <SpeakerStatsDisplay /> */}
             
             {showingSegments.length === 0 ? (
               <div className="flex items-center justify-center h-64 text-gray-500">

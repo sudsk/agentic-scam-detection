@@ -1,38 +1,33 @@
-# backend/websocket/fraud_detection_handler.py - UPDATED FOR OPTION 4
+# backend/websocket/fraud_detection_handler.py - SIMPLIFIED VERSION
 """
-WebSocket handler for server-side real-time fraud detection
-Coordinates between server audio processing and fraud detection pipeline
+Simplified WebSocket handler for real-time fraud detection
+Works with the improved audio processor
 """
 
 import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional, Set, List
+from typing import Dict, Any, Optional, List
 from fastapi import WebSocket, WebSocketDisconnect
 import uuid
 
 from ..agents.fraud_detection_system import fraud_detection_system
 from ..agents.audio_processor.agent import audio_processor_agent 
 from ..websocket.connection_manager import ConnectionManager
-from ..utils import get_current_timestamp, log_agent_activity, create_error_response
+from ..utils import get_current_timestamp, create_error_response
 
 logger = logging.getLogger(__name__)
 
 class FraudDetectionWebSocketHandler:
-    """
-    WebSocket handler for server-side real-time fraud detection
-    Coordinates audio processing, fraud detection, and client updates
-    """
+    """Simplified WebSocket handler for fraud detection"""
     
     def __init__(self, connection_manager: ConnectionManager):
         self.connection_manager = connection_manager
         self.active_sessions: Dict[str, Dict] = {}
         self.customer_speech_buffer: Dict[str, List[str]] = {}
-        self.processing_sessions: Dict[str, bool] = {}
         
-        logger.info("🔌 UNIFIED Fraud Detection WebSocket handler initialized")
-        logger.info(f"🎯 Using unified audio agent: {audio_processor_agent.agent_name}")
+        logger.info("🔌 Simplified Fraud Detection WebSocket handler initialized")
     
     async def handle_message(self, websocket: WebSocket, client_id: str, message: Dict[str, Any]) -> None:
         """Handle incoming WebSocket messages"""
@@ -40,49 +35,43 @@ class FraudDetectionWebSocketHandler:
         message_type = message.get('type')
         data = message.get('data', {})
         
-        logger.info(f"📨 WebSocket message from {client_id}: {message_type}")
-        
         try:
             if message_type == 'process_audio':
-                await self.handle_server_audio_processing(websocket, client_id, data)
+                await self.handle_audio_processing(websocket, client_id, data)
             elif message_type == 'start_realtime_session':
-                await self.handle_server_audio_processing(websocket, client_id, data)
+                await self.handle_audio_processing(websocket, client_id, data)
             elif message_type == 'stop_processing':
                 await self.handle_stop_processing(websocket, client_id, data)
             elif message_type == 'get_status':
-                await self.handle_status_request(websocket, client_id, data)
+                await self.handle_status_request(websocket, client_id)
             elif message_type == 'ping':
                 await self.send_message(websocket, client_id, {
                     'type': 'pong',
                     'data': {'timestamp': get_current_timestamp()}
                 })
             else:
-                logger.warning(f"❓ Unknown message type: {message_type} from {client_id}")
                 await self.send_error(websocket, client_id, f"Unknown message type: {message_type}")
                 
         except Exception as e:
-            logger.error(f"❌ Error handling WebSocket message from {client_id}: {e}")
+            logger.error(f"❌ Error handling message from {client_id}: {e}")
             await self.send_error(websocket, client_id, f"Message processing error: {str(e)}")
     
-    async def handle_server_audio_processing(self, websocket: WebSocket, client_id: str, data: Dict) -> None:
-        """Start server-side audio processing with fraud detection"""
+    async def handle_audio_processing(self, websocket: WebSocket, client_id: str, data: Dict) -> None:
+        """Start audio processing with fraud detection"""
         
         filename = data.get('filename')
-        session_id = data.get('session_id')
+        session_id = data.get('session_id') or f"session_{uuid.uuid4().hex[:8]}"
         
         if not filename:
             await self.send_error(websocket, client_id, "Missing filename parameter")
             return
-            
-        if not session_id:
-            session_id = f"server_session_{uuid.uuid4().hex[:8]}"
         
         if session_id in self.active_sessions:
             await self.send_error(websocket, client_id, f"Session {session_id} already active")
             return
         
         try:
-            logger.info(f"🎵 Starting server-side processing: {filename} for {client_id}")
+            logger.info(f"🎵 Starting audio processing: {filename} for {client_id}")
             
             # Initialize session tracking
             self.active_sessions[session_id] = {
@@ -92,59 +81,52 @@ class FraudDetectionWebSocketHandler:
                 'start_time': datetime.now(),
                 'status': 'processing'
             }
-            
             self.customer_speech_buffer[session_id] = []
-            self.processing_sessions[session_id] = True
             
-            # Create WebSocket callback for server processor
-            async def websocket_callback(message_data: Dict) -> None:
-                await self.handle_server_message(websocket, client_id, session_id, message_data)
+            # Create callback for audio processor
+            async def audio_callback(message_data: Dict) -> None:
+                await self.handle_audio_message(websocket, client_id, session_id, message_data)
             
-            # Start server-side audio processing
+            # Start audio processing
             result = await audio_processor_agent.start_realtime_processing(
                 session_id=session_id,
                 audio_filename=filename,
-                websocket_callback=websocket_callback
+                websocket_callback=audio_callback
             )
             
             if 'error' in result:
                 await self.send_error(websocket, client_id, result['error'])
+                self.cleanup_session(session_id)
                 return
             
-            # Send initial confirmation to client
+            # Send confirmation
             await self.send_message(websocket, client_id, {
-                'type': 'server_processing_started',
+                'type': 'processing_started',
                 'data': {
                     'session_id': session_id,
                     'filename': filename,
-                    'processing_mode': 'server_realtime',
                     'audio_duration': result.get('audio_duration', 0),
+                    'channels': result.get('channels', 1),
+                    'processing_mode': result.get('processing_mode', 'mono_realtime'),
                     'timestamp': get_current_timestamp()
                 }
             })
             
-            logger.info(f"✅ Server processing started for session {session_id}")
+            logger.info(f"✅ Processing started for session {session_id}")
             
         except Exception as e:
-            logger.error(f"❌ Error starting server processing: {e}")
+            logger.error(f"❌ Error starting processing: {e}")
             await self.send_error(websocket, client_id, f"Failed to start processing: {str(e)}")
-            
-            # Cleanup on error
-            if session_id in self.active_sessions:
-                del self.active_sessions[session_id]
-            if session_id in self.customer_speech_buffer:
-                del self.customer_speech_buffer[session_id]
-            if session_id in self.processing_sessions:
-                del self.processing_sessions[session_id]
+            self.cleanup_session(session_id)
     
-    async def handle_server_message(
+    async def handle_audio_message(
         self, 
         websocket: WebSocket, 
         client_id: str, 
         session_id: str, 
         message_data: Dict
     ) -> None:
-        """Handle messages from the server audio processor"""
+        """Handle messages from audio processor"""
         
         message_type = message_data.get('type')
         data = message_data.get('data', {})
@@ -161,20 +143,24 @@ class FraudDetectionWebSocketHandler:
                 if speaker == 'customer' and text.strip():
                     await self.process_customer_speech(websocket, client_id, session_id, text)
             
-            elif message_type == 'processing_complete':
-                # Handle completion
-                await self.handle_processing_complete(websocket, client_id, session_id, data)
+            elif message_type == 'transcription_interim':
+                # Forward interim results
+                await self.send_message(websocket, client_id, message_data)
+            
+            elif message_type == 'streaming_started':
+                # Forward streaming confirmation
+                await self.send_message(websocket, client_id, message_data)
             
             elif message_type == 'error':
-                # Forward error to client
+                # Forward errors
                 await self.send_message(websocket, client_id, message_data)
             
             else:
-                # Forward other messages to client
+                # Forward other messages
                 await self.send_message(websocket, client_id, message_data)
                 
         except Exception as e:
-            logger.error(f"❌ Error handling server message: {e}")
+            logger.error(f"❌ Error handling audio message: {e}")
     
     async def process_customer_speech(
         self, 
@@ -183,7 +169,7 @@ class FraudDetectionWebSocketHandler:
         session_id: str, 
         customer_text: str
     ) -> None:
-        """Process customer speech through fraud detection pipeline"""
+        """Process customer speech for fraud detection"""
         
         try:
             # Add to speech buffer
@@ -192,13 +178,14 @@ class FraudDetectionWebSocketHandler:
             
             self.customer_speech_buffer[session_id].append(customer_text)
             
-            # Trigger fraud analysis after accumulating enough speech
+            # Run fraud analysis after accumulating enough speech
             buffer_length = len(self.customer_speech_buffer[session_id])
             
+            # Trigger analysis every 2 customer segments, or when we have 4+ segments
             if buffer_length >= 2 and (buffer_length % 2 == 0 or buffer_length >= 4):
                 combined_text = " ".join(self.customer_speech_buffer[session_id])
                 
-                if len(combined_text.strip()) >= 20:  # Minimum text length
+                if len(combined_text.strip()) >= 20:  # Minimum text for analysis
                     await self.run_fraud_analysis(websocket, client_id, session_id, combined_text)
             
         except Exception as e:
@@ -226,8 +213,8 @@ class FraudDetectionWebSocketHandler:
                 }
             })
             
-            # Add realistic processing delay
-            await asyncio.sleep(0.8)
+            # Small delay for realistic processing
+            await asyncio.sleep(0.5)
             
             # Run fraud detection
             fraud_result = fraud_detection_system.fraud_detector.process(customer_text)
@@ -259,9 +246,7 @@ class FraudDetectionWebSocketHandler:
                     await self.create_fraud_case(websocket, client_id, session_id, fraud_result)
                 
                 logger.info(f"✅ Fraud analysis complete: {risk_score}% risk")
-            else:
-                logger.error(f"❌ Fraud analysis failed: {fraud_result.get('error')}")
-                
+            
         except Exception as e:
             logger.error(f"❌ Error in fraud analysis: {e}")
     
@@ -275,7 +260,6 @@ class FraudDetectionWebSocketHandler:
         """Get and send policy guidance"""
         
         try:
-            # Send policy guidance started notification
             await self.send_message(websocket, client_id, {
                 'type': 'policy_analysis_started',
                 'data': {
@@ -284,7 +268,7 @@ class FraudDetectionWebSocketHandler:
                 }
             })
             
-            await asyncio.sleep(0.6)
+            await asyncio.sleep(0.3)
             
             # Get policy guidance
             policy_result = fraud_detection_system.policy_guide.process({
@@ -293,7 +277,6 @@ class FraudDetectionWebSocketHandler:
             })
             
             if 'error' not in policy_result:
-                # Extract the complete policy data
                 primary_policy = policy_result.get('primary_policy', {})
                 agent_guidance = policy_result.get('agent_guidance', {})
                 
@@ -301,28 +284,15 @@ class FraudDetectionWebSocketHandler:
                     'type': 'policy_guidance_ready',
                     'data': {
                         'session_id': session_id,
-                        # Send complete policy information
                         'policy_id': primary_policy.get('policy_id', ''),
                         'policy_title': primary_policy.get('title', ''),
-                        'policy_version': primary_policy.get('version', ''),
-                        
-                        # Agent guidance data
                         'immediate_alerts': agent_guidance.get('immediate_alerts', []),
-                        'recommended_actions': agent_guidance.get('recommended_actions', primary_policy.get('procedures', [])),
-                        'key_questions': agent_guidance.get('key_questions', primary_policy.get('key_questions', [])),
-                        'customer_education': agent_guidance.get('customer_education', primary_policy.get('customer_education', [])),
-                        
-                        # Additional policy data
-                        'escalation_threshold': primary_policy.get('escalation_threshold', 80),
-                        'regulatory_requirements': primary_policy.get('regulatory_requirements', []),
-                        
+                        'recommended_actions': agent_guidance.get('recommended_actions', []),
+                        'key_questions': agent_guidance.get('key_questions', []),
+                        'customer_education': agent_guidance.get('customer_education', []),
                         'timestamp': get_current_timestamp()
                     }
                 })
-                
-                logger.info(f"✅ Policy guidance sent for session {session_id}")
-            else:
-                logger.error(f"❌ Policy guidance failed: {policy_result.get('error')}")
                 
         except Exception as e:
             logger.error(f"❌ Error getting policy guidance: {e}")
@@ -337,7 +307,6 @@ class FraudDetectionWebSocketHandler:
         """Create fraud case for high-risk sessions"""
         
         try:
-            # Send case creation started notification
             await self.send_message(websocket, client_id, {
                 'type': 'case_creation_started',
                 'data': {
@@ -346,13 +315,13 @@ class FraudDetectionWebSocketHandler:
                 }
             })
             
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3)
             
             # Create case
             case_result = fraud_detection_system.case_manager.process({
                 "session_id": session_id,
                 "fraud_analysis": fraud_result,
-                "customer_id": f"SERVER_{session_id}"
+                "customer_id": f"CUSTOMER_{session_id}"
             })
             
             if 'error' not in case_result:
@@ -368,60 +337,22 @@ class FraudDetectionWebSocketHandler:
                     }
                 })
                 
-                logger.info(f"✅ Fraud case created: {case_result.get('case_id')}")
-            else:
-                logger.error(f"❌ Case creation failed: {case_result.get('error')}")
-                
         except Exception as e:
             logger.error(f"❌ Error creating fraud case: {e}")
-    
-    async def handle_processing_complete(
-        self, 
-        websocket: WebSocket, 
-        client_id: str, 
-        session_id: str, 
-        data: Dict
-    ) -> None:
-        """Handle processing completion"""
-        
-        try:
-            # Run final fraud analysis if we have customer speech
-            if session_id in self.customer_speech_buffer and self.customer_speech_buffer[session_id]:
-                final_text = " ".join(self.customer_speech_buffer[session_id])
-                await self.run_fraud_analysis(websocket, client_id, session_id, final_text)
-            
-            # Forward completion message to client
-            await self.send_message(websocket, client_id, {
-                'type': 'processing_complete',
-                'data': {
-                    **data,
-                    'final_analysis_complete': True,
-                    'timestamp': get_current_timestamp()
-                }
-            })
-            
-            # Cleanup session
-            await self.cleanup_session(session_id)
-            
-            logger.info(f"✅ Processing completed for session {session_id}")
-            
-        except Exception as e:
-            logger.error(f"❌ Error handling processing completion: {e}")
     
     async def handle_stop_processing(self, websocket: WebSocket, client_id: str, data: Dict) -> None:
         """Handle request to stop processing"""
         
         session_id = data.get('session_id')
-        
         if not session_id:
             await self.send_error(websocket, client_id, "Missing session_id")
             return
         
         try:
-            # Stop server processing
-            stop_result = await audio_processor_agent.stop_realtime_processing(session_id)
+            # Stop audio processing
+            stop_result = await audio_processor_agent.stop_streaming(session_id)
             
-            # Send confirmation to client
+            # Send confirmation
             await self.send_message(websocket, client_id, {
                 'type': 'processing_stopped',
                 'data': {
@@ -431,88 +362,68 @@ class FraudDetectionWebSocketHandler:
                 }
             })
             
-            # Cleanup session
-            await self.cleanup_session(session_id)
-            
-            logger.info(f"🛑 Processing stopped for session {session_id}")
+            # Cleanup
+            self.cleanup_session(session_id)
             
         except Exception as e:
             logger.error(f"❌ Error stopping processing: {e}")
-            await self.send_error(websocket, client_id, f"Failed to stop processing: {str(e)}")
+            await self.send_error(websocket, client_id, f"Failed to stop: {str(e)}")
     
-    async def handle_status_request(self, websocket: WebSocket, client_id: str, data: Dict = None) -> None:
+    async def handle_status_request(self, websocket: WebSocket, client_id: str) -> None:
         """Handle status request"""
         
         try:
-            # Get system status
             system_status = fraud_detection_system.get_agent_status()
-            server_status = audio_processor_agent.get_all_sessions_status()
-            
-            status_data = {
-                'system_status': system_status,
-                'server_processor_status': server_status,
-                'websocket_sessions': len(self.active_sessions),
-                'timestamp': get_current_timestamp()
-            }
+            audio_status = audio_processor_agent.get_all_sessions_status()
             
             await self.send_message(websocket, client_id, {
                 'type': 'status_response',
-                'data': status_data
+                'data': {
+                    'system_status': system_status,
+                    'audio_processor_status': audio_status,
+                    'websocket_sessions': len(self.active_sessions),
+                    'timestamp': get_current_timestamp()
+                }
             })
             
         except Exception as e:
             logger.error(f"❌ Error getting status: {e}")
             await self.send_error(websocket, client_id, f"Status error: {str(e)}")
     
-    async def cleanup_session(self, session_id: str) -> None:
+    def cleanup_session(self, session_id: str) -> None:
         """Clean up session data"""
-        
         try:
             if session_id in self.active_sessions:
                 del self.active_sessions[session_id]
-            
             if session_id in self.customer_speech_buffer:
                 del self.customer_speech_buffer[session_id]
-            
-            if session_id in self.processing_sessions:
-                del self.processing_sessions[session_id]
-            
-            logger.info(f"🧹 Cleaned up session {session_id}")
-            
         except Exception as e:
             logger.error(f"❌ Error cleaning up session {session_id}: {e}")
     
     def cleanup_client_sessions(self, client_id: str) -> None:
         """Clean up all sessions for a disconnected client"""
-        
-        sessions_to_cleanup = []
-        
-        for session_id, session in self.active_sessions.items():
-            if session.get('client_id') == client_id:
-                sessions_to_cleanup.append(session_id)
+        sessions_to_cleanup = [
+            session_id for session_id, session in self.active_sessions.items()
+            if session.get('client_id') == client_id
+        ]
         
         for session_id in sessions_to_cleanup:
             try:
-                # Stop server processing
-                asyncio.create_task(audio_processor_agent.stop_realtime_processing(session_id))
-                
-                # Clean up WebSocket session
-                asyncio.create_task(self.cleanup_session(session_id))
-                
+                asyncio.create_task(audio_processor_agent.stop_streaming(session_id))
+                self.cleanup_session(session_id)
             except Exception as e:
                 logger.error(f"❌ Error cleaning up session {session_id}: {e}")
         
         if sessions_to_cleanup:
-            logger.info(f"🧹 Cleaned up {len(sessions_to_cleanup)} sessions for client {client_id}")
+            logger.info(f"🧹 Cleaned up {len(sessions_to_cleanup)} sessions for {client_id}")
     
     async def send_message(self, websocket: WebSocket, client_id: str, message: Dict) -> bool:
-        """Send message to specific client"""
+        """Send message to client"""
         try:
-            message_json = json.dumps(message)
-            await websocket.send_text(message_json)
+            await websocket.send_text(json.dumps(message))
             return True
         except WebSocketDisconnect:
-            logger.warning(f"🔌 Client {client_id} disconnected during send")
+            logger.warning(f"🔌 Client {client_id} disconnected")
             self.cleanup_client_sessions(client_id)
             return False
         except Exception as e:
@@ -521,33 +432,18 @@ class FraudDetectionWebSocketHandler:
     
     async def send_error(self, websocket: WebSocket, client_id: str, error_message: str) -> None:
         """Send error message to client"""
-        error_response = create_error_response(
-            error=error_message,
-            code="SERVER_PROCESSING_ERROR"
-        )
-        
         await self.send_message(websocket, client_id, {
             'type': 'error',
-            'data': error_response
+            'data': create_error_response(error_message, "PROCESSING_ERROR")
         })
-    
-    def get_active_sessions_count(self) -> int:
-        """Get count of active sessions"""
-        return len(self.active_sessions)
     
     def get_system_stats(self) -> Dict[str, Any]:
         """Get system statistics"""
-        
         return {
-            'handler_type': 'ServerSide_FraudDetectionHandler',
-            'active_websocket_sessions': len(self.active_sessions),
-            'server_processor_sessions': len(audio_processor_agent.active_sessions),
+            'handler_type': 'SimplifiedFraudDetectionHandler',
+            'active_sessions': len(self.active_sessions),
+            'audio_processor_sessions': len(audio_processor_agent.active_sessions),
             'customer_speech_buffers': len(self.customer_speech_buffer),
-            'processing_sessions': len([s for s in self.processing_sessions.values() if s]),
             'system_status': 'operational',
-            'processing_mode': 'server_realtime',
             'timestamp': get_current_timestamp()
         }
-
-# Export the handler class
-__all__ = ['FraudDetectionWebSocketHandler']

@@ -351,9 +351,9 @@ class AudioProcessorAgent(BaseAgent):
             return {"error": str(e)}
     
     async def _streaming_with_restart(self, session_id: str):
-        """Streaming with automatic restart for long audio - EXTENDED timeout"""
+        """Streaming with automatic restart - BACK TO STABLE VERSION"""
         session = self.active_sessions[session_id]
-        restart_interval = 300  # INCREASED to 5 minutes to prevent early restarts
+        restart_interval = 240  # BACK TO 4 minutes - more stable
         
         while session_id in self.active_sessions and session.get("status") == "streaming":
             try:
@@ -509,7 +509,7 @@ class AudioProcessorAgent(BaseAgent):
         websocket_callback: Callable,
         last_final_text: str
     ) -> Optional[Dict]:
-        """Process streaming response with deduplication and fragment filtering"""
+        """Process streaming response with MINIMAL filtering to preserve good segments"""
         try:
             for result in response.results:
                 if not result.alternatives:
@@ -521,17 +521,10 @@ class AudioProcessorAgent(BaseAgent):
                 if not transcript:
                     continue
                 
-                # FILTER OUT SHORT FRAGMENTS for final results
-                if result.is_final and len(transcript.split()) < 2:
-                    # Skip single words or very short fragments for final results
-                    logger.debug(f"🚫 Skipping short fragment: '{transcript}'")
-                    continue
-                
-                # DEDUPLICATION: Skip if this is very similar to the last final text
+                # MINIMAL filtering - only skip very obvious duplicates
                 if result.is_final and last_final_text:
-                    similarity = self._calculate_similarity(transcript, last_final_text)
-                    if similarity > 0.8:  # 80% similar - likely duplicate
-                        logger.debug(f"🚫 Skipping duplicate text: '{transcript[:30]}...'")
+                    if transcript == last_final_text:  # Exact match only
+                        logger.debug(f"🚫 Skipping exact duplicate: '{transcript[:30]}...'")
                         continue
                 
                 # Extract speaker tag from words
@@ -581,8 +574,8 @@ class AudioProcessorAgent(BaseAgent):
                     
                     return segment_data
                 else:
-                    # Send interim result (less frequently to reduce noise)
-                    if len(transcript) > 15:  # INCREASED threshold for interim results
+                    # Send substantial interim results only
+                    if len(transcript) > 5:  # Reduced threshold
                         await websocket_callback({
                             "type": "transcription_interim",
                             "data": segment_data
@@ -643,7 +636,7 @@ class AudioProcessorAgent(BaseAgent):
     # === DEMO FILE PROCESSING ===
     
     async def start_realtime_processing(self, session_id: str, audio_filename: str, websocket_callback: Callable) -> Dict[str, Any]:
-        """Start real-time processing of demo audio file with immediate audio playback"""
+        """Start real-time processing with better timing control"""
         try:
             logger.info(f"🎵 Starting realtime processing: {audio_filename}")
             
@@ -666,68 +659,47 @@ class AudioProcessorAgent(BaseAgent):
                 
                 logger.info(f"📁 Audio: {duration:.1f}s, {sample_rate}Hz, {channels}ch")
             
-            # IMMEDIATE START: Start audio processing first with minimal delay
-            logger.info("🚀 Starting audio playback immediately (no sync with transcription)")
+            # CONSERVATIVE APPROACH: Start streaming first, then audio with proper timing
+            streaming_result = await self.start_streaming(session_id, websocket_callback)
+            if "error" in streaming_result:
+                logger.error(f"❌ Failed to start streaming: {streaming_result['error']}")
+                return streaming_result
             
+            logger.info("✅ Streaming started, now starting audio with real-time timing")
+            
+            # Wait a bit for streaming to be ready
+            await asyncio.sleep(0.8)
+            
+            # Start audio processing with REAL-TIME timing (not fast)
             if channels == 2:
                 audio_task = asyncio.create_task(
-                    self._process_stereo_audio_fast(session_id, audio_path, websocket_callback)
+                    self._process_stereo_audio(session_id, audio_path, websocket_callback)
                 )
             else:
                 audio_task = asyncio.create_task(
-                    self._process_mono_audio_fast(session_id, audio_path, websocket_callback)
+                    self._process_mono_audio_realtime(session_id, audio_path, websocket_callback)
                 )
             
             # Store the task
             self.active_sessions[session_id]["audio_task"] = audio_task
-            
-            # Start transcription in parallel (with slight delay to avoid conflicts)
-            await asyncio.sleep(0.2)  # Very small delay
-            
-            transcription_task = asyncio.create_task(
-                self._start_transcription_parallel(session_id, websocket_callback)
-            )
-            self.active_sessions[session_id]["transcription_task"] = transcription_task
             
             return {
                 "session_id": session_id,
                 "audio_filename": audio_filename,
                 "audio_duration": duration,
                 "channels": channels,
-                "processing_mode": f"{'stereo' if channels == 2 else 'mono'}_fast_playback",
-                "status": "started",
-                "playback_mode": "immediate_no_sync"
+                "processing_mode": f"{'stereo' if channels == 2 else 'mono'}_conservative",
+                "status": "started"
             }
             
         except Exception as e:
             logger.error(f"❌ Error starting processing: {e}")
             return {"error": str(e)}
     
-    async def _start_transcription_parallel(self, session_id: str, websocket_callback: Callable):
-        """Start transcription in parallel with audio playback"""
+    async def _process_mono_audio_realtime(self, session_id: str, audio_path: Path, websocket_callback: Callable):
+        """Process mono audio with CONSERVATIVE real-time timing"""
         try:
-            logger.info(f"🎙️ Starting parallel transcription for {session_id}")
-            
-            # Start streaming recognition
-            streaming_result = await self.start_streaming(session_id, websocket_callback)
-            if "error" in streaming_result:
-                logger.error(f"❌ Failed to start transcription: {streaming_result['error']}")
-                await websocket_callback({
-                    "type": "transcription_error", 
-                    "data": {
-                        "session_id": session_id,
-                        "error": streaming_result['error'],
-                        "timestamp": get_current_timestamp()
-                    }
-                })
-            
-        except Exception as e:
-            logger.error(f"❌ Error in parallel transcription: {e}")
-    
-    async def _process_mono_audio_fast(self, session_id: str, audio_path: Path, websocket_callback: Callable):
-        """Process mono audio with immediate playback (no timing sync)"""
-        try:
-            logger.info(f"🎵 Starting FAST mono audio processing for {session_id}")
+            logger.info(f"🎵 Starting CONSERVATIVE mono audio processing for {session_id}")
             
             with wave.open(str(audio_path), 'rb') as wav_file:
                 sample_rate = wav_file.getframerate()
@@ -738,12 +710,10 @@ class AudioProcessorAgent(BaseAgent):
                     audio_buffer.start()
                 
                 chunk_count = 0
-                total_frames = wav_file.getnframes()
-                total_chunks = total_frames // frames_per_chunk
+                start_time = asyncio.get_event_loop().time()
                 
-                logger.info(f"🎵 Will process {total_chunks} chunks for full audio")
+                logger.info(f"🎵 Processing with REAL-TIME timing: {frames_per_chunk} frames per chunk")
                 
-                # Process ALL audio chunks (don't stop early)
                 while True:
                     audio_chunk = wav_file.readframes(frames_per_chunk)
                     if not audio_chunk:
@@ -752,20 +722,26 @@ class AudioProcessorAgent(BaseAgent):
                     audio_buffer.add_chunk(audio_chunk)
                     chunk_count += 1
                     
-                    # REDUCED delay to maintain buffer flow
-                    await asyncio.sleep(0.05)  # 50ms delay instead of 10ms
+                    # REAL-TIME timing - maintain proper chunk intervals
+                    expected_time = start_time + (chunk_count * self.chunk_duration_ms / 1000)
+                    current_time = asyncio.get_event_loop().time()
+                    wait_time = expected_time - current_time
                     
-                    if chunk_count % 50 == 0:
-                        progress = (chunk_count / total_chunks) * 100 if total_chunks > 0 else 0
-                        logger.info(f"🎵 Fast audio: {chunk_count}/{total_chunks} chunks ({progress:.1f}%)")
+                    if wait_time > 0:
+                        await asyncio.sleep(wait_time)
+                    
+                    # Log every 25 chunks (5 seconds)
+                    if chunk_count % 25 == 0:
+                        elapsed = chunk_count * self.chunk_duration_ms / 1000
+                        logger.info(f"🎵 Real-time audio: {elapsed:.1f}s, buffer: {audio_buffer.buffer.qsize()}")
                         
-            logger.info(f"✅ Fast mono audio complete: {chunk_count} chunks")
+            logger.info(f"✅ Real-time mono audio complete: {chunk_count} chunks")
             
-            # Keep feeding the buffer for longer to ensure all audio is processed
-            await asyncio.sleep(5.0)  # Extended wait time
+            # Keep processing for a bit longer
+            await asyncio.sleep(3.0)
             
         except Exception as e:
-            logger.error(f"❌ Error in fast mono audio: {e}")
+            logger.error(f"❌ Error in real-time mono audio: {e}")
             raise
     
     async def _process_stereo_audio(self, session_id: str, audio_path: Path, websocket_callback: Callable):

@@ -1,7 +1,7 @@
-# backend/agents/audio_processor/agent.py - FIXED STEREO VERSION
+# backend/agents/audio_processor/agent.py - COMPLETE FIXED VERSION
 """
 FIXED Audio Processing Agent for Google Speech-to-Text v1p1beta1
-- Proper stereo channel separation 
+- STEREO ONLY: Agent=LEFT channel, Customer=RIGHT channel
 - Fixed Google STT diarization configuration
 - Stable speaker detection logic
 - Better audio chunk handling
@@ -50,11 +50,11 @@ class AudioBuffer:
     def get_chunks(self):
         """Generator for audio chunks"""
         empty_count = 0
-        max_empty = 50  # Increased timeout for better stability
+        max_empty = 50
         
         while self.is_active and empty_count < max_empty:
             try:
-                chunk = self.buffer.get(timeout=0.2)  # Increased timeout
+                chunk = self.buffer.get(timeout=0.2)
                 if chunk and len(chunk) > 0:
                     empty_count = 0
                     yield chunk
@@ -97,7 +97,7 @@ class StereoSpeakerTracker:
             "left_energy": left_energy,
             "right_energy": right_energy,
             "dominant_channel": "left" if left_energy > right_energy else "right",
-            "energy_ratio": left_energy / (right_energy + 1e-10)  # Avoid division by zero
+            "energy_ratio": left_energy / (right_energy + 1e-10)
         })
         
         # Keep only recent history (last 20 chunks for efficiency)
@@ -137,7 +137,6 @@ class StereoSpeakerTracker:
         
         self.speaker_history.append(detected_speaker)
         return detected_speaker
-    
     
     def get_stats(self) -> Dict:
         return {
@@ -396,64 +395,6 @@ class AudioProcessorAgent(BaseAgent):
             
         except Exception as e:
             logger.error(f"❌ Error in stereo processing: {e}")
-            raiseid]
-                speaker_tracker = self.speaker_trackers[session_id]
-                
-                if not audio_buffer.is_active:
-                    audio_buffer.start()
-                
-                chunk_count = 0
-                start_time = asyncio.get_event_loop().time()
-                total_frames = wav_file.getnframes()
-                total_chunks = total_frames // frames_per_chunk
-                
-                logger.info(f"🎵 FIXED stereo: {total_chunks} chunks, {frames_per_chunk} frames per chunk")
-                
-                while True:
-                    # Read stereo frames
-                    stereo_chunk = wav_file.readframes(frames_per_chunk)
-                    if not stereo_chunk:
-                        logger.info(f"📁 Stereo audio completed: {chunk_count} chunks")
-                        break
-                    
-                    # Convert to numpy array for channel processing
-                    stereo_array = np.frombuffer(stereo_chunk, dtype=np.int16)
-                    left_channel = stereo_array[0::2]
-                    right_channel = stereo_array[1::2]
-                    
-                    # Add channel data to tracker for speaker detection
-                    speaker_tracker.add_channel_data(left_channel, right_channel)
-                    
-                    # Mix channels to mono for STT (keeping both channels)
-                    mono_array = ((left_channel.astype(np.int32) + right_channel.astype(np.int32)) // 2).astype(np.int16)
-                    mono_chunk = mono_array.tobytes()
-                    
-                    # Add to buffer
-                    audio_buffer.add_chunk(mono_chunk)
-                    chunk_count += 1
-                    
-                    # Maintain real-time timing
-                    expected_time = start_time + (chunk_count * self.chunk_duration_ms / 1000)
-                    current_time = asyncio.get_event_loop().time()
-                    wait_time = expected_time - current_time
-                    
-                    if wait_time > 0:
-                        await asyncio.sleep(wait_time)
-                    
-                    # Progress logging
-                    if chunk_count % 50 == 0:
-                        progress = (chunk_count / total_chunks) * 100 if total_chunks > 0 else 0
-                        logger.info(f"🎵 Stereo progress: {progress:.1f}%")
-                        
-            logger.info(f"✅ FIXED stereo processing complete: {chunk_count} chunks")
-            
-            # Wait for processing to complete
-            await asyncio.sleep(8.0)
-            audio_buffer.stop()
-            logger.info(f"🛑 Stereo buffer stopped")
-            
-        except Exception as e:
-            logger.error(f"❌ Error in fixed stereo processing: {e}")
             raise
     
     async def _start_transcription_fixed(self, session_id: str, websocket_callback: Callable):
@@ -866,10 +807,3 @@ class AudioProcessorAgent(BaseAgent):
 
 # Create global instance
 audio_processor_agent = AudioProcessorAgent()
-    
-    async def _start_transcription_fixed(self, session_id: str, websocket_callback: Callable):
-        """Start FIXED transcription processing"""
-        try:
-            logger.info(f"🎙️ Starting FIXED transcription for {session_id}")
-            
-            streaming_result = await self.start_streaming(

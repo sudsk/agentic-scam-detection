@@ -88,7 +88,7 @@ class SpeakerTracker:
         self.segment_count += 1
         
         # RULE 1: First few segments are always agent (opening greeting)
-        if self.segment_count <= 3:
+        if self.segment_count <= 2:  # REDUCED from 3 to 2 for faster customer detection
             self.current_speaker = "agent"
             self.turn_count["agent"] += 1
             self.speaker_history.append("agent")
@@ -109,14 +109,15 @@ class SpeakerTracker:
                     "segment": self.segment_count,
                     "from": self.current_speaker,
                     "to": detected_speaker,
-                    "text_preview": transcript[:30]
+                    "text_preview": transcript[:30],
+                    "speaker_tag": google_speaker_tag
                 })
                 
                 self.current_speaker = detected_speaker
                 self.turn_count[detected_speaker] += 1
                 self.last_speaker_tag = google_speaker_tag
                 
-                logger.info(f"🔄 Speaker change detected: {self.speaker_transitions[-1]}")
+                logger.info(f"🔄 Speaker change: {self.current_speaker} → {detected_speaker} (tag: {google_speaker_tag})")
             else:
                 # Same speaker tag - continue with current speaker
                 detected_speaker = self.current_speaker
@@ -350,9 +351,9 @@ class AudioProcessorAgent(BaseAgent):
             return {"error": str(e)}
     
     async def _streaming_with_restart(self, session_id: str):
-        """Streaming with automatic restart for long audio"""
+        """Streaming with automatic restart for long audio - EXTENDED timeout"""
         session = self.active_sessions[session_id]
-        restart_interval = 240  # 4 minutes
+        restart_interval = 300  # INCREASED to 5 minutes to prevent early restarts
         
         while session_id in self.active_sessions and session.get("status") == "streaming":
             try:
@@ -362,7 +363,7 @@ class AudioProcessorAgent(BaseAgent):
                 )
             except asyncio.TimeoutError:
                 session["restart_count"] += 1
-                logger.info(f"🔄 Restarting recognition for {session_id}")
+                logger.info(f"🔄 Restarting recognition for {session_id} after {restart_interval}s")
                 await asyncio.sleep(1.0)
             except Exception as e:
                 logger.error(f"❌ Recognition error: {e}")
@@ -508,7 +509,7 @@ class AudioProcessorAgent(BaseAgent):
         websocket_callback: Callable,
         last_final_text: str
     ) -> Optional[Dict]:
-        """Process streaming response with deduplication"""
+        """Process streaming response with deduplication and fragment filtering"""
         try:
             for result in response.results:
                 if not result.alternatives:
@@ -518,6 +519,12 @@ class AudioProcessorAgent(BaseAgent):
                 transcript = alternative.transcript.strip()
                 
                 if not transcript:
+                    continue
+                
+                # FILTER OUT SHORT FRAGMENTS for final results
+                if result.is_final and len(transcript.split()) < 2:
+                    # Skip single words or very short fragments for final results
+                    logger.debug(f"🚫 Skipping short fragment: '{transcript}'")
                     continue
                 
                 # DEDUPLICATION: Skip if this is very similar to the last final text
@@ -575,7 +582,7 @@ class AudioProcessorAgent(BaseAgent):
                     return segment_data
                 else:
                     # Send interim result (less frequently to reduce noise)
-                    if len(transcript) > 10:  # Only send substantial interim results
+                    if len(transcript) > 15:  # INCREASED threshold for interim results
                         await websocket_callback({
                             "type": "transcription_interim",
                             "data": segment_data
@@ -731,8 +738,12 @@ class AudioProcessorAgent(BaseAgent):
                     audio_buffer.start()
                 
                 chunk_count = 0
+                total_frames = wav_file.getnframes()
+                total_chunks = total_frames // frames_per_chunk
                 
-                # NO TIMING SYNC - Process as fast as possible
+                logger.info(f"🎵 Will process {total_chunks} chunks for full audio")
+                
+                # Process ALL audio chunks (don't stop early)
                 while True:
                     audio_chunk = wav_file.readframes(frames_per_chunk)
                     if not audio_chunk:
@@ -741,13 +752,17 @@ class AudioProcessorAgent(BaseAgent):
                     audio_buffer.add_chunk(audio_chunk)
                     chunk_count += 1
                     
-                    # Minimal delay to prevent overwhelming the buffer
-                    await asyncio.sleep(0.01)  # 10ms delay only
+                    # REDUCED delay to maintain buffer flow
+                    await asyncio.sleep(0.05)  # 50ms delay instead of 10ms
                     
                     if chunk_count % 50 == 0:
-                        logger.info(f"🎵 Fast audio: {chunk_count} chunks processed")
+                        progress = (chunk_count / total_chunks) * 100 if total_chunks > 0 else 0
+                        logger.info(f"🎵 Fast audio: {chunk_count}/{total_chunks} chunks ({progress:.1f}%)")
                         
             logger.info(f"✅ Fast mono audio complete: {chunk_count} chunks")
+            
+            # Keep feeding the buffer for longer to ensure all audio is processed
+            await asyncio.sleep(5.0)  # Extended wait time
             
         except Exception as e:
             logger.error(f"❌ Error in fast mono audio: {e}")

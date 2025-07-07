@@ -656,13 +656,17 @@ class AudioProcessorAgent(BaseAgent):
                 
                 # Simple mapping: tag 1 = agent (first speaker), tag 2 = customer
                 if most_common_tag == 1:
+                    self._log_speaker_detection_debug(session_id, "agent", alternative)
                     return "agent"
                 elif most_common_tag == 2:
+                    self._log_speaker_detection_debug(session_id, "customer", alternative)
                     return "customer"
                 else:
                     # Fallback for any other tags
                     logger.warning(f"Unexpected speaker tag: {most_common_tag}")
-                    return "agent" if most_common_tag % 2 == 1 else "customer"
+                    detected = "agent" if most_common_tag % 2 == 1 else "customer"
+                    self._log_speaker_detection_debug(session_id, detected, alternative)
+                    return detected
         
         # Fallback: If no speaker tags, use simple alternation
         session = self.active_sessions.get(session_id, {})
@@ -671,11 +675,13 @@ class AudioProcessorAgent(BaseAgent):
         if not segments:
             # First speaker is ALWAYS agent
             logger.info("🎯 First segment detected -> agent")
+            self._log_speaker_detection_debug(session_id, "agent", alternative)
             return "agent"
         
         # For subsequent segments without tags, maintain the last speaker
         # (Google usually provides continuous segments per speaker)
         last_speaker = segments[-1].get("speaker", "agent")
+        self._log_speaker_detection_debug(session_id, last_speaker, alternative)
         return last_speaker
     
     def _extract_timing_v1p1beta1(self, alternative) -> tuple:
@@ -696,7 +702,25 @@ class AudioProcessorAgent(BaseAgent):
             logger.debug(f"⏱️ v1p1beta1 timing: {start_time:.2f}s - {end_time:.2f}s")
         
         return start_time, end_time
-    
+
+    def _log_speaker_detection_debug(self, session_id: str, detected_speaker: str, 
+                                    alternative, confidence: float = None):
+        """Debug logging for speaker detection accuracy"""
+        session = self.active_sessions.get(session_id, {})
+        segments_count = len(session.get("transcription_segments", []))
+        
+        # Only log first few segments or every 10th segment
+        if segments_count < 5 or segments_count % 10 == 0:
+            logger.info(f"🎯 Speaker Detection Debug:")
+            logger.info(f"   Session: {session_id}")
+            logger.info(f"   Detected: {detected_speaker}")
+            logger.info(f"   Segment #: {segments_count + 1}")
+            logger.info(f"   Text preview: '{alternative.transcript[:30]}...'")
+            
+            if hasattr(alternative, 'words') and alternative.words:
+                tags = [w.speaker_tag for w in alternative.words[:5] if hasattr(w, 'speaker_tag')]
+                logger.info(f"   Speaker tags (first 5 words): {tags}")
+            
     async def _trigger_progressive_fraud_analysis(
         self, 
         session_id: str, 

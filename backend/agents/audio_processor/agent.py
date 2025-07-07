@@ -84,63 +84,6 @@ class StereoAudioBuffer:
     def stop(self):
         self.is_active = False
 
-class SegmentAggregator:
-    """Aggregates small segments into larger ones before speaker changes"""
-    
-    def __init__(self):
-        self.pending_segments = []
-        self.current_speaker = None
-        self.segment_timeout = 3.0  # Aggregate segments within 3 seconds
-        self.last_segment_time = 0
-        
-    def add_segment(self, speaker: str, text: str, is_final: bool, timestamp: float) -> Optional[Dict]:
-        """Add segment and return aggregated result if ready"""
-        
-        # If speaker changed or timeout reached, flush pending segments
-        if (self.current_speaker and speaker != self.current_speaker) or \
-           (timestamp - self.last_segment_time > self.segment_timeout):
-            
-            result = self._flush_pending_segments()
-            self.current_speaker = speaker
-            self.pending_segments = [text]
-            self.last_segment_time = timestamp
-            return result
-        else:
-            # Same speaker, accumulate
-            self.current_speaker = speaker
-            self.pending_segments.append(text)
-            self.last_segment_time = timestamp
-            
-            # If final and we have accumulated text, flush
-            if is_final and len(self.pending_segments) > 0:
-                return self._flush_pending_segments()
-                
-        return None
-    
-    def _flush_pending_segments(self) -> Optional[Dict]:
-        """Flush accumulated segments into one"""
-        if not self.pending_segments or not self.current_speaker:
-            return None
-            
-        aggregated_text = " ".join(self.pending_segments).strip()
-        
-        # Clean up extra spaces
-        import re
-        aggregated_text = re.sub(r'\s+', ' ', aggregated_text)
-        
-        result = {
-            "speaker": self.current_speaker,
-            "text": aggregated_text,
-            "segment_count": len(self.pending_segments)
-        }
-        
-        self.pending_segments = []
-        return result
-    
-    def get_final_segment(self) -> Optional[Dict]:
-        """Get any remaining segments when processing ends"""
-        return self._flush_pending_segments()
-
 class NativeStereoTracker:
     """Simple tracker for native Google STT stereo results"""
     
@@ -148,47 +91,13 @@ class NativeStereoTracker:
         self.segment_count = 0
         self.turn_count = {"agent": 0, "customer": 0}
         
-        # FIXED MAPPING for Google STT channels (CORRECTED)
+        # FIXED MAPPING for Google STT channels
         self.channel_mapping = {
-            0: "customer",  # Channel 0 (LEFT) = Customer  
-            1: "agent"      # Channel 1 (RIGHT) = Agent
+            0: "agent",     # Channel 0 (LEFT) = Agent
+            1: "customer"   # Channel 1 (RIGHT) = Customer
         }
         
-        logger.info(f"🎯 CORRECTED STT mapping: Channel 0 (LEFT)=Customer, Channel 1 (RIGHT)=Agent")
-        
-    def detect_speaker_from_channel(self, channel: Optional[int]) -> str:
-        """Detect speaker from Google STT channel information"""
-        self.segment_count += 1
-        
-        # Use Google's channel information directly
-        if channel is not None and channel in self.channel_mapping:
-            detected_speaker = self.channel_mapping[channel]
-        else:
-            # Fallback: first segment is agent, then alternate
-            detected_speaker = "agent" if self.segment_count == 1 else "agent"
-        
-        self.turn_count[detected_speaker] += 1
-        return detected_speaker
-    
-    def get_stats(self) -> Dict:
-        return {
-            "total_segments": self.segment_count,
-            "turn_count": self.turn_count.copy(),
-            "channel_mapping": self.channel_mapping.copy()
-        }
-    """Simple tracker for native Google STT stereo results"""
-    
-    def __init__(self):
-        self.segment_count = 0
-        self.turn_count = {"agent": 0, "customer": 0}
-        
-        # FIXED MAPPING for Google STT channels (SWAPPED)
-        self.channel_mapping = {
-            0: "customer",  # Channel 0 (LEFT) = Customer  
-            1: "agent"      # Channel 1 (RIGHT) = Agent
-        }
-        
-        logger.info(f"🎯 CORRECTED STT mapping: Channel 0 (LEFT)=Customer, Channel 1 (RIGHT)=Agent")
+        logger.info(f"🎯 Native STT mapping: Channel 0 (LEFT)=Agent, Channel 1 (RIGHT)=Customer")
         
     def detect_speaker_from_channel(self, channel: Optional[int]) -> str:
         """Detect speaker from Google STT channel information"""
@@ -224,7 +133,6 @@ class AudioProcessorAgent(BaseAgent):
         self.streaming_tasks: Dict[str, asyncio.Task] = {}
         self.audio_buffers: Dict[str, StereoAudioBuffer] = {}
         self.speaker_trackers: Dict[str, NativeStereoTracker] = {}
-        self.segment_aggregators: Dict[str, SegmentAggregator] = {}  # Add aggregators
         
         # Audio settings for native stereo
         self.sample_rate = 16000
@@ -316,7 +224,6 @@ class AudioProcessorAgent(BaseAgent):
         
         self.audio_buffers[session_id] = StereoAudioBuffer(self.stereo_chunk_size)
         self.speaker_trackers[session_id] = NativeStereoTracker()
-        self.segment_aggregators[session_id] = SegmentAggregator()  # Add aggregator
         
         logger.info(f"✅ Session {session_id} prepared for native stereo")
         
@@ -404,7 +311,7 @@ class AudioProcessorAgent(BaseAgent):
                 "audio_duration": duration,
                 "channels": channels,
                 "processing_mode": processing_mode,
-                "channel_mapping": "Channel 0 (LEFT)=Customer, Channel 1 (RIGHT)=Agent",
+                "channel_mapping": "Channel 0 (LEFT)=Agent, Channel 1 (RIGHT)=Customer",
                 "native_stereo": True,
                 "status": "started"
             }
@@ -549,7 +456,7 @@ class AudioProcessorAgent(BaseAgent):
                     "channels": self.channels,
                     "model": "phone_call",
                     "processing_mode": "native_stereo",
-                    "channel_mapping": "Channel 0=Customer, Channel 1=Agent",
+                    "channel_mapping": "Channel 0=Agent, Channel 1=Customer",
                     "timestamp": get_current_timestamp()
                 }
             })
@@ -605,7 +512,6 @@ class AudioProcessorAgent(BaseAgent):
         websocket_callback = session["websocket_callback"]
         audio_buffer = self.audio_buffers[session_id]
         speaker_tracker = self.speaker_trackers[session_id]
-        segment_aggregator = self.segment_aggregators[session_id]  # Add aggregator
         
         logger.info(f"🎙️ Starting NATIVE STEREO Google STT for {session_id}")
         
@@ -671,7 +577,7 @@ class AudioProcessorAgent(BaseAgent):
                 
                 response_count += 1
                 processed = await self._process_native_stereo_response(
-                    session_id, response, speaker_tracker, segment_aggregator, websocket_callback, last_final_text
+                    session_id, response, speaker_tracker, websocket_callback, last_final_text
                 )
                 
                 if processed and processed.get("is_final"):
@@ -690,12 +596,11 @@ class AudioProcessorAgent(BaseAgent):
         self, 
         session_id: str, 
         response, 
-        speaker_tracker: NativeStereoTracker,
-        segment_aggregator: SegmentAggregator,
+        speaker_tracker: NativeStereoTracker, 
         websocket_callback: Callable,
         last_final_text: str
     ) -> Optional[Dict]:
-        """Process native stereo response with segment aggregation"""
+        """Process native stereo response using Google's channel information"""
         try:
             for result in response.results:
                 if not result.alternatives:
@@ -717,32 +622,24 @@ class AudioProcessorAgent(BaseAgent):
                 # Use Google's channel information for speaker detection
                 detected_speaker = speaker_tracker.detect_speaker_from_channel(channel_tag)
                 
-                # 🔄 AGGREGATE SEGMENTS before sending
-                current_time = time.time()
-                aggregated = segment_aggregator.add_segment(
-                    detected_speaker, transcript, result.is_final, current_time
-                )
+                # Extract timing
+                start_time, end_time = self._extract_timing(alternative)
                 
-                if aggregated:
-                    # Extract timing for aggregated segment
-                    start_time, end_time = self._extract_timing(alternative)
-                    
-                    # Create aggregated segment data
-                    segment_data = {
-                        "session_id": session_id,
-                        "speaker": aggregated["speaker"],
-                        "text": aggregated["text"],
-                        "confidence": getattr(alternative, 'confidence', 0.9),
-                        "is_final": True,
-                        "channel_tag": channel_tag,
-                        "native_stereo": True,
-                        "aggregated": True,
-                        "segment_count": aggregated["segment_count"],
-                        "start": start_time,
-                        "end": end_time,
-                        "timestamp": get_current_timestamp()
-                    }
-                    
+                # Create segment data
+                segment_data = {
+                    "session_id": session_id,
+                    "speaker": detected_speaker,
+                    "text": transcript,
+                    "confidence": getattr(alternative, 'confidence', 0.9),
+                    "is_final": result.is_final,
+                    "channel_tag": channel_tag,
+                    "native_stereo": True,
+                    "start": start_time,
+                    "end": end_time,
+                    "timestamp": get_current_timestamp()
+                }
+                
+                if result.is_final:
                     session = self.active_sessions[session_id]
                     session["transcription_segments"].append(segment_data)
                     
@@ -751,29 +648,18 @@ class AudioProcessorAgent(BaseAgent):
                         "data": segment_data
                     })
                     
-                    logger.info(f"📝 AGGREGATED [{aggregated['speaker'].upper()}] ({aggregated['segment_count']} parts): '{aggregated['text'][:60]}...'")
+                    logger.info(f"📝 NATIVE [{detected_speaker.upper()}] Ch{channel_tag}: '{transcript[:50]}...'")
                     
-                    if aggregated["speaker"] == "customer":
-                        await self._trigger_fraud_analysis(session_id, aggregated["text"], websocket_callback)
+                    if detected_speaker == "customer":
+                        await self._trigger_fraud_analysis(session_id, transcript, websocket_callback)
                     
                     return segment_data
                 else:
-                    # Send interim results for current segment only
-                    if not result.is_final and len(transcript) > 8:
-                        interim_data = {
-                            "session_id": session_id,
-                            "speaker": detected_speaker,
-                            "text": transcript,
-                            "confidence": getattr(alternative, 'confidence', 0.9),
-                            "is_final": False,
-                            "channel_tag": channel_tag,
-                            "native_stereo": True,
-                            "timestamp": get_current_timestamp()
-                        }
-                        
+                    # Send interim results for longer text
+                    if len(transcript) > 8:
                         await websocket_callback({
                             "type": "transcription_interim",
-                            "data": interim_data
+                            "data": segment_data
                         })
         
         except Exception as e:
@@ -871,8 +757,6 @@ class AudioProcessorAgent(BaseAgent):
                 del self.audio_buffers[session_id]
             if session_id in self.speaker_trackers:
                 del self.speaker_trackers[session_id]
-            if session_id in self.segment_aggregators:
-                del self.segment_aggregators[session_id]
             
             # Final confirmation
             if websocket_callback:
@@ -907,8 +791,8 @@ class AudioProcessorAgent(BaseAgent):
                     del self.audio_buffers[session_id]
                 if session_id in self.speaker_trackers:
                     del self.speaker_trackers[session_id]
-                if session_id in self.segment_aggregators:
-                    del self.segment_aggregators[session_id]
+                if session_id in self.streaming_tasks:
+                    del self.streaming_tasks[session_id]
             except:
                 pass
             
@@ -937,7 +821,7 @@ class AudioProcessorAgent(BaseAgent):
             "google_stt_available": self.google_client is not None,
             "processing_mode": "native_google_stereo",
             "native_stereo_enabled": True,
-            "channel_mapping": "Channel 0 (LEFT)=Customer, Channel 1 (RIGHT)=Agent",
+            "channel_mapping": "Channel 0 (LEFT)=Agent, Channel 1 (RIGHT)=Customer",
             "sessions": sessions_status,
             "timestamp": get_current_timestamp()
         }

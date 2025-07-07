@@ -50,9 +50,58 @@ class Settings:
             "low": "customer-service-enhanced@bank.com"
         }
         
+        # Scam type keywords (RESTORED from original)
+        self.scam_type_keywords = {
+            "investment_scam": [
+                "investment", "trading", "forex", "crypto", "bitcoin", "profit",
+                "returns", "margin call", "platform", "advisor", "broker", "guaranteed"
+            ],
+            "romance_scam": [
+                "online", "dating", "relationship", "boyfriend", "girlfriend",
+                "military", "overseas", "emergency", "medical", "visa", "stuck", "stranded"
+            ],
+            "impersonation_scam": [
+                "bank", "security", "fraud", "police", "tax", "hmrc",
+                "government", "investigation", "verification", "account compromised"
+            ],
+            "authority_scam": [
+                "police", "court", "tax", "fine", "penalty", "arrest",
+                "legal action", "warrant", "prosecution", "bailiff"
+            ]
+        }
+        
+        # Confidence thresholds (RESTORED from original)
+        self.confidence_threshold_high = 0.9
+        self.confidence_threshold_medium = 0.7
+        self.confidence_threshold_low = 0.5
+        
+        # Agent configuration (RESTORED from original)
+        self.max_concurrent_sessions = 500
+        self.agent_timeout_seconds = 30
+        self.agent_retry_attempts = 3
+        self.agent_processing_timeout = 60
+        
         # Audio file settings
         self.supported_audio_formats = [".wav", ".mp3", ".m4a", ".flac"]
         self.max_audio_file_size_mb = 100
+        
+        # Demo configuration (RESTORED from original)
+        self.demo_mode = True
+        self.demo_sample_data_path = "data/sample_audio"
+        self.demo_delay_simulation = True
+        self.demo_delay_seconds = 1.0
+        
+        # WebSocket settings (RESTORED from original)
+        self.websocket_timeout = 300  # 5 minutes
+        self.max_connections = 100
+        
+        # Additional attributes (RESTORED from original)
+        self.environment = "development"
+        self.enable_mock_mode = True
+        self.enable_learning_agent = True
+        self.enable_compliance_agent = True
+        self.enable_case_management = True
+        self.enable_real_time_transcription = True
         
         # Paths
         self.data_path = Path("data")
@@ -133,40 +182,85 @@ class Settings:
             "audio_base_path": str(self.sample_audio_path)
         }
         
-        # Other agent configs (simplified)
+        # Other agent configs (simplified but complete)
         self.fraud_agent_config = {
             "confidence_threshold": 0.7,
             "risk_escalation_threshold": 80,
-            "pattern_weights": self.pattern_weights
+            "pattern_weights": self.pattern_weights,
+            "scam_type_mapping": self.scam_type_keywords,  # Link to scam keywords
+            "risk_thresholds": {
+                "critical": self.risk_threshold_critical,
+                "high": self.risk_threshold_high,
+                "medium": self.risk_threshold_medium,
+                "low": self.risk_threshold_low
+            }
         }
         
         self.policy_agent_config = {
             "guidance_detail_level": "detailed",
             "include_regulatory_info": True,
-            "max_recommended_actions": 6
+            "max_recommended_actions": 6,
+            "include_customer_education": True,
+            "policy_version": "2.1.0",
+            "risk_thresholds": {
+                "critical": self.risk_threshold_critical,
+                "high": self.risk_threshold_high,
+                "medium": self.risk_threshold_medium,
+                "low": self.risk_threshold_low
+            },
+            "team_assignments": self.team_assignments
         }
         
         self.case_agent_config = {
             "auto_create_threshold": 60,
             "case_id_prefix": "FD",
             "case_retention_days": 2555,
-            "auto_escalation_enabled": True
+            "max_cases_per_agent": 50,
+            "case_timeout_hours": 48,
+            "auto_escalation_enabled": True,
+            "priority_mapping": {
+                "low": (0, 39),
+                "medium": (40, 69), 
+                "high": (70, 89),
+                "critical": (90, 100)
+            },
+            "default_assignee": "fraud_team",
+            "include_transcription": True,
+            "risk_thresholds": {
+                "critical": self.risk_threshold_critical,
+                "high": self.risk_threshold_high,
+                "medium": self.risk_threshold_medium,
+                "low": self.risk_threshold_low
+            },
+            "team_assignments": self.team_assignments
+        }
+        
+        self.orchestrator_config = {
+            "agent_coordination": True,
+            "parallel_processing": True,
+            "error_handling": "graceful_degradation",
+            "performance_monitoring": True
         }
     
     def get_agent_config(self, agent_type: str) -> Dict[str, Any]:
         """Get configuration for specific agent type"""
         base_config = {
             "risk_thresholds": self.risk_thresholds,
+            "confidence_thresholds": self.confidence_thresholds,  # Added back
+            "pattern_weights": self.pattern_weights,
             "team_assignments": self.team_assignments,
-            "processing_timeout": 60,
-            "retry_attempts": 3
+            "processing_timeout": self.agent_processing_timeout,  # Use full name
+            "retry_attempts": self.agent_retry_attempts,  # Use full name
+            "timeout_seconds": self.agent_timeout_seconds,  # Added back
+            "max_concurrent_sessions": self.max_concurrent_sessions  # Added back
         }
         
         configs = {
             "audio_processor": {**base_config, **self.audio_agent_config},
             "fraud_detection": {**base_config, **self.fraud_agent_config},
             "policy_guidance": {**base_config, **self.policy_agent_config},
-            "case_management": {**base_config, **self.case_agent_config}
+            "case_management": {**base_config, **self.case_agent_config},
+            "orchestrator": {**base_config, **self.orchestrator_config}  # Added back
         }
         return configs.get(agent_type, base_config)
     
@@ -179,6 +273,23 @@ class Settings:
             "medium": self.risk_threshold_medium,
             "low": self.risk_threshold_low
         }
+    
+    @property 
+    def confidence_thresholds(self) -> Dict[str, float]:
+        """Get confidence thresholds as dictionary"""
+        return {
+            "high": self.confidence_threshold_high,
+            "medium": self.confidence_threshold_medium,
+            "low": self.confidence_threshold_low
+        }
+    
+    def get_max_file_size_bytes(self) -> int:
+        """Get maximum file size in bytes"""
+        return self.max_audio_file_size_mb * 1024 * 1024
+    
+    def is_audio_format_supported(self, filename: str) -> bool:
+        """Check if audio file format is supported"""
+        return any(filename.lower().endswith(fmt) for fmt in self.supported_audio_formats)
     
     def get_google_stt_config(self) -> Dict[str, Any]:
         """Get Google STT v1p1beta1 configuration"""

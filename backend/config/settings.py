@@ -157,8 +157,9 @@ class Settings:
             
             # === SPEAKER DIARIZATION (v1p1beta1) ===
             "enable_speaker_diarization": True,
-            "min_speaker_count": 1,
+            "min_speaker_count": 2,
             "max_speaker_count": 2,  # Customer + Agent
+            "speaker_mode": "agent_first",  # Agent always speaks first
             
             # === STREAMING FEATURES (v1p1beta1) ===
             "interim_results": True,
@@ -170,6 +171,12 @@ class Settings:
             "speech_contexts": [
                 {
                     "phrases": [
+                        # Agent opening phrases (boost these since agent speaks first)
+                        "HSBC", "good morning", "good afternoon", "good evening",
+                        "thank you for calling", "how may I help you",
+                        "speaking with", "my name is", "agent",
+                        "for security purposes", "verify your identity",
+                        
                         # Banking terms
                         "investment", "transfer", "account", "balance", "transaction",
                         "verification", "security", "PIN", "password", "authentication",

@@ -83,24 +83,21 @@ class SpeakerTracker:
         self.speaker_transitions = []
         
     def detect_speaker(self, google_speaker_tag: Optional[int], transcript: str) -> str:
-        """Improved speaker detection using multiple signals"""
+        """IMPROVED speaker detection with better customer detection"""
         
         self.segment_count += 1
         
-        # RULE 1: First few segments are always agent (opening greeting)
-        if self.segment_count <= 2:  # REDUCED from 3 to 2 for faster customer detection
+        # RULE 1: First segment is always agent
+        if self.segment_count == 1:
             self.current_speaker = "agent"
             self.turn_count["agent"] += 1
             self.speaker_history.append("agent")
+            self.last_speaker_tag = google_speaker_tag
             return "agent"
         
-        # RULE 2: Use Google's speaker tag if available and reliable
+        # RULE 2: Use Google's speaker tag changes more aggressively
         if google_speaker_tag is not None:
-            if self.last_speaker_tag is None:
-                # First speaker tag - assume current speaker
-                self.last_speaker_tag = google_speaker_tag
-                detected_speaker = self.current_speaker
-            elif google_speaker_tag != self.last_speaker_tag:
+            if self.last_speaker_tag is not None and google_speaker_tag != self.last_speaker_tag:
                 # Speaker tag changed - switch speakers
                 detected_speaker = "customer" if self.current_speaker == "agent" else "agent"
                 
@@ -110,16 +107,22 @@ class SpeakerTracker:
                     "from": self.current_speaker,
                     "to": detected_speaker,
                     "text_preview": transcript[:30],
-                    "speaker_tag": google_speaker_tag
+                    "speaker_tag": google_speaker_tag,
+                    "last_tag": self.last_speaker_tag
                 })
                 
                 self.current_speaker = detected_speaker
                 self.turn_count[detected_speaker] += 1
                 self.last_speaker_tag = google_speaker_tag
                 
-                logger.info(f"🔄 Speaker change: {self.current_speaker} → {detected_speaker} (tag: {google_speaker_tag})")
+                logger.info(f"🔄 Speaker change: {self.speaker_transitions[-1]['from']} → {detected_speaker} (tag: {self.last_speaker_tag} → {google_speaker_tag})")
+                
+            elif self.last_speaker_tag is None:
+                # First time getting a tag
+                self.last_speaker_tag = google_speaker_tag
+                detected_speaker = self.current_speaker
             else:
-                # Same speaker tag - continue with current speaker
+                # Same tag - continue with current speaker
                 detected_speaker = self.current_speaker
         else:
             # RULE 3: No speaker tag - use content-based detection
@@ -697,7 +700,7 @@ class AudioProcessorAgent(BaseAgent):
             return {"error": str(e)}
     
     async def _process_mono_audio_realtime(self, session_id: str, audio_path: Path, websocket_callback: Callable):
-        """Process mono audio with CONSERVATIVE real-time timing"""
+        """Process mono audio with CONSERVATIVE real-time timing and proper completion"""
         try:
             logger.info(f"🎵 Starting CONSERVATIVE mono audio processing for {session_id}")
             
@@ -711,12 +714,15 @@ class AudioProcessorAgent(BaseAgent):
                 
                 chunk_count = 0
                 start_time = asyncio.get_event_loop().time()
+                total_frames = wav_file.getnframes()
+                total_chunks = total_frames // frames_per_chunk
                 
-                logger.info(f"🎵 Processing with REAL-TIME timing: {frames_per_chunk} frames per chunk")
+                logger.info(f"🎵 Processing with REAL-TIME timing: {frames_per_chunk} frames per chunk, total: {total_chunks}")
                 
                 while True:
                     audio_chunk = wav_file.readframes(frames_per_chunk)
                     if not audio_chunk:
+                        logger.info(f"📁 Reached end of audio file after {chunk_count} chunks")
                         break
                     
                     audio_buffer.add_chunk(audio_chunk)
@@ -733,12 +739,17 @@ class AudioProcessorAgent(BaseAgent):
                     # Log every 25 chunks (5 seconds)
                     if chunk_count % 25 == 0:
                         elapsed = chunk_count * self.chunk_duration_ms / 1000
-                        logger.info(f"🎵 Real-time audio: {elapsed:.1f}s, buffer: {audio_buffer.buffer.qsize()}")
+                        progress = (chunk_count / total_chunks) * 100 if total_chunks > 0 else 0
+                        logger.info(f"🎵 Real-time audio: {elapsed:.1f}s ({progress:.1f}%), buffer: {audio_buffer.buffer.qsize()}")
                         
-            logger.info(f"✅ Real-time mono audio complete: {chunk_count} chunks")
+            logger.info(f"✅ Real-time mono audio complete: {chunk_count} chunks processed")
             
-            # Keep processing for a bit longer
-            await asyncio.sleep(3.0)
+            # IMPORTANT: Signal completion by stopping the buffer after a delay
+            await asyncio.sleep(8.0)  # Wait for final processing
+            
+            # Stop the audio buffer to signal completion
+            audio_buffer.stop()
+            logger.info(f"🛑 Audio buffer stopped - processing should complete soon")
             
         except Exception as e:
             logger.error(f"❌ Error in real-time mono audio: {e}")

@@ -437,6 +437,72 @@ class FraudDetectionWebSocketHandler:
             'data': create_error_response(error_message, "PROCESSING_ERROR")
         })
     
+    def get_active_sessions_count(self) -> int:
+        """Get count of active sessions"""
+        return len(self.active_sessions)
+    
+    def get_connected_clients(self) -> List[str]:
+        """Get list of connected client IDs"""
+        return [session['client_id'] for session in self.active_sessions.values()]
+    
+    def is_session_active(self, session_id: str) -> bool:
+        """Check if a session is currently active"""
+        return session_id in self.active_sessions
+    
+    def get_session_info(self, session_id: str) -> Optional[Dict]:
+        """Get information about a specific session"""
+        if session_id not in self.active_sessions:
+            return None
+        
+        session = self.active_sessions[session_id]
+        return {
+            "session_id": session_id,
+            "client_id": session.get('client_id'),
+            "filename": session.get('filename'),
+            "status": session.get('status'),
+            "start_time": session.get('start_time', '').isoformat() if session.get('start_time') else '',
+            "customer_speech_segments": len(self.customer_speech_buffer.get(session_id, []))
+        }
+    
+    async def get_session_transcription(self, session_id: str) -> Optional[List[Dict]]:
+        """Get transcription segments for a session"""
+        if session_id in self.active_sessions:
+            # Get transcription from audio processor
+            return audio_processor_agent.get_session_transcription(session_id)
+        return None
+    
+    async def get_customer_speech_history(self, session_id: str) -> Optional[List[str]]:
+        """Get customer speech history for fraud analysis"""
+        if session_id in self.customer_speech_buffer:
+            return self.customer_speech_buffer[session_id].copy()
+        return None
+    
+    async def cleanup_stale_sessions(self, max_age_hours: int = 2) -> int:
+        """Clean up stale sessions"""
+        current_time = datetime.now()
+        stale_sessions = []
+        
+        for session_id, session in self.active_sessions.items():
+            start_time = session.get("start_time")
+            if start_time:
+                age_hours = (current_time - start_time).total_seconds() / 3600
+                if age_hours > max_age_hours:
+                    stale_sessions.append(session_id)
+        
+        cleaned_count = 0
+        for session_id in stale_sessions:
+            try:
+                await audio_processor_agent.stop_streaming(session_id)
+                self.cleanup_session(session_id)
+                cleaned_count += 1
+            except Exception as e:
+                logger.error(f"❌ Error cleaning stale session {session_id}: {e}")
+        
+        if cleaned_count > 0:
+            logger.info(f"🧹 Cleaned up {cleaned_count} stale sessions")
+        
+        return cleaned_count
+    
     def get_system_stats(self) -> Dict[str, Any]:
         """Get system statistics"""
         return {

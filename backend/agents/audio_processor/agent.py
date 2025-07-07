@@ -246,6 +246,8 @@ class AudioProcessorAgent(BaseAgent):
     async def start_streaming(self, session_id: str, websocket_callback: Callable) -> Dict[str, Any]:
         """Start streaming recognition"""
         try:
+            logger.info(f"🎙️ Starting streaming recognition for session {session_id}")
+            
             if session_id not in self.active_sessions:
                 raise ValueError(f"Session {session_id} not prepared")
             
@@ -254,7 +256,9 @@ class AudioProcessorAgent(BaseAgent):
             
             # Start audio buffer
             audio_buffer = self.audio_buffers[session_id]
-            audio_buffer.start()
+            if not audio_buffer.is_active:
+                audio_buffer.start()
+                logger.info(f"✅ Audio buffer started for {session_id}")
             
             # Update session
             session = self.active_sessions[session_id]
@@ -267,6 +271,8 @@ class AudioProcessorAgent(BaseAgent):
             )
             self.streaming_tasks[session_id] = streaming_task
             
+            logger.info(f"✅ Streaming task created for {session_id}")
+            
             # Send confirmation
             await websocket_callback({
                 "type": "streaming_started",
@@ -274,9 +280,12 @@ class AudioProcessorAgent(BaseAgent):
                     "session_id": session_id,
                     "sample_rate": self.sample_rate,
                     "model": "phone_call",
+                    "api_version": "v1p1beta1",
                     "timestamp": get_current_timestamp()
                 }
             })
+            
+            logger.info(f"✅ Streaming started confirmation sent for {session_id}")
             
             return {"session_id": session_id, "status": "streaming"}
             
@@ -313,6 +322,8 @@ class AudioProcessorAgent(BaseAgent):
         audio_buffer = self.audio_buffers[session_id]
         speaker_tracker = self.speaker_trackers[session_id]
         
+        logger.info(f"🎙️ Starting Google STT streaming for {session_id}")
+        
         # Create recognition config
         recognition_config = self.speech_types.RecognitionConfig(
             encoding=self.speech_types.RecognitionConfig.AudioEncoding.LINEAR16,
@@ -337,31 +348,66 @@ class AudioProcessorAgent(BaseAgent):
         
         # Audio request generator
         def audio_generator():
+            logger.info(f"🎵 Audio generator starting for {session_id}")
+            chunk_count = 0
+            
             for chunk in audio_buffer.get_chunks():
                 if session_id not in self.active_sessions:
+                    logger.info(f"🛑 Session {session_id} ended, stopping audio generator")
                     break
+                
+                chunk_count += 1
+                if chunk_count <= 5 or chunk_count % 50 == 0:
+                    logger.info(f"🎵 Sending audio chunk {chunk_count} ({len(chunk)} bytes)")
+                
                 request = self.speech_types.StreamingRecognizeRequest()
                 request.audio_content = chunk
                 yield request
+            
+            logger.info(f"🎵 Audio generator completed: {chunk_count} chunks sent")
         
         # Start streaming
         try:
+            logger.info(f"🚀 Starting Google STT v1p1beta1 streaming for {session_id}")
+            
             responses = self.google_client.streaming_recognize(
                 config=streaming_config,
                 requests=audio_generator()
             )
             
             # Process responses
+            response_count = 0
             for response in responses:
                 if session_id not in self.active_sessions:
+                    logger.info(f"🛑 Session {session_id} ended, stopping response processing")
                     break
+                
+                response_count += 1
+                if response_count <= 5 or response_count % 20 == 0:
+                    logger.info(f"📨 Processing response {response_count} for {session_id}")
                 
                 await self._process_response(
                     session_id, response, speaker_tracker, websocket_callback
                 )
                 
+            logger.info(f"✅ Google STT streaming completed for {session_id}: {response_count} responses processed")
+                
         except Exception as e:
-            logger.error(f"❌ Streaming error: {e}")
+            logger.error(f"❌ Streaming error for {session_id}: {e}")
+            
+            # Send error to client
+            try:
+                await websocket_callback({
+                    "type": "streaming_error",
+                    "data": {
+                        "session_id": session_id,
+                        "error": str(e),
+                        "timestamp": get_current_timestamp()
+                    }
+                })
+            except:
+                pass
+            
             raise
     
     async def _process_response(self, session_id: str, response, speaker_tracker: SpeakerTracker, websocket_callback: Callable):
@@ -465,6 +511,8 @@ class AudioProcessorAgent(BaseAgent):
     async def start_realtime_processing(self, session_id: str, audio_filename: str, websocket_callback: Callable) -> Dict[str, Any]:
         """Start real-time processing of demo audio file"""
         try:
+            logger.info(f"🎵 Starting realtime processing: {audio_filename}")
+            
             # Prepare session
             prepare_result = self._prepare_live_call({"session_id": session_id})
             if "error" in prepare_result:
@@ -483,16 +531,30 @@ class AudioProcessorAgent(BaseAgent):
                 duration = frames / sample_rate
                 
                 logger.info(f"📁 Audio: {duration:.1f}s, {sample_rate}Hz, {channels}ch")
-                
-                # Handle stereo audio
-                if channels == 2:
-                    await self._process_stereo_audio(session_id, audio_path, websocket_callback)
-                else:
-                    await self._process_mono_audio(session_id, audio_path, websocket_callback)
             
-            # Start streaming recognition
-            await asyncio.sleep(0.5)  # Let buffer fill
+            # CRITICAL FIX: Start streaming recognition FIRST
             streaming_result = await self.start_streaming(session_id, websocket_callback)
+            if "error" in streaming_result:
+                logger.error(f"❌ Failed to start streaming: {streaming_result['error']}")
+                return streaming_result
+            
+            logger.info("✅ Streaming recognition started, now starting audio simulation")
+            
+            # THEN start audio simulation (with a small delay to let streaming initialize)
+            await asyncio.sleep(0.5)
+            
+            # Start audio processing task
+            if channels == 2:
+                audio_task = asyncio.create_task(
+                    self._process_stereo_audio(session_id, audio_path, websocket_callback)
+                )
+            else:
+                audio_task = asyncio.create_task(
+                    self._process_mono_audio(session_id, audio_path, websocket_callback)
+                )
+            
+            # Store the task for cleanup
+            self.active_sessions[session_id]["audio_task"] = audio_task
             
             return {
                 "session_id": session_id,
@@ -561,22 +623,35 @@ class AudioProcessorAgent(BaseAgent):
     async def _process_mono_audio(self, session_id: str, audio_path: Path, websocket_callback: Callable):
         """Process mono audio (existing logic)"""
         try:
+            logger.info(f"🎵 Starting mono audio processing for {session_id}")
+            
             with wave.open(str(audio_path), 'rb') as wav_file:
                 sample_rate = wav_file.getframerate()
                 frames_per_chunk = int(sample_rate * self.chunk_duration_ms / 1000)
                 audio_buffer = self.audio_buffers[session_id]
-                audio_buffer.start()
+                
+                if not audio_buffer.is_active:
+                    audio_buffer.start()
+                    logger.info("✅ Audio buffer started for mono processing")
                 
                 chunk_count = 0
                 start_time = asyncio.get_event_loop().time()
                 
+                logger.info(f"🎵 Will process audio in {frames_per_chunk} frame chunks")
+                
                 while True:
                     audio_chunk = wav_file.readframes(frames_per_chunk)
                     if not audio_chunk:
+                        logger.info("📁 Reached end of audio file")
                         break
                     
                     audio_buffer.add_chunk(audio_chunk)
                     chunk_count += 1
+                    
+                    # Log progress every 25 chunks (5 seconds)
+                    if chunk_count % 25 == 0:
+                        elapsed = chunk_count * self.chunk_duration_ms / 1000
+                        logger.info(f"🎵 Audio progress: {elapsed:.1f}s processed, buffer size: {audio_buffer.buffer.qsize()}")
                     
                     # Maintain real-time timing
                     expected_time = start_time + (chunk_count * self.chunk_duration_ms / 1000)
@@ -586,10 +661,14 @@ class AudioProcessorAgent(BaseAgent):
                     if wait_time > 0:
                         await asyncio.sleep(wait_time)
                         
-            logger.info(f"✅ Mono audio processing complete: {chunk_count} chunks")
+            logger.info(f"✅ Mono audio processing complete: {chunk_count} chunks processed")
+            
+            # Keep buffer active for a few more seconds to let processing catch up
+            await asyncio.sleep(3.0)
             
         except Exception as e:
             logger.error(f"❌ Error processing mono audio: {e}")
+            raise
     
     async def stop_streaming(self, session_id: str) -> Dict[str, Any]:
         """Stop streaming for a session"""

@@ -91,13 +91,12 @@ class NativeStereoTracker:
         self.segment_count = 0
         self.turn_count = {"agent": 0, "customer": 0}
         
-        # FIXED MAPPING for Google STT channels
         self.channel_mapping = {
-            0: "agent",     # Channel 0 (LEFT) = Agent
-            1: "customer"   # Channel 1 (RIGHT) = Customer
+            0: "customer",     # Channel 0 (LEFT) = Customer
+            1: "agent"         # Channel 1 (RIGHT) = Agent
         }
         
-        logger.info(f"🎯 Native STT mapping: Channel 0 (LEFT)=Agent, Channel 1 (RIGHT)=Customer")
+        logger.info(f"🎯 Native STT mapping: Channel 0 (LEFT)=Customer, Channel 1 (RIGHT)=Agent")
         
     def detect_speaker_from_channel(self, channel: Optional[int]) -> str:
         """Detect speaker from Google STT channel information"""
@@ -311,7 +310,7 @@ class AudioProcessorAgent(BaseAgent):
                 "audio_duration": duration,
                 "channels": channels,
                 "processing_mode": processing_mode,
-                "channel_mapping": "Channel 0 (LEFT)=Agent, Channel 1 (RIGHT)=Customer",
+                "channel_mapping": "Channel 0 (LEFT)=Customer, Channel 1 (RIGHT)=Agent",
                 "native_stereo": True,
                 "status": "started"
             }
@@ -456,7 +455,7 @@ class AudioProcessorAgent(BaseAgent):
                     "channels": self.channels,
                     "model": "phone_call",
                     "processing_mode": "native_stereo",
-                    "channel_mapping": "Channel 0=Agent, Channel 1=Customer",
+                    "channel_mapping": "Channel 0=Customer, Channel 1=Agent",
                     "timestamp": get_current_timestamp()
                 }
             })
@@ -821,7 +820,7 @@ class AudioProcessorAgent(BaseAgent):
             "google_stt_available": self.google_client is not None,
             "processing_mode": "native_google_stereo",
             "native_stereo_enabled": True,
-            "channel_mapping": "Channel 0 (LEFT)=Agent, Channel 1 (RIGHT)=Customer",
+            "channel_mapping": "Channel 0 (LEFT)=Customer, Channel 1 (RIGHT)=Agent",
             "sessions": sessions_status,
             "timestamp": get_current_timestamp()
         }

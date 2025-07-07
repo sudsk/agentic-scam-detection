@@ -40,8 +40,8 @@ interface AudioSegment {
   confidence?: number;
   is_final?: boolean;
   is_interim?: boolean;
-  speaker_confidence?: number;  // NEW: Speaker detection confidence
-  segment_id?: string;         // NEW: Unique segment ID
+  speaker_tag?: number;
+  segment_id?: string;
 }
 
 interface RealAudioFile {
@@ -81,36 +81,24 @@ interface WebSocketMessage {
   data: any;
 }
 
-// Enhanced speaker detection and display utilities
-const getSpeakerIcon = (speaker: string, confidence?: number) => {
+// SIMPLIFIED speaker display utilities
+const getSpeakerIcon = (speaker: string) => {
   if (speaker === 'customer') {
-    return <User className={`w-3 h-3 ${confidence && confidence < 0.8 ? 'text-blue-400' : 'text-blue-600'}`} />;
+    return <User className="w-3 h-3 text-blue-600" />;
   } else {
-    return <UserCheck className={`w-3 h-3 ${confidence && confidence < 0.8 ? 'text-green-400' : 'text-green-600'}`} />;
+    return <UserCheck className="w-3 h-3 text-green-600" />;
   }
 };
 
-const getSpeakerLabel = (speaker: string, confidence?: number) => {
-  const baseLabel = speaker === 'customer' ? 'Customer' : 'Agent';
-  if (confidence && confidence < 0.8) {
-    return `${baseLabel} (${Math.round(confidence * 100)}%)`;
-  }
-  return baseLabel;
+const getSpeakerLabel = (speaker: string) => {
+  return speaker === 'customer' ? 'Customer' : 'Agent';
 };
 
-const getSpeakerColor = (speaker: string, isInterim: boolean = false, confidence?: number) => {
-  const isLowConfidence = confidence && confidence < 0.8;
-  
+const getSpeakerColor = (speaker: string, isInterim: boolean = false) => {
   if (speaker === 'customer') {
-    if (isLowConfidence) {
-      return isInterim ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-blue-100 text-blue-700 border-blue-300';
-    }
-    return isInterim ? 'bg-blue-100 text-blue-700' : 'bg-blue-100 text-blue-800';
+    return isInterim ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-blue-100 text-blue-800 border-blue-300';
   } else {
-    if (isLowConfidence) {
-      return isInterim ? 'bg-green-50 text-green-600 border-green-200' : 'bg-green-100 text-green-700 border-green-300';
-    }
-    return isInterim ? 'bg-green-100 text-green-700' : 'bg-green-100 text-green-800';
+    return isInterim ? 'bg-green-50 text-green-700 border-green-200' : 'bg-green-100 text-green-800 border-green-300';
   }
 };
 
@@ -267,30 +255,6 @@ const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-// Enhanced segment deduplication and management
-const deduplicateSegments = (segments: AudioSegment[]): AudioSegment[] => {
-  const finalSegments = segments.filter(s => s.is_final);
-  const interimSegments = segments.filter(s => !s.is_final);
-  
-  // Group interim segments by speaker and keep only the latest
-  const latestInterimByTurn: AudioSegment[] = [];
-  const interimBySpeaker: { [key: string]: AudioSegment } = {};
-  
-  interimSegments.forEach(segment => {
-    const key = `${segment.speaker}-${Math.floor(segment.start / 5)}`; // Group by 5-second windows
-    if (!interimBySpeaker[key] || segment.text.length > interimBySpeaker[key].text.length) {
-      interimBySpeaker[key] = segment;
-    }
-  });
-  
-  Object.values(interimBySpeaker).forEach(segment => {
-    latestInterimByTurn.push(segment);
-  });
-  
-  // Combine and sort by start time
-  return [...finalSegments, ...latestInterimByTurn].sort((a, b) => a.start - b.start);
-};
-
 function App() {
   // Core state
   const [selectedAudioFile, setSelectedAudioFile] = useState<RealAudioFile | null>(null);
@@ -319,15 +283,6 @@ function App() {
 
   const [scamType, setScamType] = useState<string>('unknown');  
   const [currentCustomer, setCurrentCustomer] = useState<CustomerProfile>(defaultCustomerProfile);
-  
-  // Enhanced transcription state
-  const [speakerStats, setSpeakerStats] = useState<{
-    customer: { segments: number; confidence: number };
-    agent: { segments: number; confidence: number };
-  }>({
-    customer: { segments: 0, confidence: 0 },
-    agent: { segments: 0, confidence: 0 }
-  });
   
   // Refs
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -383,115 +338,72 @@ function App() {
     console.log('📨 WebSocket message received:', message);
     
     switch (message.type) {
+      case 'processing_started':
       case 'server_processing_started':
         setProcessingStage('🖥️ Server processing started');
         setServerProcessing(true);
         break;
         
-      // ENHANCED: Final transcription segments with better speaker tracking
+      case 'streaming_started':
+        setProcessingStage('🎙️ Audio streaming started');
+        break;
+        
+      // SIMPLIFIED: Handle final transcription segments
       case 'transcription_segment':
         const transcriptData = message.data;
         
-        // Create enhanced segment with unique ID
+        // Create simple segment
         const finalSegment: AudioSegment = {
           speaker: transcriptData.speaker,
-          start: transcriptData.start,
-          duration: transcriptData.duration,
+          start: transcriptData.start || 0,
+          duration: transcriptData.duration || 0,
           text: transcriptData.text,
           confidence: transcriptData.confidence,
           is_final: true,
-          speaker_confidence: transcriptData.speaker_confidence || 0.9,
-          segment_id: `final-${transcriptData.start}-${Date.now()}`
+          speaker_tag: transcriptData.speaker_tag,
+          segment_id: `final-${Date.now()}-${Math.random()}`
         };
         
-        // Add final transcription segment with deduplication
-        setShowingSegments(prev => {
-          const updated = [...prev, finalSegment];
-          return deduplicateSegments(updated);
-        });
+        // SIMPLIFIED: Just add to segments (let backend handle dedup)
+        setShowingSegments(prev => [...prev, finalSegment]);
         
-        // Update speaker statistics
-        setSpeakerStats(prev => {
-          const updated = { ...prev };
-          updated[transcriptData.speaker as 'customer' | 'agent'].segments++;
-          updated[transcriptData.speaker as 'customer' | 'agent'].confidence = 
-            (updated[transcriptData.speaker as 'customer' | 'agent'].confidence + (transcriptData.speaker_confidence || 0.9)) / 2;
-          return updated;
-        });
-        
-        // Update full transcription text with final results only
-        if (transcriptData.is_final && transcriptData.speaker === 'customer') {
+        // Update full transcription for customer speech only
+        if (transcriptData.speaker === 'customer') {
           setTranscription(prev => {
             const customerText = prev + ' ' + transcriptData.text;
             return customerText.trim();
           });
         }
         
-        setProcessingStage(`🎙️ FINAL: ${transcriptData.speaker} speaking...`);
+        setProcessingStage(`🎙️ ${transcriptData.speaker}: ${transcriptData.text.slice(0, 30)}...`);
         break;
         
-      // ENHANCED: New interim result with better handling
-      case 'transcription_interim_new':
+      // SIMPLIFIED: Handle interim results  
+      case 'transcription_interim':
         const interimData = message.data;
         
-        // Create enhanced interim segment
+        // Create interim segment
         const interimSegment: AudioSegment = {
           speaker: interimData.speaker,
-          start: interimData.start,
-          duration: interimData.duration,
+          start: interimData.start || 0,
+          duration: interimData.duration || 0,
           text: interimData.text,
           confidence: interimData.confidence,
           is_final: false,
           is_interim: true,
-          speaker_confidence: interimData.speaker_confidence || 0.7,
-          segment_id: `interim-${interimData.speaker}-${Date.now()}`
+          speaker_tag: interimData.speaker_tag,
+          segment_id: `interim-${Date.now()}-${Math.random()}`
         };
         
-        // Enhanced interim handling with deduplication
+        // SIMPLIFIED: Replace last interim segment for this speaker
         setShowingSegments(prev => {
-          // Remove old interim segments for this speaker and add new one
-          const withoutOldInterim = prev.filter(s => 
-            s.is_final || 
-            s.speaker !== interimData.speaker || 
-            !s.is_interim
+          const withoutLastInterim = prev.filter(s => 
+            s.is_final || s.speaker !== interimData.speaker || !s.is_interim
           );
-          const updated = [...withoutOldInterim, interimSegment];
-          return deduplicateSegments(updated);
+          return [...withoutLastInterim, interimSegment];
         });
         
-        setProcessingStage(`🎙️ interim: ${interimData.speaker} - "${interimData.text.slice(0, 30)}..."`);
-        break;
-        
-      // ENHANCED: Update existing interim result
-      case 'transcription_interim_update':
-        const updateData = message.data;
-        
-        // Create updated interim segment
-        const updatedInterimSegment: AudioSegment = {
-          speaker: updateData.speaker,
-          start: updateData.start,
-          duration: updateData.duration,
-          text: updateData.text,
-          confidence: updateData.confidence,
-          is_final: false,
-          is_interim: true,
-          speaker_confidence: updateData.speaker_confidence || 0.7,
-          segment_id: `interim-update-${updateData.speaker}-${Date.now()}`
-        };
-        
-        // Replace interim segment for this speaker
-        setShowingSegments(prev => {
-          // Remove old interim segments for this speaker and add updated one
-          const withoutOldInterim = prev.filter(s => 
-            s.is_final || 
-            s.speaker !== updateData.speaker || 
-            !s.is_interim
-          );
-          const updated = [...withoutOldInterim, updatedInterimSegment];
-          return deduplicateSegments(updated);
-        });
-        
-        setProcessingStage(`🎙️ updating: ${updateData.speaker} - "${updateData.text.slice(0, 30)}..."`);
+        setProcessingStage(`🎙️ ${interimData.speaker} speaking...`);
         break;
         
       case 'fraud_analysis_started':
@@ -660,10 +572,6 @@ function App() {
     setShowingSegments([]);
     setSessionId('');
     setServerProcessing(false);
-    setSpeakerStats({
-      customer: { segments: 0, confidence: 0 },
-      agent: { segments: 0, confidence: 0 }
-    });
   };
 
   const loadAudioFiles = async (): Promise<void> => {
@@ -710,11 +618,6 @@ function App() {
           <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
             LIVE
           </span>
-          {serverProcessing && (
-            <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">
-              ENHANCED
-            </span>
-          )}
         </div>
       )}
     </button>
@@ -735,48 +638,6 @@ function App() {
       )}
     </div>
   );
-
-  // Enhanced Speaker Statistics Component
-  const SpeakerStatsDisplay = () => {
-    const totalSegments = speakerStats.customer.segments + speakerStats.agent.segments;
-    
-    if (totalSegments === 0) return null;
-    
-    return (
-      <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-        <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
-          <Headphones className="w-4 h-4 mr-2" />
-          Enhanced Speaker Detection
-        </h4>
-        <div className="grid grid-cols-2 gap-3 text-xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-1">
-              <User className="w-3 h-3 text-blue-600" />
-              <span>Customer</span>
-            </div>
-            <div className="text-right">
-              <div>{speakerStats.customer.segments} segments</div>
-              <div className="text-gray-500">
-                {Math.round(speakerStats.customer.confidence * 100)}% conf
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-1">
-              <UserCheck className="w-3 h-3 text-green-600" />
-              <span>Agent</span>
-            </div>
-            <div className="text-right">
-              <div>{speakerStats.agent.segments} segments</div>
-              <div className="text-gray-500">
-                {Math.round(speakerStats.agent.confidence * 100)}% conf
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   // ===== EFFECTS =====
 
@@ -990,31 +851,23 @@ function App() {
           </div>
         </div>
 
-        {/* Center - Enhanced Live Transcription */}
+        {/* Center - SIMPLIFIED Live Transcription */}
         <div className="flex-1 bg-white border-r border-gray-200">
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">Live Transcription</h3>
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
               <span className="text-sm text-red-600 font-medium">Processing</span>
-              {serverProcessing && (
-                <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">
-                  SERVER
-                </span>
-              )}
             </div>
           </div>
           
           <div className="p-4 h-full overflow-y-auto">
-            {/* Enhanced Speaker Statistics */}
-            {/* <SpeakerStatsDisplay /> */}
-            
             {showingSegments.length === 0 ? (
               <div className="flex items-center justify-center h-64 text-gray-500">
                 <div className="text-center">
                   <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p>Select a demo call to see live transcription</p>
-                  <p className="text-sm text-blue-600 mt-2">Server processing with improved speaker detection</p>
+                  <p className="text-sm text-blue-600 mt-2">Enhanced speaker detection with Google STT v1p1beta1</p>
                   {processingStage && (
                     <p className="text-sm text-green-600 mt-2">{processingStage}</p>
                   )}
@@ -1022,61 +875,39 @@ function App() {
               </div>
             ) : (
               <div className="space-y-4">
-                {deduplicateSegments(showingSegments).map((segment, index) => {
+                {showingSegments.map((segment, index) => {
                   const isInterim = !segment.is_final;
-                  const speakerConfidence = segment.speaker_confidence || 0.9;
                   
                   return (
                     <div key={segment.segment_id || `${segment.speaker}-${index}-${isInterim ? 'interim' : 'final'}`} 
                          className={`animate-in slide-in-from-bottom duration-500 ${isInterim ? 'opacity-70' : ''}`}>
+                      
+                      {/* SIMPLIFIED Speaker Label */}
                       <div className="flex items-start space-x-3">
                         <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium border ${
-                          getSpeakerColor(segment.speaker, isInterim, speakerConfidence)
+                          getSpeakerColor(segment.speaker, isInterim)
                         }`}>
-                          {getSpeakerIcon(segment.speaker, speakerConfidence)}
-                          <span>{getSpeakerLabel(segment.speaker, speakerConfidence)}</span>
-                          {isInterim && <span className="text-xs opacity-60 ml-1">(live)</span>}
+                          {getSpeakerIcon(segment.speaker)}
+                          <span>{getSpeakerLabel(segment.speaker)}</span>
                         </div>
-                        <span className="text-xs text-gray-500 mt-1">
-                          {formatTime(segment.start)}
-                        </span>
-                        {segment.confidence && (
-                          <span className="text-xs text-gray-400 mt-1">
-                            {Math.round(segment.confidence * 100)}%
-                          </span>
-                        )}
-                        <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">
-                          SERVER
-                        </span>
+                        
                         {isInterim && (
-                          <span className="text-xs bg-yellow-100 text-yellow-700 px-1 rounded animate-pulse">
-                            LIVE
-                          </span>
-                        )}
-                        {/* Enhanced speaker confidence indicator */}
-                        {speakerConfidence < 0.8 && (
-                          <span className="text-xs bg-orange-100 text-orange-700 px-1 rounded">
-                            LOW CONF
+                          <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded animate-pulse">
+                            typing...
                           </span>
                         )}
                       </div>
+                      
+                      {/* CLEAN Text Display */}
                       <div className={`mt-2 ml-3 p-3 rounded-lg border-l-4 ${
                         isInterim 
                           ? 'bg-yellow-50 border-yellow-400' 
-                          : speakerConfidence < 0.8
-                            ? 'bg-orange-50 border-orange-400'
-                            : 'bg-gray-50 border-blue-400'
+                          : 'bg-gray-50 border-blue-400'
                       }`}>
                         <p className={`text-sm text-gray-800 ${isInterim ? 'italic' : ''}`}>
                           {segment.text}
                           {isInterim && <span className="animate-pulse ml-1">|</span>}
                         </p>
-                        {/* Enhanced debugging info for low confidence */}
-                        {speakerConfidence < 0.8 && !isInterim && (
-                          <p className="text-xs text-orange-600 mt-1">
-                            Speaker detection confidence: {Math.round(speakerConfidence * 100)}%
-                          </p>
-                        )}
                       </div>
                     </div>
                   );
@@ -1297,7 +1128,7 @@ function App() {
                 <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h4 className="text-sm font-medium text-gray-900 mb-2">AI Processing</h4>
                 <p className="text-xs text-gray-600">
-                  Start a demo call to see fraud detection with Google STT speaker identification
+                  Start a demo call to see fraud detection with improved Google STT
                 </p>
                 <div className="mt-4 space-y-2 text-xs">
                   <div className="flex items-center justify-center space-x-2">
@@ -1305,7 +1136,7 @@ function App() {
                     <span>6 Agents Ready</span>
                   </div>
                   <div className="text-gray-400">Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
-                  <div className="text-blue-600">✨ Simplified Google STT • Forced 2-speaker diarization</div>
+                  <div className="text-blue-600">✨ Enhanced Google STT v1p1beta1 • Improved speaker detection</div>
                   {processingStage && (
                     <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
                       <p className="text-blue-700">{processingStage}</p>

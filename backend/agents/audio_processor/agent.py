@@ -1,10 +1,11 @@
-# backend/agents/audio_processor/agent.py - COMPLETE FIXED VERSION
+# backend/agents/audio_processor/agent.py - FINAL FIXED VERSION
 """
-FIXED Audio Processing Agent for Google Speech-to-Text v1p1beta1
-- STEREO ONLY: Agent=LEFT channel, Customer=RIGHT channel
-- Fixed Google STT diarization configuration
-- Stable speaker detection logic
-- Better audio chunk handling
+FINAL FIXED Audio Processing Agent for Google Speech-to-Text v1p1beta1
+- Independent audio playback and transcription
+- Fixed audio generator completion issue
+- Better speaker detection with channel analysis
+- Proper session cleanup
+- Fixed Google STT timeout issues
 """
 
 import asyncio
@@ -29,49 +30,77 @@ from ...utils import get_current_timestamp
 logger = logging.getLogger(__name__)
 
 class AudioBuffer:
-    """Simplified audio buffer for streaming"""
+    """Enhanced audio buffer for streaming with better management"""
     
     def __init__(self, chunk_size: int = 3200):
         self.chunk_size = chunk_size
-        self.buffer = queue.Queue(maxsize=500)
+        self.buffer = queue.Queue(maxsize=1000)  # Increased buffer size
         self.is_active = False
+        self.total_chunks_added = 0
+        self.total_chunks_consumed = 0
         
     def add_chunk(self, audio_data: bytes):
         if self.is_active and len(audio_data) > 0:
             try:
                 self.buffer.put(audio_data, block=False)
+                self.total_chunks_added += 1
             except queue.Full:
                 try:
+                    # Remove oldest chunk and add new one
                     self.buffer.get_nowait()
                     self.buffer.put(audio_data, block=False)
+                    self.total_chunks_added += 1
                 except queue.Empty:
                     pass
  
     def get_chunks(self):
-        """Generator for audio chunks"""
+        """Generator for audio chunks with better timeout handling"""
         empty_count = 0
-        max_empty = 50
+        max_empty = 100  # Increased timeout for long audio
+        consecutive_empty = 0
         
-        while self.is_active and empty_count < max_empty:
+        while self.is_active:
             try:
-                chunk = self.buffer.get(timeout=0.2)
+                chunk = self.buffer.get(timeout=0.1)
                 if chunk and len(chunk) > 0:
                     empty_count = 0
+                    consecutive_empty = 0
+                    self.total_chunks_consumed += 1
                     yield chunk
                 else:
                     empty_count += 1
+                    consecutive_empty += 1
             except queue.Empty:
                 empty_count += 1
+                consecutive_empty += 1
+                
+                # Break if too many consecutive empty gets
+                if consecutive_empty >= max_empty:
+                    logger.info(f"🎵 Audio buffer: Breaking after {consecutive_empty} empty reads")
+                    break
+                    
                 continue
+        
+        logger.info(f"🎵 Audio buffer complete: {self.total_chunks_consumed}/{self.total_chunks_added} chunks processed")
     
     def start(self):
         self.is_active = True
+        self.total_chunks_added = 0
+        self.total_chunks_consumed = 0
         
     def stop(self):
         self.is_active = False
+        
+    def get_stats(self):
+        return {
+            "active": self.is_active,
+            "queue_size": self.buffer.qsize(),
+            "total_added": self.total_chunks_added,
+            "total_consumed": self.total_chunks_consumed
+        }
 
 class StereoSpeakerTracker:
-    """FIXED Stereo speaker tracker with predefined channel mapping"""
+    """ENHANCED Stereo speaker tracker with better channel analysis"""
     
     def __init__(self):
         self.speaker_history = []
@@ -86,74 +115,93 @@ class StereoSpeakerTracker:
             "customer": "right"   # Customer is ALWAYS on right channel
         }
         
+        # Energy thresholds for better detection
+        self.energy_threshold = 2.0  # Increased threshold
+        self.min_energy_diff = 1000000  # Minimum energy difference to consider
+        
         logger.info(f"🎯 FIXED Channel mapping: Agent=LEFT, Customer=RIGHT")
         
     def add_channel_data(self, left_channel: np.ndarray, right_channel: np.ndarray):
         """Store channel energy data for speaker detection"""
-        left_energy = np.sum(left_channel.astype(np.float32) ** 2)
-        right_energy = np.sum(right_channel.astype(np.float32) ** 2)
+        left_energy = np.sum(left_channel.astype(np.float64) ** 2)  # Use float64 for precision
+        right_energy = np.sum(right_channel.astype(np.float64) ** 2)
         
-        self.channel_energy_history.append({
-            "left_energy": left_energy,
-            "right_energy": right_energy,
-            "dominant_channel": "left" if left_energy > right_energy else "right",
-            "energy_ratio": left_energy / (right_energy + 1e-10)
-        })
+        # Only store data if there's significant energy in at least one channel
+        if left_energy > self.min_energy_diff or right_energy > self.min_energy_diff:
+            self.channel_energy_history.append({
+                "left_energy": left_energy,
+                "right_energy": right_energy,
+                "dominant_channel": "left" if left_energy > right_energy else "right",
+                "energy_ratio": left_energy / (right_energy + 1e-10),
+                "total_energy": left_energy + right_energy
+            })
         
-        # Keep only recent history (last 20 chunks for efficiency)
-        if len(self.channel_energy_history) > 20:
+        # Keep only recent history (last 10 chunks for responsive detection)
+        if len(self.channel_energy_history) > 10:
             self.channel_energy_history.pop(0)
     
     def detect_speaker(self, google_speaker_tag: Optional[int], transcript: str) -> str:
-        """SIMPLE channel-based speaker detection with fixed mapping"""
+        """ENHANCED channel-based speaker detection with better logic"""
         
         self.segment_count += 1
         
         # Use recent channel energy to determine active speaker
         if self.channel_energy_history:
-            # Look at last 3 chunks to determine dominant channel
-            recent_data = self.channel_energy_history[-3:]
+            # Look at last 5 chunks for more stable detection
+            recent_data = self.channel_energy_history[-5:]
             
-            left_energy = sum(d["left_energy"] for d in recent_data)
-            right_energy = sum(d["right_energy"] for d in recent_data)
-            
-            # Determine which channel has more energy
-            if left_energy > right_energy * 1.5:  # Left channel dominant (with threshold)
-                detected_speaker = "agent"  # Agent is on left
-            elif right_energy > left_energy * 1.5:  # Right channel dominant (with threshold)
-                detected_speaker = "customer"  # Customer is on right
+            if recent_data:
+                # Calculate weighted average (more weight to recent chunks)
+                weights = [1, 1, 2, 3, 4]  # More weight to recent data
+                total_weight = sum(weights[-len(recent_data):])
+                
+                weighted_left = sum(d["left_energy"] * w for d, w in zip(recent_data, weights[-len(recent_data):]))
+                weighted_right = sum(d["right_energy"] * w for d, w in zip(recent_data, weights[-len(recent_data):]))
+                
+                avg_left = weighted_left / total_weight
+                avg_right = weighted_right / total_weight
+                
+                # Determine speaker based on energy with higher threshold
+                if avg_left > avg_right * self.energy_threshold:  # Left channel dominant
+                    detected_speaker = "agent"  # Agent is on left
+                elif avg_right > avg_left * self.energy_threshold:  # Right channel dominant
+                    detected_speaker = "customer"  # Customer is on right
+                else:
+                    # Energy levels too close - keep current speaker to avoid flickering
+                    detected_speaker = self.current_speaker
+                
+                # Update speaker if changed
+                if detected_speaker != self.current_speaker:
+                    logger.info(f"🔄 Channel switch: {self.current_speaker} → {detected_speaker} (L:{avg_left:.0f}, R:{avg_right:.0f})")
+                    self.current_speaker = detected_speaker
+                    self.turn_count[detected_speaker] += 1
             else:
-                # Close energy levels - keep current speaker to avoid flickering
                 detected_speaker = self.current_speaker
-            
-            # Update speaker if changed
-            if detected_speaker != self.current_speaker:
-                logger.info(f"🔄 Channel switch: {self.current_speaker} → {detected_speaker} (L:{left_energy:.0f}, R:{right_energy:.0f})")
-                self.current_speaker = detected_speaker
-                self.turn_count[detected_speaker] += 1
         else:
-            # No channel data yet - use first speaker rule
+            # No channel data yet - agent starts first
             detected_speaker = "agent" if self.segment_count == 1 else self.current_speaker
         
         self.speaker_history.append(detected_speaker)
         return detected_speaker
     
     def get_stats(self) -> Dict:
+        recent_energy = self.channel_energy_history[-3:] if self.channel_energy_history else []
         return {
             "current_speaker": self.current_speaker,
             "turn_count": self.turn_count.copy(),
             "total_segments": len(self.speaker_history),
             "channel_mapping": self.speaker_channel_mapping.copy(),
-            "recent_channel_energy": self.channel_energy_history[-5:] if self.channel_energy_history else []
+            "recent_channel_energy": recent_energy,
+            "energy_threshold": self.energy_threshold
         }
 
 class AudioProcessorAgent(BaseAgent):
-    """FIXED Stereo-Only Audio Processor for Real-time Phone Calls"""
+    """FINAL FIXED Stereo Audio Processor for Real-time Phone Calls"""
     
     def __init__(self):
         super().__init__(
             agent_type="audio_processor",
-            agent_name="Fixed Stereo Audio Processor (v1p1beta1)"
+            agent_name="Final Fixed Stereo Audio Processor (v1p1beta1)"
         )
         
         self.active_sessions: Dict[str, Dict] = {}
@@ -180,7 +228,7 @@ class AudioProcessorAgent(BaseAgent):
             "audio_base_path": "data/sample_audio",
             "enable_interim_results": True,
             "max_streaming_duration": 300,
-            "restart_timeout": 240
+            "restart_timeout": 60  # Reduced to avoid timeout issues
         }
     
     def _get_capabilities(self) -> List[AgentCapability]:
@@ -239,7 +287,8 @@ class AudioProcessorAgent(BaseAgent):
             "start_time": datetime.now(),
             "status": "ready",
             "transcription_segments": [],
-            "restart_count": 0
+            "restart_count": 0,
+            "audio_completed": False
         }
         
         self.audio_buffers[session_id] = AudioBuffer(self.chunk_size)
@@ -268,9 +317,9 @@ class AudioProcessorAgent(BaseAgent):
         return {"status": "chunk_added", "size": len(audio_data)}
     
     async def start_realtime_processing(self, session_id: str, audio_filename: str, websocket_callback: Callable) -> Dict[str, Any]:
-        """Start real-time STEREO processing with fixed channel mapping"""
+        """Start real-time STEREO processing with INDEPENDENT audio and transcription"""
         try:
-            logger.info(f"🎵 Starting STEREO-ONLY processing: {audio_filename}")
+            logger.info(f"🎵 Starting INDEPENDENT STEREO processing: {audio_filename}")
             
             prepare_result = self._prepare_live_call({"session_id": session_id})
             if "error" in prepare_result:
@@ -294,24 +343,23 @@ class AudioProcessorAgent(BaseAgent):
             
             # Always use stereo tracker with fixed mapping
             self.speaker_trackers[session_id] = StereoSpeakerTracker()
-            processing_mode = "stereo_fixed_mapping"
-            logger.info("🎯 STEREO: Agent=LEFT, Customer=RIGHT (FIXED)")
+            processing_mode = "stereo_independent"
+            logger.info("🎯 STEREO: Agent=LEFT, Customer=RIGHT (INDEPENDENT PROCESSING)")
             
-            # Start stereo audio processing
-            audio_task = asyncio.create_task(
-                self._process_stereo_audio_fixed(session_id, audio_path, websocket_callback)
-            )
-            
-            self.active_sessions[session_id]["audio_task"] = audio_task
-            self.active_sessions[session_id]["audio_type"] = "stereo"
-            
-            # Start transcription with delay
-            await asyncio.sleep(0.5)
-            
+            # Start transcription FIRST (with small delay)
+            await asyncio.sleep(0.3)
             transcription_task = asyncio.create_task(
-                self._start_transcription_fixed(session_id, websocket_callback)
+                self._start_transcription_independent(session_id, websocket_callback)
             )
             self.active_sessions[session_id]["transcription_task"] = transcription_task
+            
+            # Start audio processing AFTER transcription is ready
+            await asyncio.sleep(0.5)
+            audio_task = asyncio.create_task(
+                self._process_stereo_audio_independent(session_id, audio_path, websocket_callback)
+            )
+            self.active_sessions[session_id]["audio_task"] = audio_task
+            self.active_sessions[session_id]["audio_type"] = "stereo"
             
             return {
                 "session_id": session_id,
@@ -327,11 +375,10 @@ class AudioProcessorAgent(BaseAgent):
             logger.error(f"❌ Error starting processing: {e}")
             return {"error": str(e)}
     
-    async def _process_stereo_audio_fixed(self, session_id: str, audio_path: Path, websocket_callback: Callable):
-        """STEREO audio processing with FIXED channel mapping (Agent=LEFT, Customer=RIGHT)"""
+    async def _process_stereo_audio_independent(self, session_id: str, audio_path: Path, websocket_callback: Callable):
+        """INDEPENDENT stereo audio processing that doesn't block transcription"""
         try:
-            logger.info(f"🎵 Starting FIXED STEREO processing for {session_id}")
-            logger.info(f"🎯 CHANNEL MAPPING: Agent=LEFT, Customer=RIGHT")
+            logger.info(f"🎵 Starting INDEPENDENT STEREO audio processing for {session_id}")
             
             with wave.open(str(audio_path), 'rb') as wav_file:
                 sample_rate = wav_file.getframerate()
@@ -343,17 +390,17 @@ class AudioProcessorAgent(BaseAgent):
                     audio_buffer.start()
                 
                 chunk_count = 0
-                start_time = asyncio.get_event_loop().time()
+                start_time = time.time()
                 total_frames = wav_file.getnframes()
                 total_chunks = total_frames // frames_per_chunk
                 
-                logger.info(f"🎵 Processing {total_chunks} stereo chunks")
+                logger.info(f"🎵 Processing {total_chunks} stereo chunks independently")
                 
-                while True:
+                while chunk_count < total_chunks:
                     # Read stereo frames
                     stereo_chunk = wav_file.readframes(frames_per_chunk)
                     if not stereo_chunk:
-                        logger.info(f"📁 Stereo audio completed: {chunk_count} chunks")
+                        logger.info(f"📁 Reached end of audio file at chunk {chunk_count}")
                         break
                     
                     # Convert to numpy array for channel processing
@@ -372,35 +419,42 @@ class AudioProcessorAgent(BaseAgent):
                     audio_buffer.add_chunk(mono_chunk)
                     chunk_count += 1
                     
-                    # Maintain real-time timing
+                    # REAL-TIME timing (crucial for Google STT)
                     expected_time = start_time + (chunk_count * self.chunk_duration_ms / 1000)
-                    current_time = asyncio.get_event_loop().time()
+                    current_time = time.time()
                     wait_time = expected_time - current_time
                     
                     if wait_time > 0:
                         await asyncio.sleep(wait_time)
                     
-                    # Progress logging every 2 seconds
-                    if chunk_count % 10 == 0:
+                    # Progress logging every 50 chunks (10 seconds)
+                    if chunk_count % 50 == 0:
                         progress = (chunk_count / total_chunks) * 100 if total_chunks > 0 else 0
                         elapsed = chunk_count * self.chunk_duration_ms / 1000
-                        logger.info(f"🎵 Stereo progress: {progress:.1f}% ({elapsed:.1f}s)")
+                        logger.info(f"🎵 Audio progress: {progress:.1f}% ({elapsed:.1f}s) - {chunk_count}/{total_chunks}")
                         
-            logger.info(f"✅ STEREO processing complete: {chunk_count} chunks processed")
+            # Mark audio as completed
+            self.active_sessions[session_id]["audio_completed"] = True
+            logger.info(f"✅ INDEPENDENT audio processing complete: {chunk_count}/{total_chunks} chunks processed")
             
-            # Wait for STT processing to complete
-            await asyncio.sleep(8.0)
+            # Wait for transcription to finish processing remaining chunks
+            await asyncio.sleep(10.0)
+            
+            # Stop the buffer
             audio_buffer.stop()
-            logger.info(f"🛑 Stereo buffer stopped")
+            logger.info(f"🛑 Audio buffer stopped after completion")
             
         except Exception as e:
-            logger.error(f"❌ Error in stereo processing: {e}")
+            logger.error(f"❌ Error in independent stereo processing: {e}")
+            # Mark as completed even on error
+            if session_id in self.active_sessions:
+                self.active_sessions[session_id]["audio_completed"] = True
             raise
     
-    async def _start_transcription_fixed(self, session_id: str, websocket_callback: Callable):
-        """Start FIXED transcription processing for stereo audio"""
+    async def _start_transcription_independent(self, session_id: str, websocket_callback: Callable):
+        """Start INDEPENDENT transcription processing"""
         try:
-            logger.info(f"🎙️ Starting FIXED transcription for {session_id}")
+            logger.info(f"🎙️ Starting INDEPENDENT transcription for {session_id}")
             
             streaming_result = await self.start_streaming(session_id, websocket_callback)
             if "error" in streaming_result:
@@ -415,7 +469,7 @@ class AudioProcessorAgent(BaseAgent):
                 })
             
         except Exception as e:
-            logger.error(f"❌ Error in transcription: {e}")
+            logger.error(f"❌ Error in independent transcription: {e}")
     
     async def start_streaming(self, session_id: str, websocket_callback: Callable) -> Dict[str, Any]:
         """Start streaming recognition for STEREO audio"""
@@ -438,7 +492,7 @@ class AudioProcessorAgent(BaseAgent):
             session["websocket_callback"] = websocket_callback
             
             streaming_task = asyncio.create_task(
-                self._streaming_with_restart(session_id)
+                self._streaming_with_restart_fixed(session_id)
             )
             self.streaming_tasks[session_id] = streaming_task
             
@@ -465,65 +519,66 @@ class AudioProcessorAgent(BaseAgent):
             logger.error(f"❌ Error starting streaming: {e}")
             return {"error": str(e)}
     
-    async def _streaming_with_restart(self, session_id: str):
-        """Streaming with automatic restart for long audio"""
+    async def _streaming_with_restart_fixed(self, session_id: str):
+        """FIXED streaming with restart that doesn't cause timeouts"""
         session = self.active_sessions[session_id]
-        restart_interval = 240  # 4 minutes
+        restart_interval = 50  # Shorter restart interval to avoid timeouts
         
         while session_id in self.active_sessions and session.get("status") == "streaming":
             try:
                 await asyncio.wait_for(
-                    self._do_streaming_recognition(session_id),
+                    self._do_streaming_recognition_fixed(session_id),
                     timeout=restart_interval
                 )
+                
+                # Check if audio is completed
+                if session.get("audio_completed", False):
+                    logger.info(f"🎵 Audio completed, ending streaming for {session_id}")
+                    break
+                    
             except asyncio.TimeoutError:
                 session["restart_count"] += 1
-                logger.info(f"🔄 Restarting recognition for {session_id} after {restart_interval}s")
-                await asyncio.sleep(1.0)
+                logger.info(f"🔄 Restarting recognition for {session_id} (restart #{session['restart_count']})")
+                
+                # Don't restart too many times
+                if session["restart_count"] > 10:
+                    logger.warning(f"⚠️ Too many restarts for {session_id}, stopping")
+                    break
+                    
+                await asyncio.sleep(0.5)
+                
             except Exception as e:
                 logger.error(f"❌ Recognition error: {e}")
                 session["restart_count"] += 1
-                if session["restart_count"] > 3:
+                if session["restart_count"] > 5:
                     break
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(1.0)
     
-    async def _do_streaming_recognition(self, session_id: str):
-        """Core streaming recognition logic for STEREO with FIXED diarization"""
+    async def _do_streaming_recognition_fixed(self, session_id: str):
+        """FIXED streaming recognition that handles audio properly"""
         session = self.active_sessions[session_id]
         websocket_callback = session["websocket_callback"]
         audio_buffer = self.audio_buffers[session_id]
         speaker_tracker = self.speaker_trackers[session_id]
         
-        logger.info(f"🎙️ Starting Google STT streaming for STEREO session {session_id}")
+        logger.info(f"🎙️ Starting FIXED Google STT streaming for {session_id}")
         
-        # FIXED recognition config for stereo with better diarization
+        # OPTIMIZED recognition config
         recognition_config = self.speech_types.RecognitionConfig(
             encoding=self.speech_types.RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=self.sample_rate,
             language_code="en-GB",
-            model="phone_call",  # Optimal for telephony
+            model="phone_call",
             use_enhanced=True,   
             enable_automatic_punctuation=True,
             enable_word_confidence=True,
             enable_word_time_offsets=True,
-            # FIXED diarization for 2 speakers only
+            # Simplified diarization
             diarization_config=self.speech_types.SpeakerDiarizationConfig(
                 enable_speaker_diarization=True,
                 min_speaker_count=2,
                 max_speaker_count=2
-            ),
-            # Enhanced speech context for banking terms
-            speech_contexts=[
-                self.speech_types.SpeechContext(
-                    phrases=[
-                        "HSBC", "customer services", "good afternoon", "good morning",
-                        "account", "transfer", "payment", "verification", "security",
-                        "Mrs Williams", "Patricia", "emergency", "urgent", "help",
-                        "Turkey", "Istanbul", "boyfriend", "stuck", "hospital"
-                    ],
-                    boost=20  # Higher boost for better recognition
-                )
-            ]
+            )
         )
         
         streaming_config = self.speech_types.StreamingRecognitionConfig(
@@ -532,10 +587,11 @@ class AudioProcessorAgent(BaseAgent):
             single_utterance=False
         )
         
-        # Audio request generator
+        # FIXED audio request generator
         def audio_generator():
-            logger.info(f"🎵 Audio generator starting for STEREO session {session_id}")
+            logger.info(f"🎵 FIXED audio generator starting for {session_id}")
             chunk_count = 0
+            last_chunk_time = time.time()
             
             for chunk in audio_buffer.get_chunks():
                 if session_id not in self.active_sessions:
@@ -543,19 +599,24 @@ class AudioProcessorAgent(BaseAgent):
                     break
                 
                 chunk_count += 1
+                current_time = time.time()
                 
-                if chunk_count <= 5 or chunk_count % 20 == 0:
-                    logger.info(f"🎵 Sending stereo chunk {chunk_count} ({len(chunk)} bytes)")
+                # Log timing information
+                if chunk_count <= 5 or chunk_count % 100 == 0:
+                    time_since_last = current_time - last_chunk_time
+                    logger.info(f"🎵 Chunk {chunk_count}: {len(chunk)} bytes, {time_since_last:.3f}s since last")
+                
+                last_chunk_time = current_time
                 
                 request = self.speech_types.StreamingRecognizeRequest()
                 request.audio_content = chunk
                 yield request
             
-            logger.info(f"🎵 Audio generator completed: {chunk_count} chunks sent")
+            logger.info(f"🎵 FIXED audio generator completed: {chunk_count} chunks sent")
         
         # Start streaming recognition
         try:
-            logger.info(f"🚀 Starting Google STT v1p1beta1 for STEREO session {session_id}")
+            logger.info(f"🚀 Starting Google STT v1p1beta1 for {session_id}")
             
             responses = self.google_client.streaming_recognize(
                 config=streaming_config,
@@ -571,11 +632,11 @@ class AudioProcessorAgent(BaseAgent):
                     break
                 
                 response_count += 1
-                if response_count <= 5 or response_count % 10 == 0:
-                    logger.info(f"📨 Processing STEREO response {response_count} for {session_id}")
+                if response_count <= 5 or response_count % 20 == 0:
+                    logger.info(f"📨 Processing response {response_count} for {session_id}")
                 
                 # Process with stereo speaker detection
-                processed = await self._process_stereo_response(
+                processed = await self._process_stereo_response_fixed(
                     session_id, response, speaker_tracker, websocket_callback, last_final_text
                 )
                 
@@ -585,7 +646,10 @@ class AudioProcessorAgent(BaseAgent):
             logger.info(f"✅ Google STT streaming completed for {session_id}: {response_count} responses processed")
                 
         except Exception as e:
-            logger.error(f"❌ Streaming error for {session_id}: {e}")
+            if "timeout" in str(e).lower():
+                logger.warning(f"⚠️ Google STT timeout for {session_id}: {e}")
+            else:
+                logger.error(f"❌ Streaming error for {session_id}: {e}")
             
             # Send error to client
             try:
@@ -602,7 +666,7 @@ class AudioProcessorAgent(BaseAgent):
             
             raise
     
-    async def _process_stereo_response(
+    async def _process_stereo_response_fixed(
         self, 
         session_id: str, 
         response, 
@@ -610,7 +674,7 @@ class AudioProcessorAgent(BaseAgent):
         websocket_callback: Callable,
         last_final_text: str
     ) -> Optional[Dict]:
-        """Process streaming response with STEREO channel-based speaker detection"""
+        """FIXED response processing with better deduplication"""
         try:
             for result in response.results:
                 if not result.alternatives:
@@ -622,12 +686,18 @@ class AudioProcessorAgent(BaseAgent):
                 if not transcript:
                     continue
                 
-                # Skip exact duplicates
-                if result.is_final and last_final_text and transcript == last_final_text:
-                    logger.debug(f"🚫 Skipping exact duplicate: '{transcript[:30]}...'")
-                    continue
+                # Better deduplication
+                if result.is_final and last_final_text:
+                    if transcript == last_final_text:
+                        logger.debug(f"🚫 Skipping exact duplicate: '{transcript[:30]}...'")
+                        continue
+                    
+                    # Skip if it's a subset of the last final text
+                    if len(transcript) < len(last_final_text) and transcript in last_final_text:
+                        logger.debug(f"🚫 Skipping subset: '{transcript[:30]}...'")
+                        continue
                 
-                # Extract Google speaker tag (though we'll rely on channel analysis)
+                # Extract Google speaker tag
                 google_speaker_tag = None
                 if hasattr(alternative, 'words') and alternative.words:
                     tags = [w.speaker_tag for w in alternative.words 
@@ -651,7 +721,7 @@ class AudioProcessorAgent(BaseAgent):
                     "start": start_time,
                     "end": end_time,
                     "speaker_tag": google_speaker_tag,
-                    "channel_detection": True,  # Mark as channel-based detection
+                    "channel_detection": True,
                     "timestamp": get_current_timestamp()
                 }
                 
@@ -665,7 +735,7 @@ class AudioProcessorAgent(BaseAgent):
                         "data": segment_data
                     })
                     
-                    logger.info(f"📝 STEREO [{detected_speaker.upper()}]: '{transcript[:50]}...'")
+                    logger.info(f"📝 FINAL [{detected_speaker.upper()}]: '{transcript[:50]}...'")
                     
                     # Trigger fraud analysis for customer speech
                     if detected_speaker == "customer":
@@ -675,8 +745,8 @@ class AudioProcessorAgent(BaseAgent):
                     
                     return segment_data
                 else:
-                    # Send interim results
-                    if len(transcript) > 5:
+                    # Send interim results for longer text
+                    if len(transcript) > 8:  # Only send substantial interim results
                         await websocket_callback({
                             "type": "transcription_interim",
                             "data": segment_data
@@ -718,75 +788,123 @@ class AudioProcessorAgent(BaseAgent):
             logger.error(f"❌ Error triggering fraud analysis: {e}")
     
     async def stop_streaming(self, session_id: str) -> Dict[str, Any]:
-        """Stop streaming for a session with immediate cleanup"""
+        """FIXED stop streaming with proper cleanup"""
         try:
-            logger.info(f"🛑 STOP streaming for STEREO session {session_id}")
+            logger.info(f"🛑 STOP streaming for session {session_id}")
             
             if session_id not in self.active_sessions:
+                logger.warning(f"⚠️ Session {session_id} not found")
                 return {"error": "Session not found"}
             
-            # Update session status
+            # Mark session as stopping
             session = self.active_sessions[session_id]
-            session["status"] = "stopped"
+            session["status"] = "stopping"
             
-            # Stop audio buffer
+            # Stop audio buffer immediately
             if session_id in self.audio_buffers:
-                self.audio_buffers[session_id].stop()
-                logger.info(f"🛑 Audio buffer stopped for {session_id}")
+                buffer = self.audio_buffers[session_id]
+                buffer.stop()
+                logger.info(f"🛑 Audio buffer stopped for {session_id}: {buffer.get_stats()}")
             
             # Cancel streaming task
             if session_id in self.streaming_tasks:
                 task = self.streaming_tasks[session_id]
-                task.cancel()
-                try:
-                    await asyncio.wait_for(task, timeout=2.0)
-                except (asyncio.CancelledError, asyncio.TimeoutError):
-                    logger.info(f"✅ Streaming task cancelled for {session_id}")
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await asyncio.wait_for(task, timeout=3.0)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        logger.info(f"✅ Streaming task cancelled for {session_id}")
                 del self.streaming_tasks[session_id]
             
-            # Cancel other tasks
+            # Cancel audio task
             if "audio_task" in session:
                 audio_task = session["audio_task"]
-                audio_task.cancel()
-                logger.info(f"🛑 Audio task cancelled for {session_id}")
+                if not audio_task.done():
+                    audio_task.cancel()
+                    try:
+                        await asyncio.wait_for(audio_task, timeout=2.0)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        logger.info(f"✅ Audio task cancelled for {session_id}")
             
-            # Cleanup session data
+            # Cancel transcription task
+            if "transcription_task" in session:
+                transcription_task = session["transcription_task"]
+                if not transcription_task.done():
+                    transcription_task.cancel()
+                    try:
+                        await asyncio.wait_for(transcription_task, timeout=2.0)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        logger.info(f"✅ Transcription task cancelled for {session_id}")
+            
+            # Clean up session data
             if session_id in self.active_sessions:
+                segments_count = len(session.get("transcription_segments", []))
+                logger.info(f"📊 Session {session_id} processed {segments_count} segments")
                 del self.active_sessions[session_id]
+                
             if session_id in self.audio_buffers:
                 del self.audio_buffers[session_id]
+                
             if session_id in self.speaker_trackers:
+                tracker_stats = self.speaker_trackers[session_id].get_stats()
+                logger.info(f"📊 Speaker stats for {session_id}: {tracker_stats}")
                 del self.speaker_trackers[session_id]
             
             logger.info(f"✅ COMPLETE cleanup for {session_id}")
             
-            return {"session_id": session_id, "status": "stopped", "cleanup": "complete"}
+            return {
+                "session_id": session_id, 
+                "status": "stopped", 
+                "cleanup": "complete"
+            }
             
         except Exception as e:
             logger.error(f"❌ Error stopping streaming for {session_id}: {e}")
+            
+            # Force cleanup even on error
+            try:
+                if session_id in self.active_sessions:
+                    del self.active_sessions[session_id]
+                if session_id in self.audio_buffers:
+                    del self.audio_buffers[session_id]
+                if session_id in self.speaker_trackers:
+                    del self.speaker_trackers[session_id]
+                if session_id in self.streaming_tasks:
+                    del self.streaming_tasks[session_id]
+            except:
+                pass
+            
             return {"error": str(e)}
     
     def get_all_sessions_status(self) -> Dict[str, Any]:
-        """Get status of all sessions"""
+        """Get status of all sessions with detailed information"""
         sessions_status = {}
         for session_id, session in self.active_sessions.items():
             speaker_stats = {}
+            buffer_stats = {}
+            
             if session_id in self.speaker_trackers:
                 speaker_stats = self.speaker_trackers[session_id].get_stats()
+                
+            if session_id in self.audio_buffers:
+                buffer_stats = self.audio_buffers[session_id].get_stats()
             
             sessions_status[session_id] = {
                 "status": session.get("status"),
                 "start_time": session.get("start_time", "").isoformat() if session.get("start_time") else "",
                 "transcription_segments": len(session.get("transcription_segments", [])),
                 "restart_count": session.get("restart_count", 0),
+                "audio_completed": session.get("audio_completed", False),
                 "speaker_stats": speaker_stats,
-                "audio_type": "stereo_fixed"
+                "buffer_stats": buffer_stats,
+                "audio_type": "stereo_independent"
             }
         
         return {
             "active_sessions": len(self.active_sessions),
             "google_stt_available": self.google_client is not None,
-            "processing_mode": "stereo_only",
+            "processing_mode": "stereo_only_independent",
             "channel_mapping": "Agent=LEFT, Customer=RIGHT",
             "sessions": sessions_status,
             "timestamp": get_current_timestamp()
@@ -804,6 +922,27 @@ class AudioProcessorAgent(BaseAgent):
             segments = self.active_sessions[session_id].get("transcription_segments", [])
             return [seg["text"] for seg in segments if seg.get("speaker") == "customer"]
         return None
+    
+    async def cleanup_completed_sessions(self) -> int:
+        """Clean up sessions that have completed audio processing"""
+        cleaned_count = 0
+        completed_sessions = []
+        
+        for session_id, session in self.active_sessions.items():
+            if session.get("audio_completed", False) and session.get("status") != "streaming":
+                completed_sessions.append(session_id)
+        
+        for session_id in completed_sessions:
+            try:
+                await self.stop_streaming(session_id)
+                cleaned_count += 1
+            except Exception as e:
+                logger.error(f"❌ Error cleaning up session {session_id}: {e}")
+        
+        if cleaned_count > 0:
+            logger.info(f"🧹 Cleaned up {cleaned_count} completed sessions")
+        
+        return cleaned_count
 
 # Create global instance
 audio_processor_agent = AudioProcessorAgent()

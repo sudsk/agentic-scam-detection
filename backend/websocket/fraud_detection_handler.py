@@ -341,7 +341,7 @@ class FraudDetectionWebSocketHandler:
             logger.error(f"❌ Error creating fraud case: {e}")
     
     async def handle_stop_processing(self, websocket: WebSocket, client_id: str, data: Dict) -> None:
-        """Handle request to stop processing"""
+        """Handle request to stop processing with immediate action"""
         
         session_id = data.get('session_id')
         if not session_id:
@@ -349,15 +349,22 @@ class FraudDetectionWebSocketHandler:
             return
         
         try:
-            # Stop audio processing
+            logger.info(f"🛑 STOP request received for session {session_id}")
+            
+            # IMMEDIATE: Stop audio processing
             stop_result = await audio_processor_agent.stop_streaming(session_id)
             
-            # Send confirmation
+            # IMMEDIATE: Update session status
+            if session_id in self.active_sessions:
+                self.active_sessions[session_id]["status"] = "stopped"
+            
+            # Send immediate confirmation to client
             await self.send_message(websocket, client_id, {
                 'type': 'processing_stopped',
                 'data': {
                     'session_id': session_id,
-                    **stop_result,
+                    'status': 'stopped',
+                    'message': 'Processing stopped immediately',
                     'timestamp': get_current_timestamp()
                 }
             })
@@ -365,9 +372,14 @@ class FraudDetectionWebSocketHandler:
             # Cleanup
             self.cleanup_session(session_id)
             
+            logger.info(f"✅ STOP completed for session {session_id}")
+            
         except Exception as e:
             logger.error(f"❌ Error stopping processing: {e}")
             await self.send_error(websocket, client_id, f"Failed to stop: {str(e)}")
+            
+            # Force cleanup even on error
+            self.cleanup_session(session_id)
     
     async def handle_status_request(self, websocket: WebSocket, client_id: str) -> None:
         """Handle status request"""

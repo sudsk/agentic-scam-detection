@@ -231,7 +231,7 @@ class AudioProcessorAgent(BaseAgent):
         }
     
     def _prepare_live_call(self, data: Dict) -> Dict[str, Any]:
-        """Prepare for a live call"""
+        """Prepare for a live call - agent speaks first"""
         session_id = data.get('session_id')
         if not session_id:
             return {"error": "session_id required"}
@@ -246,17 +246,19 @@ class AudioProcessorAgent(BaseAgent):
             "status": "ready",
             "total_audio_received": 0,
             "transcription_segments": [],
-            "current_speaker": "customer",
+            "current_speaker": "agent",  # AGENT speaks first
             "recognition_restart_count": 0,
-            "customer_speech_history": []
+            "customer_speech_history": [],
+            "agent_speech_history": [],  # Also track agent speech
+            "speaker_turn_count": {"agent": 0, "customer": 0}
         }
         
         # Initialize audio buffer
         self.audio_buffers[session_id] = LiveAudioBuffer(self.chunk_size)
         self.audio_buffers[session_id].start()
-        self.speaker_states[session_id] = "customer"
+        self.speaker_states[session_id] = "agent"  # Start with agent
         
-        logger.info(f"✅ Live call session {session_id} prepared and ready")
+        logger.info(f"✅ Live call session {session_id} prepared (agent-first mode)")
         
         return {
             "session_id": session_id,
@@ -265,7 +267,8 @@ class AudioProcessorAgent(BaseAgent):
             "sample_rate": self.sample_rate,
             "channels": self.channels,
             "buffer_active": True,
-            "api_version": "v1p1beta1_telephony"
+            "api_version": "v1p1beta1_telephony",
+            "speaker_mode": "2_speakers_agent_first"
         }
     
     def _add_audio_chunk(self, data: Dict) -> Dict[str, Any]:
@@ -406,22 +409,30 @@ class AudioProcessorAgent(BaseAgent):
                     enable_automatic_punctuation=True,
                     enable_word_confidence=True,
                     enable_word_time_offsets=True,
-                    # Enhanced speaker diarization for phone calls
+                    # Force exactly 2 speakers
                     diarization_config=self.speech_types.SpeakerDiarizationConfig(
                         enable_speaker_diarization=True,
-                        min_speaker_count=1,
-                        max_speaker_count=2
+                        min_speaker_count=2,  # Exactly 2 speakers
+                        max_speaker_count=2   # Exactly 2 speakers
                     ),
                     # Speech adaptation for banking/fraud terms
                     speech_contexts=[
                         self.speech_types.SpeechContext(
                             phrases=[
-                                "investment", "guaranteed returns", "margin call", "transfer money",
-                                "emergency", "urgent", "immediately", "police", "investigation",
-                                "bank security", "verification", "PIN", "password", "account details",
-                                "romance", "military", "overseas", "stuck", "medical emergency"
+                                # Agent phrases (since agent speaks first)
+                                "good morning", "good afternoon", "thank you for calling",
+                                "how can I help", "my name is", "speaking with",
+                                "verify your identity", "security purposes",
+                                "account number", "date of birth",
+                                
+                                # Fraud-related terms
+                                "investment", "guaranteed returns", "transfer money",
+                                "emergency", "urgent", "immediately", 
+                                "police", "investigation", "court",
+                                "verification", "PIN", "password", "account details",
+                                "romance", "military", "overseas", "medical emergency"
                             ],
-                            boost=15  # Boost recognition of fraud-related terms
+                            boost=15
                         )
                     ]
                 )
@@ -551,123 +562,88 @@ class AudioProcessorAgent(BaseAgent):
         response, 
         websocket_callback: Callable
     ) -> None:
-        """Process streaming response from v1p1beta1 API - FIXED for clean display"""
+        """Process streaming response with 2-speaker agent-first logic"""
         
         try:
-            # Handle streaming errors
-            if hasattr(response, 'error') and response.error.code != 0:
-                logger.error(f"❌ STT v1p1beta1 streaming error for {session_id}: {response.error}")
-                return
-            
-            # Process results
             for result in response.results:
-                if result.alternatives:
-                    alternative = result.alternatives[0]
-                    transcript = alternative.transcript.strip()
+                if not result.alternatives:
+                    continue
                     
-                    if transcript:
-                        # Enhanced speaker detection for v1p1beta1
-                        detected_speaker = self._detect_speaker_v1p1beta1(session_id, alternative, result)
-                        
-                        # Get timing information
-                        start_time, end_time = self._extract_timing_v1p1beta1(alternative)
-                        
-                        # MAJOR FIX: Handle interim vs final results properly
-                        session = self.active_sessions[session_id]
-                        
-                        if result.is_final:
-                            # FINAL RESULT: Add as new segment
-                            segment_data = {
-                                "session_id": session_id,
-                                "speaker": detected_speaker,
-                                "text": transcript,
-                                "confidence": getattr(alternative, 'confidence', 0.9),
-                                "is_final": True,
-                                "start": start_time,
-                                "end": end_time,
-                                "duration": end_time - start_time,
-                                "processing_mode": "live_streaming_v1p1beta1_telephony",
-                                "transcription_source": self.transcription_source,
-                                "timestamp": get_current_timestamp()
-                            }
-                            
-                            # Send final result to WebSocket
-                            await websocket_callback({
-                                "type": "transcription_segment",
-                                "data": segment_data
-                            })
-                            
-                            # Store final result in session
-                            session["transcription_segments"].append(segment_data)
-                            
-                            # Track customer speech for fraud analysis (FINAL ONLY)
-                            if detected_speaker == "customer":
-                                session["customer_speech_history"].append(transcript)
-                                
-                                # Trigger fraud analysis for final customer speech
-                                await self._trigger_progressive_fraud_analysis(
-                                    session_id, transcript, websocket_callback
-                                )
-                            
-                            # Clear any interim state
-                            session.pop("current_interim_segment", None)
-                            
-                            logger.info(f"📝 FINAL: {detected_speaker} - '{transcript[:50]}...'")
-                            
-                        else:
-                            # INTERIM RESULT: Update existing interim or create new one
-                            # Only process if transcript is meaningful (> 8 characters)
-                            if len(transcript) > 8:
-                                
-                                interim_segment_data = {
-                                    "session_id": session_id,
-                                    "speaker": detected_speaker,
-                                    "text": transcript,
-                                    "confidence": getattr(alternative, 'confidence', 0.9),
-                                    "is_final": False,
-                                    "start": start_time,
-                                    "end": end_time,
-                                    "duration": end_time - start_time,
-                                    "processing_mode": "live_streaming_v1p1beta1_telephony",
-                                    "transcription_source": self.transcription_source,
-                                    "timestamp": get_current_timestamp(),
-                                    "is_interim_update": True  # Flag to help frontend
-                                }
-                                
-                                # Check if we should update the current interim or create new
-                                current_interim = session.get("current_interim_segment")
-                                
-                                if (current_interim and 
-                                    current_interim.get("speaker") == detected_speaker and
-                                    len(transcript) > len(current_interim.get("text", ""))):
-                                    
-                                    # UPDATE existing interim result
-                                    await websocket_callback({
-                                        "type": "transcription_interim_update",
-                                        "data": interim_segment_data
-                                    })
-                                    
-                                    logger.debug(f"📝 interim UPDATE: {detected_speaker} - '{transcript[:30]}...'")
-                                    
-                                else:
-                                    # NEW interim result
-                                    await websocket_callback({
-                                        "type": "transcription_interim_new",
-                                        "data": interim_segment_data
-                                    })
-                                    
-                                    logger.debug(f"📝 interim NEW: {detected_speaker} - '{transcript[:30]}...'")
-                                
-                                # Store current interim state
-                                session["current_interim_segment"] = interim_segment_data
+                alternative = result.alternatives[0]
+                transcript = alternative.transcript.strip()
+                
+                if not transcript:
+                    continue
+                
+                # Get speaker using simplified detection
+                detected_speaker = self._detect_speaker_v1p1beta1(session_id, alternative, result)
+                
+                # Extract timing
+                start_time, end_time = self._extract_timing_v1p1beta1(alternative)
+                
+                session = self.active_sessions[session_id]
+                
+                # Track speaker turns
+                last_speaker = session.get("last_speaker", None)
+                if detected_speaker != last_speaker:
+                    session["speaker_turn_count"][detected_speaker] += 1
+                    session["last_speaker"] = detected_speaker
+                    logger.info(f"🔄 Speaker turn: {last_speaker} → {detected_speaker}")
+                
+                # Create segment data
+                segment_data = {
+                    "session_id": session_id,
+                    "speaker": detected_speaker,
+                    "text": transcript,
+                    "confidence": getattr(alternative, 'confidence', 0.9),
+                    "is_final": result.is_final,
+                    "start": start_time,
+                    "end": end_time,
+                    "duration": end_time - start_time,
+                    "speaker_turn": session["speaker_turn_count"][detected_speaker],
+                    "processing_mode": "live_streaming_v1p1beta1_telephony",
+                    "transcription_source": self.transcription_source,
+                    "timestamp": get_current_timestamp()
+                }
+                
+                if result.is_final:
+                    # Send final segment
+                    await websocket_callback({
+                        "type": "transcription_segment",
+                        "data": segment_data
+                    })
+                    
+                    # Store in session
+                    session["transcription_segments"].append(segment_data)
+                    
+                    # Track speech history by speaker
+                    if detected_speaker == "customer":
+                        session["customer_speech_history"].append(transcript)
+                        # Trigger fraud analysis only for customer speech
+                        await self._trigger_progressive_fraud_analysis(
+                            session_id, transcript, websocket_callback
+                        )
+                    else:
+                        session["agent_speech_history"].append(transcript)
+                    
+                    logger.info(f"📝 FINAL [{detected_speaker}]: '{transcript[:50]}...'")
+                    
+                else:
+                    # Send interim result
+                    await websocket_callback({
+                        "type": "transcription_interim_new",
+                        "data": segment_data
+                    })
+                    
+                    logger.debug(f"📝 interim [{detected_speaker}]: '{transcript[:30]}...'")
         
         except Exception as e:
             logger.error(f"❌ Error processing streaming response: {e}")
     
     def _detect_speaker_v1p1beta1(self, session_id: str, alternative, result) -> str:
-        """Enhanced speaker detection for v1p1beta1 API with improved diarization logic"""
+        """Simplified speaker detection for v1p1beta1 API - 2 speakers, agent first"""
         
-        # DEBUG: Log what we're getting from Google Speech API
+        # Check if Google's diarization provides speaker tags
         if hasattr(alternative, 'words') and alternative.words:
             speaker_tags = []
             for word in alternative.words:
@@ -675,89 +651,31 @@ class AudioProcessorAgent(BaseAgent):
                     speaker_tags.append(word.speaker_tag)
             
             if speaker_tags:
-                # Use most common speaker tag in this segment
+                # Get most common speaker tag in this segment
                 most_common_tag = max(set(speaker_tags), key=speaker_tags.count)
-                unique_tags = set(speaker_tags)
                 
-                # Enhanced logging for debugging
-                if len(segments := self.active_sessions.get(session_id, {}).get("transcription_segments", [])) < 10:
-                    logger.info(f"🎯 DIARIZATION DEBUG: speaker_tags={unique_tags}, most_common={most_common_tag}, text='{alternative.transcript[:30]}...'")
-                
-                # Map Google's speaker tags to customer/agent
+                # Simple mapping: tag 1 = agent (first speaker), tag 2 = customer
                 if most_common_tag == 1:
-                    return "customer"  # First speaker = customer (calls in)
+                    return "agent"
                 elif most_common_tag == 2:
-                    return "agent"     # Second speaker = agent (answers)
+                    return "customer"
                 else:
-                    return f"speaker_{most_common_tag}"
+                    # Fallback for any other tags
+                    logger.warning(f"Unexpected speaker tag: {most_common_tag}")
+                    return "agent" if most_common_tag % 2 == 1 else "customer"
         
-        # Enhanced fallback: Intelligent conversation flow detection
+        # Fallback: If no speaker tags, use simple alternation
         session = self.active_sessions.get(session_id, {})
         segments = session.get("transcription_segments", [])
         
-        # For the very first segment, start with customer (they call in)
-        if len(segments) == 0:
-            logger.info("🎯 FALLBACK: First segment -> customer")
-            return "customer"
-        
-        # Get recent conversation context
-        recent_segments = segments[-5:] if len(segments) >= 5 else segments
-        last_speaker = segments[-1].get("speaker", "customer") if segments else "customer"
-        
-        # Count words from each speaker in recent conversation
-        customer_words = 0
-        agent_words = 0
-        
-        for seg in recent_segments:
-            word_count = len(seg.get("text", "").split())
-            if seg.get("speaker") == "customer":
-                customer_words += word_count
-            else:
-                agent_words += word_count
-        
-        # Smart switching logic based on conversation patterns
-        current_text = getattr(alternative, 'transcript', '').lower()
-        
-        # Agent response patterns (they typically respond with these phrases)
-        agent_phrases = [
-            'good afternoon', 'good morning', 'hello', 'hi there',
-            'this is', 'my name is', 'i can help', 'how can i help', 'how can i assist',
-            'of course', 'certainly', 'let me help', 'i need to', 'can you', 'could you',
-            'for security', 'to verify', 'i\'ll need', 'thank you', 'thanks'
-        ]
-        
-        # Customer phrases (requests, questions, problems)
-        customer_phrases = [
-            'i need', 'i want', 'i would like', 'can i', 'could i', 'i have a problem',
-            'urgent', 'quickly', 'as soon as possible', 'emergency', 'help me',
-            'my account', 'my card', 'transfer', 'payment', 'yes it\'s', 'it\'s for'
-        ]
-        
-        # Check for strong indicators
-        has_agent_phrase = any(phrase in current_text for phrase in agent_phrases)
-        has_customer_phrase = any(phrase in current_text for phrase in customer_phrases)
-        
-        if has_agent_phrase and not has_customer_phrase:
-            logger.info(f"🎯 PATTERN MATCH: agent phrase detected -> agent ('{current_text[:30]}...')")
+        if not segments:
+            # First speaker is ALWAYS agent
+            logger.info("🎯 First segment detected -> agent")
             return "agent"
-        elif has_customer_phrase and not has_agent_phrase:
-            logger.info(f"🎯 PATTERN MATCH: customer phrase detected -> customer ('{current_text[:30]}...')")
-            return "customer"
         
-        # Natural conversation flow: alternate after sufficient speech
-        if last_speaker == "customer":
-            # Switch to agent if customer has spoken enough (>15 words recently)
-            if customer_words > 15:
-                logger.info(f"🎯 FLOW SWITCH: customer->agent ({customer_words} customer words)")
-                return "agent"
-        elif last_speaker == "agent":
-            # Switch to customer if agent has spoken enough (>10 words recently)
-            if agent_words > 10:
-                logger.info(f"🎯 FLOW SWITCH: agent->customer ({agent_words} agent words)")
-                return "customer"
-        
-        # Default: continue with the same speaker
-        logger.debug(f"🎯 CONTINUE: {last_speaker} (no switch criteria met)")
+        # For subsequent segments without tags, maintain the last speaker
+        # (Google usually provides continuous segments per speaker)
+        last_speaker = segments[-1].get("speaker", "agent")
         return last_speaker
     
     def _extract_timing_v1p1beta1(self, alternative) -> tuple:

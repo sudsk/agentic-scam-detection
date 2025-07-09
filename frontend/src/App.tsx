@@ -591,6 +591,104 @@ function App() {
       setIsLoadingFiles(false);
     }
   };
+  
+  // ===== SERVICENOW INTEGRATION FUNCTIONS =====
+
+  const createServiceNowCase = async () => {
+    try {
+      // Show loading state
+      setProcessingStage('📋 Creating ServiceNow case...');
+      
+      // Prepare case data for ServiceNow
+      const caseData = {
+        customer_name: currentCustomer.name,
+        customer_account: currentCustomer.account,
+        customer_phone: currentCustomer.demographics?.location || 'Unknown',
+        risk_score: riskScore,
+        scam_type: scamType,
+        session_id: sessionId,
+        confidence_score: riskScore / 100, // Convert to decimal
+        transcript_segments: showingSegments.map(segment => ({
+          speaker: segment.speaker,
+          start: segment.start,
+          text: segment.text,
+          confidence: segment.confidence
+        })),
+        detected_patterns: detectedPatterns,
+        recommended_actions: policyGuidance?.recommended_actions || [
+          "Review customer interaction",
+          "Verify transaction details",
+          "Follow standard fraud procedures"
+        ]
+      };
+
+      // Call the simplified ServiceNow API
+      const response = await fetch(`${API_BASE_URL}/api/v1/cases/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(caseData),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.status === 'success') {
+        // Success - show case details
+        const caseInfo = result.data;
+        
+        setProcessingStage(`✅ ServiceNow case created: ${caseInfo.case_number}`);
+        
+        // Show success message with case details
+        const successMessage = `
+ServiceNow Case Created Successfully!
+
+Case Number: ${caseInfo.case_number}
+Priority: ${caseInfo.priority}
+Risk Score: ${riskScore}%
+Scam Type: ${scamType.replace('_', ' ').toUpperCase()}
+
+Click OK to open the case in ServiceNow.
+        `.trim();
+        
+        if (confirm(successMessage)) {
+          // Open ServiceNow case in new tab
+          window.open(caseInfo.case_url, '_blank');
+        }
+        
+      } else {
+        // Error handling
+        const errorMessage = result.error || 'Failed to create case';
+        setProcessingStage(`❌ Error: ${errorMessage}`);
+        alert(`Failed to create ServiceNow case: ${errorMessage}`);
+      }
+      
+    } catch (error) {
+      console.error('Error creating ServiceNow case:', error);
+      setProcessingStage(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`Error creating ServiceNow case: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const testServiceNowConnection = async () => {
+    try {
+      setProcessingStage('🔌 Testing ServiceNow connection...');
+      
+      const response = await fetch(`${API_BASE_URL}/api/v1/cases/test-connection`);
+      const result = await response.json();
+      
+      if (response.ok && result.status === 'success') {
+        setProcessingStage('✅ ServiceNow connection successful');
+        alert(`ServiceNow Connection Successful!\n\nInstance: ${result.data.instance_url}\nUser: ${result.data.username}`);
+      } else {
+        setProcessingStage(`❌ ServiceNow connection failed: ${result.error}`);
+        alert(`ServiceNow Connection Failed: ${result.error}`);
+      }
+    } catch (error) {
+      setProcessingStage(`❌ Connection test failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`Connection test failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
 
   // ===== ENHANCED COMPONENT FUNCTIONS =====
 
@@ -658,6 +756,22 @@ function App() {
     };
   }, []);
 
+												   
+
+				   
+														   
+															
+										  
+																							  
+									 
+		
+	  
+												 
+													 
+									   
+	 
+											   
+
   // ===== RENDER =====
 
   return (
@@ -676,6 +790,11 @@ function App() {
             <span>Agent: James Bond</span>
             <span>ID: JB2024</span>
             <span>Shift: 09:00-17:00</span>
+            <div className="flex items-center space-x-2 text-sm">
+              <span className="text-gray-600">ServiceNow:</span>
+              <span className="text-green-600">Ready</span>
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            </div>																 
             <ProcessingStatus />
             <Settings className="w-4 h-4" />
           </div>
@@ -794,14 +913,45 @@ function App() {
                 <User className="w-4 h-4" />
                 <span>Verify Identity</span>
               </button>
-              <button className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded">
+              
+              {/* UPDATED: ServiceNow Case Creation Button */}
+              <button 
+                onClick={createServiceNowCase}
+                disabled={riskScore < 40} // Only enable for medium+ risk
+                className={`w-full flex items-center space-x-2 px-3 py-2 text-left text-sm rounded ${
+                  riskScore < 40 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
                 <FileText className="w-4 h-4" />
-                <span>Create Case</span>
+                <span>Create ServiceNow Case</span>
+                {riskScore >= 80 && (
+                  <span className="ml-auto text-xs bg-red-100 text-red-700 px-2 py-1 rounded">
+                    Auto
+                  </span>
+                )}
               </button>
+              
+              {/* High Risk Auto-Escalation */}
               {riskScore >= 80 && (
-                <button className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">
+                <button 
+                  onClick={createServiceNowCase}
+                  className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                >
                   <AlertTriangle className="w-4 h-4" />
-                  <span>Escalate to Fraud Team</span>
+                  <span>ESCALATE to Fraud Team</span>
+                </button>
+              )}
+              
+              {/* ServiceNow Connection Test (Development) */}
+              {process.env.NODE_ENV === 'development' && (
+                <button 
+                  onClick={testServiceNowConnection}
+                  className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm text-blue-700 hover:bg-blue-50 rounded"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Test ServiceNow Connection</span>
                 </button>
               )}
             </div>
@@ -869,7 +1019,17 @@ function App() {
                   <p>Select a demo call to see live transcription</p>
                   <p className="text-sm text-blue-600 mt-2">Enhanced speaker detection with Google STT v1p1beta1</p>
                   {processingStage && (
-                    <p className="text-sm text-green-600 mt-2">{processingStage}</p>
+                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                      <p className="text-blue-700 text-sm">{processingStage}</p>
+                      {processingStage.includes('ServiceNow case created') && (
+                        <button 
+                          onClick={() => setProcessingStage('')}
+                          className="mt-1 text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>  
                   )}
                 </div>
               </div>

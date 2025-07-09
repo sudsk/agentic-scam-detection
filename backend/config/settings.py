@@ -1,7 +1,6 @@
-# backend/config/settings.py - UPDATED FOR IMPROVED AUDIO PROCESSING
+# backend/config/settings.py 
 """
-Updated configuration for improved Google Speech-to-Text v1p1beta1
-Simplified settings with better mono/stereo support
+
 """
 
 import os
@@ -49,6 +48,7 @@ class Settings:
             "medium": "fraud-prevention-team@bank.com",
             "low": "customer-service-enhanced@bank.com"
         }
+        
         
         # Scam type keywords (RESTORED from original)
         self.scam_type_keywords = {
@@ -110,6 +110,30 @@ class Settings:
         
         # Agent configurations
         self._setup_agent_configs()
+
+    @property
+    def servicenow_instance_url(self) -> str:
+        return os.getenv("SERVICENOW_INSTANCE_URL", "https://dev303197.service-now.com")
+    
+    @property 
+    def servicenow_auth_method(self) -> str:
+        return os.getenv("SERVICENOW_AUTH_METHOD", "api_key")
+    
+    @property
+    def servicenow_api_key(self) -> Optional[str]:
+        return os.getenv("SERVICENOW_API_KEY")
+    
+    @property
+    def servicenow_username(self) -> str:
+        return os.getenv("SERVICENOW_USERNAME", "hsbc_fraud_api")
+    
+    @property
+    def servicenow_enabled(self) -> bool:
+        return os.getenv("SERVICENOW_ENABLED", "true").lower() == "true"
+    
+    @property
+    def servicenow_min_risk_score(self) -> int:
+        return int(os.getenv("SERVICENOW_MIN_RISK_SCORE", "60"))
     
     def _setup_agent_configs(self):
         """Setup simplified agent configurations"""

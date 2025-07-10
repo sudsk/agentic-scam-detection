@@ -134,6 +134,10 @@ class Settings:
     @property
     def servicenow_min_risk_score(self) -> int:
         return int(os.getenv("SERVICENOW_MIN_RISK_SCORE", "60"))
+
+    @property
+    def servicenow_password(self) -> Optional[str]:
+        return os.getenv("SERVICENOW_PASSWORD")
     
     def _setup_agent_configs(self):
         """Setup simplified agent configurations"""

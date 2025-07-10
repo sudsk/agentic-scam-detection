@@ -1,13 +1,10 @@
-# backend/api/routes/cases.py - SIMPLIFIED ServiceNow-Only Version
+# backend/api/routes/cases.py - UPDATED to use Basic Auth ServiceNow Service
 """
-ServiceNow Case Management API - No Internal Database
-All case management happens directly in ServiceNow
+ServiceNow Case Management API - Uses Basic Authentication
+All case management happens directly in ServiceNow via Basic Auth
 """
 
 import logging
-import aiohttp
-import json
-import base64
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -17,197 +14,37 @@ from backend.utils import (
     get_current_timestamp, create_success_response, create_error_response
 )
 from backend.config.settings import get_settings
+from backend.services.servicenow_service import ServiceNowService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# ===== SERVICENOW SERVICE =====
+# ===== HELPER FUNCTION TO CREATE SERVICENOW SERVICE =====
 
-class ServiceNowService:
-    """ServiceNow integration service"""
-    
-    def __init__(self, instance_url: str, username: str, password: str):
-        self.instance_url = instance_url
-        self.username = username
-        self.password = password
-        self.session = None
-    
-    async def _get_session(self):
-        if self.session is None or self.session.closed:
-            credentials = f"{self.username}:{self.password}"
-            encoded_credentials = base64.b64encode(credentials.encode()).decode()
-            
-            headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'Authorization': f'Basic {encoded_credentials}'
-            }
-            self.session = aiohttp.ClientSession(headers=headers)
-        return self.session
-    
-    async def create_incident(self, incident_data: Dict) -> Dict:
-        """Create incident in ServiceNow"""
-        try:
-            session = await self._get_session()
-            url = f"{self.instance_url}/api/now/table/incident"
-            
-            async with session.post(url, json=incident_data) as response:
-                if response.status == 201:
-                    result = await response.json()
-                    return {
-                        "success": True,
-                        "incident_number": result["result"]["number"],
-                        "incident_sys_id": result["result"]["sys_id"],
-                        "incident_url": f"{self.instance_url}/nav_to.do?uri=incident.do?sys_id={result['result']['sys_id']}",
-                        "state": result["result"]["state"],
-                        "priority": result["result"]["priority"],
-                        "created_at": result["result"]["sys_created_on"]
-                    }
-                else:
-                    error_text = await response.text()
-                    return {
-                        "success": False,
-                        "error": f"ServiceNow API error: {response.status} - {error_text}"
-                    }
-        except Exception as e:
-            logger.error(f"Error creating ServiceNow incident: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    async def get_incident(self, incident_number: str) -> Dict:
-        """Get incident details from ServiceNow"""
-        try:
-            session = await self._get_session()
-            url = f"{self.instance_url}/api/now/table/incident"
-            params = {"sysparm_query": f"number={incident_number}"}
-            
-            async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    if result.get("result"):
-                        incident = result["result"][0]
-                        return {
-                            "success": True,
-                            "incident": incident
-                        }
-                    else:
-                        return {
-                            "success": False,
-                            "error": "Incident not found"
-                        }
-                else:
-                    error_text = await response.text()
-                    return {
-                        "success": False,
-                        "error": f"ServiceNow API error: {response.status} - {error_text}"
-                    }
-        except Exception as e:
-            logger.error(f"Error getting ServiceNow incident: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    async def update_incident(self, incident_sys_id: str, update_data: Dict) -> Dict:
-        """Update incident in ServiceNow"""
-        try:
-            session = await self._get_session()
-            url = f"{self.instance_url}/api/now/table/incident/{incident_sys_id}"
-            
-            async with session.patch(url, json=update_data) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return {
-                        "success": True,
-                        "incident": result["result"]
-                    }
-                else:
-                    error_text = await response.text()
-                    return {
-                        "success": False,
-                        "error": f"ServiceNow API error: {response.status} - {error_text}"
-                    }
-        except Exception as e:
-            logger.error(f"Error updating ServiceNow incident: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    async def get_incidents(self, limit: int = 50, filters: Dict = None) -> Dict:
-        """Get multiple incidents from ServiceNow"""
-        try:
-            session = await self._get_session()
-            url = f"{self.instance_url}/api/now/table/incident"
-            
-            # Build query parameters
-            params = {
-                "sysparm_limit": str(limit),
-                "sysparm_fields": "number,short_description,state,priority,opened_at,sys_id,category,u_risk_score,u_scam_type,u_session_id",
-                "sysparm_order": "-opened_at"
-            }
-            
-            # Add filters if provided
-            query_parts = []
-            if filters:
-                if filters.get("category"):
-                    query_parts.append(f"category={filters['category']}")
-                if filters.get("state"):
-                    query_parts.append(f"state={filters['state']}")
-                if filters.get("priority"):
-                    query_parts.append(f"priority={filters['priority']}")
-                if filters.get("opened_by"):
-                    query_parts.append(f"opened_by={filters['opened_by']}")
-            
-            if query_parts:
-                params["sysparm_query"] = "^".join(query_parts)
-            
-            async with session.get(url, params=params) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return {
-                        "success": True,
-                        "incidents": result.get("result", []),
-                        "total_count": len(result.get("result", []))
-                    }
-                else:
-                    error_text = await response.text()
-                    return {
-                        "success": False,
-                        "error": f"ServiceNow API error: {response.status} - {error_text}"
-                    }
-        except Exception as e:
-            logger.error(f"Error getting ServiceNow incidents: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
-    async def close_session(self):
-        if self.session:
-            await self.session.close()
-
-# ===== API ENDPOINTS =====
-
-@router.post("/create")
-@handle_api_errors("create_fraud_case")
-async def create_fraud_case(case_data: Dict[str, Any], settings = Depends(get_settings)):
-    """Create fraud case in ServiceNow"""
-    
+def get_servicenow_service(settings) -> ServiceNowService:
+    """Create ServiceNow service instance with proper authentication"""
     if not settings.servicenow_enabled:
         raise HTTPException(status_code=400, detail="ServiceNow integration not enabled")
     
     if not settings.servicenow_username or not settings.servicenow_password:
         raise HTTPException(status_code=500, detail="ServiceNow credentials not configured")
     
-    # Create ServiceNow service
-    servicenow = ServiceNowService(
+    return ServiceNowService(
         instance_url=settings.servicenow_instance_url,
         username=settings.servicenow_username,
-        password=settings.servicenow_password
+        password=settings.servicenow_password,
+        api_key=settings.servicenow_api_key  # Optional
     )
+
+# ===== API ENDPOINTS =====
+
+@router.post("/create")
+@handle_api_errors("create_fraud_case")
+async def create_fraud_case(case_data: Dict[str, Any], settings = Depends(get_settings)):
+    """Create fraud case in ServiceNow using Basic Auth"""
+    
+    # Create ServiceNow service
+    servicenow = get_servicenow_service(settings)
     
     try:
         # Prepare incident data for ServiceNow
@@ -300,9 +137,10 @@ System: HSBC Fraud Detection Agent
                     "case_number": result["incident_number"],
                     "case_url": result["incident_url"],
                     "priority": priority,
-                    "state": result["state"],
-                    "created_at": result["created_at"],
-                    "system": "servicenow"
+                    "state": result.get("state"),
+                    "created_at": result.get("created_at"),
+                    "system": "servicenow",
+                    "auth_method": "basic_auth"
                 },
                 message="Fraud case created successfully in ServiceNow"
             )
@@ -317,14 +155,7 @@ System: HSBC Fraud Detection Agent
 async def get_case(case_identifier: str, settings = Depends(get_settings)):
     """Get case details from ServiceNow (by incident number or sys_id)"""
     
-    if not settings.servicenow_enabled:
-        raise HTTPException(status_code=400, detail="ServiceNow integration not enabled")
-    
-    servicenow = ServiceNowService(
-        instance_url=settings.servicenow_instance_url,
-        username=settings.servicenow_username,
-        password=settings.servicenow_password
-    )
+    servicenow = get_servicenow_service(settings)
     
     try:
         # Try to get by incident number first
@@ -346,7 +177,8 @@ async def get_case(case_identifier: str, settings = Depends(get_settings)):
                     "risk_score": incident.get("u_risk_score", 0),
                     "scam_type": incident.get("u_scam_type", "unknown"),
                     "session_id": incident.get("u_session_id", ""),
-                    "system": "servicenow"
+                    "system": "servicenow",
+                    "auth_method": "basic_auth"
                 },
                 message="Case retrieved successfully"
             )
@@ -365,14 +197,7 @@ async def update_case(
 ):
     """Update case in ServiceNow"""
     
-    if not settings.servicenow_enabled:
-        raise HTTPException(status_code=400, detail="ServiceNow integration not enabled")
-    
-    servicenow = ServiceNowService(
-        instance_url=settings.servicenow_instance_url,
-        username=settings.servicenow_username,
-        password=settings.servicenow_password
-    )
+    servicenow = get_servicenow_service(settings)
     
     try:
         # Prepare update data for ServiceNow
@@ -395,7 +220,8 @@ async def update_case(
                     "case_id": case_sys_id,
                     "updated_fields": list(servicenow_update.keys()),
                     "updated_at": get_current_timestamp(),
-                    "system": "servicenow"
+                    "system": "servicenow",
+                    "auth_method": "basic_auth"
                 },
                 message="Case updated successfully"
             )
@@ -416,14 +242,7 @@ async def list_cases(
 ):
     """List cases from ServiceNow"""
     
-    if not settings.servicenow_enabled:
-        raise HTTPException(status_code=400, detail="ServiceNow integration not enabled")
-    
-    servicenow = ServiceNowService(
-        instance_url=settings.servicenow_instance_url,
-        username=settings.servicenow_username,
-        password=settings.servicenow_password
-    )
+    servicenow = get_servicenow_service(settings)
     
     try:
         # Build filters
@@ -454,7 +273,8 @@ async def list_cases(
                     "risk_score": incident.get("u_risk_score", 0),
                     "scam_type": incident.get("u_scam_type", "unknown"),
                     "session_id": incident.get("u_session_id", ""),
-                    "system": "servicenow"
+                    "system": "servicenow",
+                    "auth_method": "basic_auth"
                 })
             
             return create_success_response(
@@ -462,7 +282,8 @@ async def list_cases(
                     "cases": cases,
                     "total_count": result["total_count"],
                     "filters_applied": filters,
-                    "system": "servicenow"
+                    "system": "servicenow",
+                    "auth_method": "basic_auth"
                 },
                 message="Cases retrieved successfully"
             )
@@ -477,14 +298,7 @@ async def list_cases(
 async def get_case_statistics(settings = Depends(get_settings)):
     """Get case statistics from ServiceNow"""
     
-    if not settings.servicenow_enabled:
-        raise HTTPException(status_code=400, detail="ServiceNow integration not enabled")
-    
-    servicenow = ServiceNowService(
-        instance_url=settings.servicenow_instance_url,
-        username=settings.servicenow_username,
-        password=settings.servicenow_password
-    )
+    servicenow = get_servicenow_service(settings)
     
     try:
         # Get all fraud incidents
@@ -520,6 +334,7 @@ async def get_case_statistics(settings = Depends(get_settings)):
                     "average_risk_score": round(avg_risk_score, 1),
                     "scam_type_distribution": scam_types,
                     "system": "servicenow",
+                    "auth_method": "basic_auth",
                     "instance_url": settings.servicenow_instance_url
                 },
                 message="Case statistics retrieved successfully"
@@ -533,37 +348,34 @@ async def get_case_statistics(settings = Depends(get_settings)):
 @router.get("/test-connection")
 @handle_api_errors("test_connection")
 async def test_connection(settings = Depends(get_settings)):
-    """Test ServiceNow connection"""
+    """Test ServiceNow connection using Basic Auth"""
     
-    if not settings.servicenow_username or not settings.servicenow_password:
-        raise HTTPException(status_code=500, detail="ServiceNow credentials not configured")
-    
-    servicenow = ServiceNowService(
-        instance_url=settings.servicenow_instance_url,
-        username=settings.servicenow_username,
-        password=settings.servicenow_password
-    )
+    servicenow = get_servicenow_service(settings)
     
     try:
-        session = await servicenow._get_session()
-        url = f"{settings.servicenow_instance_url}/api/now/table/sys_user?sysparm_limit=1"
+        result = await servicenow.test_connection()
         
-        async with session.get(url) as response:
-            if response.status == 200:
-                return create_success_response(
-                    data={
-                        "connected": True,
-                        "instance_url": settings.servicenow_instance_url,
-                        "username": settings.servicenow_username,
-                        "status_code": response.status
-                    },
-                    message="ServiceNow connection successful"
-                )
-            else:
-                error_text = await response.text()
-                return create_error_response(
-                    error=f"Connection failed: {response.status} - {error_text}",
-                    code="SERVICENOW_CONNECTION_ERROR"
-                )
+        if result["success"]:
+            return create_success_response(
+                data={
+                    "connected": True,
+                    "instance_url": settings.servicenow_instance_url,
+                    "username": settings.servicenow_username,
+                    "auth_method": "basic_auth",
+                    "status_code": result.get("status_code"),
+                    "message": result.get("message")
+                },
+                message="ServiceNow connection successful"
+            )
+        else:
+            return create_error_response(
+                error=result.get("error", "Unknown connection error"),
+                code="SERVICENOW_CONNECTION_ERROR",
+                details={
+                    "status_code": result.get("status_code"),
+                    "auth_method": "basic_auth"
+                }
+            )
+            
     finally:
         await servicenow.close_session()

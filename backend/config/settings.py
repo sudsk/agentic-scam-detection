@@ -5,7 +5,7 @@
 
 import os
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 class Settings:
     """Simplified application settings"""

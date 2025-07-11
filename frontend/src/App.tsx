@@ -651,7 +651,7 @@ Scam Type: ${scamType.replace('_', ' ').toUpperCase()}
 Click OK to open the case in ServiceNow.
         `.trim();
         
-        if (confirm(successMessage)) {
+        if (window.confirm(successMessage)) {
           // Open ServiceNow case in new tab
           window.open(caseInfo.case_url, '_blank');
         }

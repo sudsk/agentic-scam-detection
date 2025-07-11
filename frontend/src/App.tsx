@@ -148,7 +148,7 @@ const customerProfiles: Record<string, CustomerProfile> = {
       {
         type: "Unusual Activity",
         date: "2 weeks ago",
-        description: "Attempted £3,000 transfer to Nigeria - blocked by fraud filters"
+        description: "Attempted £3,000 transfer to Turkey - blocked by fraud filters"
       }
     ]
   },

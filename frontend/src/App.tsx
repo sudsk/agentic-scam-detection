@@ -1017,7 +1017,6 @@ Click OK to open the case in ServiceNow.
                 <div className="text-center">
                   <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p>Select a demo call to see live transcription</p>
-                  <p className="text-sm text-blue-600 mt-2">Enhanced speaker detection with Google STT v1p1beta1</p>
                   {processingStage && (
                     <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
                       <p className="text-blue-700 text-sm">{processingStage}</p>
@@ -1288,7 +1287,7 @@ Click OK to open the case in ServiceNow.
                 <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h4 className="text-sm font-medium text-gray-900 mb-2">AI Processing</h4>
                 <p className="text-xs text-gray-600">
-                  Start a demo call to see fraud detection with improved Google STT
+                  Start a demo call to see fraud detection
                 </p>
                 <div className="mt-4 space-y-2 text-xs">
                   <div className="flex items-center justify-center space-x-2">
@@ -1296,12 +1295,11 @@ Click OK to open the case in ServiceNow.
                     <span>6 Agents Ready</span>
                   </div>
                   <div className="text-gray-400">Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
-                  <div className="text-blue-600">✨ Enhanced Google STT v1p1beta1 • Improved speaker detection</div>
-                  {processingStage && (
+                  {/* {processingStage && (
                     <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
                       <p className="text-blue-700">{processingStage}</p>
                     </div>
-                  )}
+                  )} */}
                 </div>
               </div>
             </div>

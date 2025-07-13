@@ -1,12 +1,9 @@
-# backend/websocket/fraud_detection_handler.py - SIMPLIFIED VERSION
-"""
-Simplified WebSocket handler for real-time fraud detection
-Works with the improved audio processor
-"""
+# backend/websocket/fraud_detection_handler.py - COMPLETE ENHANCED VERSION
 
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from fastapi import WebSocket, WebSocketDisconnect
@@ -19,15 +16,19 @@ from ..utils import get_current_timestamp, create_error_response
 
 logger = logging.getLogger(__name__)
 
-class FraudDetectionWebSocketHandler:
-    """Simplified WebSocket handler for fraud detection"""
+class EnhancedFraudDetectionWebSocketHandler:
+    """Complete enhanced WebSocket handler with all improvements"""
     
     def __init__(self, connection_manager: ConnectionManager):
         self.connection_manager = connection_manager
         self.active_sessions: Dict[str, Dict] = {}
         self.customer_speech_buffer: Dict[str, List[str]] = {}
         
-        logger.info("🔌 Simplified Fraud Detection WebSocket handler initialized")
+        # Enhanced tracking for better risk calculation
+        self.session_analysis_history: Dict[str, List[Dict]] = {}
+        self.accumulated_patterns: Dict[str, Dict] = {}
+        
+        logger.info("🔌 Enhanced Fraud Detection WebSocket handler initialized")
     
     async def handle_message(self, websocket: WebSocket, client_id: str, message: Dict[str, Any]) -> None:
         """Handle incoming WebSocket messages"""
@@ -57,7 +58,7 @@ class FraudDetectionWebSocketHandler:
             await self.send_error(websocket, client_id, f"Message processing error: {str(e)}")
     
     async def handle_audio_processing(self, websocket: WebSocket, client_id: str, data: Dict) -> None:
-        """Start audio processing with fraud detection"""
+        """Start audio processing with enhanced fraud detection"""
         
         filename = data.get('filename')
         session_id = data.get('session_id') or f"session_{uuid.uuid4().hex[:8]}"
@@ -71,9 +72,9 @@ class FraudDetectionWebSocketHandler:
             return
         
         try:
-            logger.info(f"🎵 Starting audio processing: {filename} for {client_id}")
+            logger.info(f"🎵 Starting enhanced audio processing: {filename} for {client_id}")
             
-            # Initialize session tracking
+            # Initialize enhanced session tracking
             self.active_sessions[session_id] = {
                 'client_id': client_id,
                 'filename': filename,
@@ -82,16 +83,21 @@ class FraudDetectionWebSocketHandler:
                 'status': 'processing'
             }
             self.customer_speech_buffer[session_id] = []
+            self.session_analysis_history[session_id] = []
+            self.accumulated_patterns[session_id] = {}
+            
+            # AUDIO SYNC FIX: Add small delay to sync with frontend audio loading
+            await asyncio.sleep(0.5)
             
             # Create callback for audio processor
-            async def audio_callback(message_data: Dict) -> None:
-                await self.handle_audio_message(websocket, client_id, session_id, message_data)
+            async def enhanced_audio_callback(message_data: Dict) -> None:
+                await self.handle_enhanced_audio_message(websocket, client_id, session_id, message_data)
             
             # Start audio processing
             result = await audio_processor_agent.start_realtime_processing(
                 session_id=session_id,
                 audio_filename=filename,
-                websocket_callback=audio_callback
+                websocket_callback=enhanced_audio_callback
             )
             
             if 'error' in result:
@@ -107,26 +113,26 @@ class FraudDetectionWebSocketHandler:
                     'filename': filename,
                     'audio_duration': result.get('audio_duration', 0),
                     'channels': result.get('channels', 1),
-                    'processing_mode': result.get('processing_mode', 'mono_realtime'),
+                    'processing_mode': result.get('processing_mode', 'enhanced_realtime'),
                     'timestamp': get_current_timestamp()
                 }
             })
             
-            logger.info(f"✅ Processing started for session {session_id}")
+            logger.info(f"✅ Enhanced processing started for session {session_id}")
             
         except Exception as e:
-            logger.error(f"❌ Error starting processing: {e}")
+            logger.error(f"❌ Error starting enhanced processing: {e}")
             await self.send_error(websocket, client_id, f"Failed to start processing: {str(e)}")
             self.cleanup_session(session_id)
     
-    async def handle_audio_message(
+    async def handle_enhanced_audio_message(
         self, 
         websocket: WebSocket, 
         client_id: str, 
         session_id: str, 
         message_data: Dict
     ) -> None:
-        """Handle messages from audio processor"""
+        """Handle messages from audio processor with enhanced tracking"""
         
         message_type = message_data.get('type')
         data = message_data.get('data', {})
@@ -136,23 +142,21 @@ class FraudDetectionWebSocketHandler:
                 # Forward transcription to client
                 await self.send_message(websocket, client_id, message_data)
                 
-                # Process customer speech for fraud detection
+                # Enhanced customer speech processing
                 speaker = data.get('speaker')
                 text = data.get('text', '')
                 
                 if speaker == 'customer' and text.strip():
-                    await self.process_customer_speech(websocket, client_id, session_id, text)
+                    await self.enhanced_customer_speech_processing(websocket, client_id, session_id, text)
             
             elif message_type == 'transcription_interim':
                 # Forward interim results
                 await self.send_message(websocket, client_id, message_data)
             
-            elif message_type == 'streaming_started':
-                # Forward streaming confirmation
-                await self.send_message(websocket, client_id, message_data)
-            
-            elif message_type == 'error':
-                # Forward errors
+            elif message_type == 'processing_complete':
+                # Auto-create incident for medium+ risk
+                await self.handle_processing_complete(websocket, client_id, session_id)
+                # Forward the completion message
                 await self.send_message(websocket, client_id, message_data)
             
             else:
@@ -160,16 +164,16 @@ class FraudDetectionWebSocketHandler:
                 await self.send_message(websocket, client_id, message_data)
                 
         except Exception as e:
-            logger.error(f"❌ Error handling audio message: {e}")
+            logger.error(f"❌ Error handling enhanced audio message: {e}")
     
-    async def process_customer_speech(
+    async def enhanced_customer_speech_processing(
         self, 
         websocket: WebSocket, 
         client_id: str, 
         session_id: str, 
         customer_text: str
     ) -> None:
-        """Process customer speech for fraud detection"""
+        """Enhanced customer speech processing with better risk accumulation"""
         
         try:
             # Add to speech buffer
@@ -178,30 +182,31 @@ class FraudDetectionWebSocketHandler:
             
             self.customer_speech_buffer[session_id].append(customer_text)
             
-            # Run fraud analysis after accumulating enough speech
+            # SCAM RISK FIX: More frequent analysis for better risk accumulation
             buffer_length = len(self.customer_speech_buffer[session_id])
             
-            # Trigger analysis every 2 customer segments, or when we have 4+ segments
-            if buffer_length >= 2 and (buffer_length % 2 == 0 or buffer_length >= 4):
-                combined_text = " ".join(self.customer_speech_buffer[session_id])
+            # Trigger analysis every customer segment for better risk escalation
+            if buffer_length >= 1:
+                # Use accumulated speech for analysis
+                accumulated_speech = " ".join(self.customer_speech_buffer[session_id])
                 
-                if len(combined_text.strip()) >= 20:  # Minimum text for analysis
-                    await self.run_fraud_analysis(websocket, client_id, session_id, combined_text)
+                if len(accumulated_speech.strip()) >= 10:  # Lower threshold for faster detection
+                    await self.run_enhanced_fraud_analysis(websocket, client_id, session_id, accumulated_speech)
             
         except Exception as e:
-            logger.error(f"❌ Error processing customer speech: {e}")
+            logger.error(f"❌ Error in enhanced customer speech processing: {e}")
     
-    async def run_fraud_analysis(
+    async def run_enhanced_fraud_analysis(
         self, 
         websocket: WebSocket, 
         client_id: str, 
         session_id: str, 
         customer_text: str
     ) -> None:
-        """Run fraud analysis and send results"""
+        """Enhanced fraud analysis with pattern accumulation for better risk scoring"""
         
         try:
-            logger.info(f"🔍 Running fraud analysis for session {session_id}")
+            logger.info(f"🔍 Running enhanced fraud analysis for session {session_id}")
             
             # Send analysis started notification
             await self.send_message(websocket, client_id, {
@@ -214,50 +219,128 @@ class FraudDetectionWebSocketHandler:
             })
             
             # Small delay for realistic processing
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3)
             
             # Run fraud detection
             fraud_result = fraud_detection_system.fraud_detector.process(customer_text)
             
             if 'error' not in fraud_result:
-                # Send fraud analysis results
+                # SCAM RISK FIX: Enhanced pattern accumulation
+                current_patterns = fraud_result.get('detected_patterns', {})
+                session_patterns = self.accumulated_patterns.get(session_id, {})
+                
+                # Merge patterns, keeping highest counts and weights
+                for pattern_name, pattern_data in current_patterns.items():
+                    if pattern_name in session_patterns:
+                        # Keep higher count and add severity multipliers
+                        existing = session_patterns[pattern_name]
+                        pattern_data['count'] = max(pattern_data.get('count', 1), existing.get('count', 1)) + 1
+                        pattern_data['matches'] = list(set(
+                            pattern_data.get('matches', []) + existing.get('matches', [])
+                        ))
+                    session_patterns[pattern_name] = pattern_data
+                
+                self.accumulated_patterns[session_id] = session_patterns
+                
+                # SCAM RISK FIX: Calculate enhanced risk score based on accumulated patterns
+                enhanced_risk_score = self.calculate_enhanced_risk_score(session_patterns, customer_text)
+                
+                # Store analysis in history
+                analysis_record = {
+                    'timestamp': get_current_timestamp(),
+                    'risk_score': enhanced_risk_score,
+                    'patterns': session_patterns,
+                    'scam_type': fraud_result.get('scam_type', 'unknown'),
+                    'confidence': fraud_result.get('confidence', 0.0)
+                }
+                self.session_analysis_history[session_id].append(analysis_record)
+                
+                # SCAM RISK FIX: Send ENHANCED fraud analysis results
                 await self.send_message(websocket, client_id, {
                     'type': 'fraud_analysis_update',
                     'data': {
                         'session_id': session_id,
-                        'risk_score': fraud_result.get('risk_score', 0),
-                        'risk_level': fraud_result.get('risk_level', 'MINIMAL'),
+                        'risk_score': enhanced_risk_score,  # Use enhanced score
+                        'risk_level': self.get_risk_level(enhanced_risk_score),
                         'scam_type': fraud_result.get('scam_type', 'unknown'),
-                        'detected_patterns': fraud_result.get('detected_patterns', {}),
+                        'detected_patterns': session_patterns,  # Use accumulated patterns
                         'confidence': fraud_result.get('confidence', 0.0),
                         'explanation': fraud_result.get('explanation', ''),
+                        'pattern_count': len(session_patterns),
+                        'analysis_number': len(self.session_analysis_history[session_id]),
                         'timestamp': get_current_timestamp()
                     }
                 })
                 
-                risk_score = fraud_result.get('risk_score', 0)
-                
                 # Get policy guidance for medium/high risk
-                if risk_score >= 40:
-                    await self.get_policy_guidance(websocket, client_id, session_id, fraud_result)
+                if enhanced_risk_score >= 40:
+                    await self.get_enhanced_policy_guidance(websocket, client_id, session_id, {
+                        'risk_score': enhanced_risk_score,
+                        'scam_type': fraud_result.get('scam_type', 'unknown'),
+                        'detected_patterns': session_patterns
+                    })
                 
-                # Create case for high risk
-                if risk_score >= 80:
-                    await self.create_fraud_case(websocket, client_id, session_id, fraud_result)
-                
-                logger.info(f"✅ Fraud analysis complete: {risk_score}% risk")
+                logger.info(f"✅ Enhanced fraud analysis complete: {enhanced_risk_score}% risk ({len(session_patterns)} patterns)")
             
         except Exception as e:
-            logger.error(f"❌ Error in fraud analysis: {e}")
+            logger.error(f"❌ Error in enhanced fraud analysis: {e}")
     
-    async def get_policy_guidance(
+    def calculate_enhanced_risk_score(self, accumulated_patterns: Dict, customer_text: str) -> float:
+        """SCAM RISK FIX: Calculate enhanced risk score for better romance scam detection"""
+        total_score = 0.0
+        
+        # Enhanced scoring for romance scam patterns
+        for pattern_name, pattern_data in accumulated_patterns.items():
+            weight = pattern_data.get('weight', 20)
+            count = pattern_data.get('count', 1)
+            severity_multiplier = {
+                'critical': 2.5,  # Increased multiplier
+                'high': 2.0,      # Increased multiplier  
+                'medium': 1.5     # Increased multiplier
+            }.get(pattern_data.get('severity', 'medium'), 1.0)
+            
+            pattern_score = weight * count * severity_multiplier
+            
+            # ROMANCE SCAM FIX: Special boost for romance scam indicators
+            if pattern_name == 'romance_exploitation':
+                pattern_score *= 1.5  # 50% boost for romance patterns
+            
+            total_score += pattern_score
+        
+        # Additional contextual scoring for romance scams
+        text_lower = customer_text.lower()
+        if 'never met' in text_lower and 'emergency' in text_lower:
+            total_score += 25  # Big boost for this combination
+        if 'stuck' in text_lower and ('turkey' in text_lower or 'istanbul' in text_lower):
+            total_score += 20  # Location-specific boost
+        if 'camera broken' in text_lower or "can't video" in text_lower:
+            total_score += 15  # Video avoidance boost
+        
+        # Cap at 100 but be more aggressive in scoring
+        enhanced_score = min(total_score * 0.9, 100)  # Slightly more aggressive
+        return round(enhanced_score, 1)
+    
+    def get_risk_level(self, risk_score: float) -> str:
+        """Get risk level from score"""
+        if risk_score >= 80:
+            return "CRITICAL"
+        elif risk_score >= 60:
+            return "HIGH"
+        elif risk_score >= 40:
+            return "MEDIUM"
+        elif risk_score >= 20:
+            return "LOW"
+        else:
+            return "MINIMAL"
+    
+    async def get_enhanced_policy_guidance(
         self, 
         websocket: WebSocket, 
         client_id: str, 
         session_id: str, 
-        fraud_result: Dict
+        fraud_analysis: Dict
     ) -> None:
-        """Get and send policy guidance"""
+        """Get enhanced policy guidance"""
         
         try:
             await self.send_message(websocket, client_id, {
@@ -272,8 +355,8 @@ class FraudDetectionWebSocketHandler:
             
             # Get policy guidance
             policy_result = fraud_detection_system.policy_guide.process({
-                'scam_type': fraud_result.get('scam_type', 'unknown'),
-                'risk_score': fraud_result.get('risk_score', 0)
+                'scam_type': fraud_analysis.get('scam_type', 'unknown'),
+                'risk_score': fraud_analysis.get('risk_score', 0)
             })
             
             if 'error' not in policy_result:
@@ -286,242 +369,360 @@ class FraudDetectionWebSocketHandler:
                         'session_id': session_id,
                         'policy_id': primary_policy.get('policy_id', ''),
                         'policy_title': primary_policy.get('title', ''),
+                        'policy_version': primary_policy.get('version', ''),
                         'immediate_alerts': agent_guidance.get('immediate_alerts', []),
                         'recommended_actions': agent_guidance.get('recommended_actions', []),
                         'key_questions': agent_guidance.get('key_questions', []),
                         'customer_education': agent_guidance.get('customer_education', []),
+                        'escalation_threshold': primary_policy.get('escalation_threshold', 80),
                         'timestamp': get_current_timestamp()
                     }
                 })
                 
         except Exception as e:
-            logger.error(f"❌ Error getting policy guidance: {e}")
+            logger.error(f"❌ Error getting enhanced policy guidance: {e}")
     
-    async def create_fraud_case(
+    async def handle_processing_complete(
+        self, 
+        websocket: WebSocket, 
+        client_id: str, 
+        session_id: str
+    ) -> None:
+        """AUTO-INCIDENT CREATION: Handle processing completion with auto-incident creation"""
+        
+        try:
+            # Get final analysis
+            analysis_history = self.session_analysis_history.get(session_id, [])
+            if not analysis_history:
+                logger.warning(f"No analysis history for session {session_id}")
+                return
+            
+            final_analysis = analysis_history[-1]  # Get latest analysis
+            final_risk_score = final_analysis.get('risk_score', 0)
+            
+            logger.info(f"🏁 Processing complete for {session_id}, final risk: {final_risk_score}%")
+            
+            # AUTO-INCIDENT CREATION: Create incident for medium+ risk (>= 50%)
+            if final_risk_score >= 50:
+                await self.auto_create_incident_with_summary(websocket, client_id, session_id, final_analysis)
+            
+        except Exception as e:
+            logger.error(f"❌ Error handling processing completion: {e}")
+    
+    async def auto_create_incident_with_summary(
         self, 
         websocket: WebSocket, 
         client_id: str, 
         session_id: str, 
-        fraud_result: Dict
+        final_analysis: Dict
     ) -> None:
-        """Create fraud case for high-risk sessions"""
+        """AUTO-INCIDENT CREATION: Auto-create ServiceNow incident with enhanced summary"""
         
         try:
+            logger.info(f"📋 Auto-creating incident for session {session_id}")
+            
+            # Send notification
             await self.send_message(websocket, client_id, {
-                'type': 'case_creation_started',
+                'type': 'auto_incident_creation_started',
                 'data': {
                     'session_id': session_id,
+                    'risk_score': final_analysis.get('risk_score', 0),
+                    'reason': 'Medium/High risk detected - auto-creating incident',
                     'timestamp': get_current_timestamp()
                 }
             })
             
-            await asyncio.sleep(0.3)
-            
-            # Create case
-            case_result = fraud_detection_system.case_manager.process({
-                "session_id": session_id,
-                "fraud_analysis": fraud_result,
-                "customer_id": f"CUSTOMER_{session_id}"
+            # Send summarization progress
+            await self.send_message(websocket, client_id, {
+                'type': 'summarization_started',
+                'data': {
+                    'session_id': session_id,
+                    'agent': 'Enhanced Summarization System',
+                    'timestamp': get_current_timestamp()
+                }
             })
             
-            if 'error' not in case_result:
+            # Generate enhanced summary
+            summary_start_time = time.time()
+            transcript_summary = await self.generate_enhanced_summary(session_id, final_analysis)
+            summary_time = time.time() - summary_start_time
+            
+            # Send summarization complete
+            await self.send_message(websocket, client_id, {
+                'type': 'summarization_complete',
+                'data': {
+                    'session_id': session_id,
+                    'summary_length': len(transcript_summary),
+                    'processing_time': summary_time,
+                    'agent': 'enhanced_summarization_system',
+                    'timestamp': get_current_timestamp()
+                }
+            })
+            
+            # Prepare enhanced incident data
+            risk_score = final_analysis.get('risk_score', 0)
+            scam_type = final_analysis.get('scam_type', 'unknown')
+            detected_patterns = final_analysis.get('patterns', {})
+            
+            # Get customer info
+            customer_info = self.get_customer_info_from_session(session_id)
+            
+            incident_data = {
+                'customer_name': customer_info.get('name', 'Unknown Customer'),
+                'customer_account': customer_info.get('account', 'Unknown'),
+                'customer_phone': customer_info.get('phone', 'Unknown'),
+                'risk_score': risk_score,
+                'scam_type': scam_type,
+                'session_id': session_id,
+                'confidence_score': final_analysis.get('confidence', 0.0),
+                'transcript_summary': transcript_summary,
+                'detected_patterns': detected_patterns,
+                'recommended_actions': [
+                    f"Review {scam_type.replace('_', ' ')} indicators",
+                    "Verify customer safety and education provided",
+                    "Document fraud prevention actions taken",
+                    "Follow up with customer within 24 hours"
+                ],
+                'auto_created': True,
+                'creation_reason': f'Auto-created for {risk_score}% risk score',
+                'summary_generation_time': summary_time
+            }
+            
+            # Create incident via existing API (mock for demo)
+            incident_result = await self.create_servicenow_incident(incident_data)
+            
+            if incident_result.get('success'):
                 await self.send_message(websocket, client_id, {
-                    'type': 'case_created',
+                    'type': 'auto_incident_created',
                     'data': {
                         'session_id': session_id,
-                        'case_id': case_result.get('case_id'),
-                        'priority': case_result.get('priority'),
-                        'status': case_result.get('status'),
-                        'assigned_team': case_result.get('assigned_team'),
+                        'incident_number': incident_result.get('incident_number'),
+                        'incident_url': incident_result.get('incident_url'),
+                        'risk_score': risk_score,
+                        'summary_length': len(transcript_summary),
+                        'summary_generation_time': summary_time,
+                        'auto_created': True,
                         'timestamp': get_current_timestamp()
                     }
                 })
                 
+                logger.info(f"✅ Auto-created incident {incident_result.get('incident_number')} for session {session_id}")
+            else:
+                logger.error(f"❌ Failed to auto-create incident: {incident_result.get('error')}")
+            
         except Exception as e:
-            logger.error(f"❌ Error creating fraud case: {e}")
+            logger.error(f"❌ Error auto-creating incident: {e}")
     
-    async def handle_stop_processing(self, websocket: WebSocket, client_id: str, data: Dict) -> None:
-        """Handle request to stop processing with immediate action"""
-        
-        session_id = data.get('session_id')
-        if not session_id:
-            await self.send_error(websocket, client_id, "Missing session_id")
-            return
+    async def generate_enhanced_summary(self, session_id: str, final_analysis: Dict) -> str:
+        """Generate enhanced summary of the call transcription"""
         
         try:
-            logger.info(f"🛑 STOP request received for session {session_id}")
+            # Get full transcript and analysis data
+            customer_speech = self.customer_speech_buffer.get(session_id, [])
+            detected_patterns = final_analysis.get('patterns', {})
+            risk_score = final_analysis.get('risk_score', 0)
+            scam_type = final_analysis.get('scam_type', 'unknown')
+            confidence = final_analysis.get('confidence', 0.0)
             
-            # IMMEDIATE: Stop audio processing
-            stop_result = await audio_processor_agent.stop_streaming(session_id)
+            if not customer_speech:
+                return "No customer speech recorded for analysis."
             
-            # IMMEDIATE: Update session status
-            if session_id in self.active_sessions:
-                self.active_sessions[session_id]["status"] = "stopped"
+            # Get customer info
+            customer_info = self.get_customer_info_from_session(session_id)
+            customer_text = " ".join(customer_speech)
+            pattern_names = list(detected_patterns.keys())
             
-            # Send immediate confirmation to client
-            await self.send_message(websocket, client_id, {
-                'type': 'processing_stopped',
-                'data': {
-                    'session_id': session_id,
-                    'status': 'stopped',
-                    'message': 'Processing stopped immediately',
-                    'timestamp': get_current_timestamp()
-                }
-            })
+            # Create enhanced structured summary
+            summary = f"""FRAUD DETECTION INCIDENT SUMMARY
+
+EXECUTIVE SUMMARY:
+{risk_score}% risk {scam_type.replace('_', ' ')} detected involving {customer_info.get('name', 'customer')} (Account: {customer_info.get('account', 'unknown')}). {len(pattern_names)} fraud indicators identified requiring {'immediate intervention' if risk_score >= 80 else 'enhanced monitoring' if risk_score >= 60 else 'standard procedures with increased vigilance'}.
+
+CUSTOMER REQUEST ANALYSIS:
+Customer communication: "{customer_text[:300]}{'...' if len(customer_text) > 300 else ''}"
+
+Key request patterns suggest {self.analyze_request_type(customer_text, scam_type)}.
+
+FRAUD INDICATORS DETECTED:
+{self.format_patterns_summary(detected_patterns)}
+
+CUSTOMER BEHAVIOR ASSESSMENT:
+{self.assess_behavior_summary(customer_text, scam_type, risk_score)}
+
+RECOMMENDED ACTIONS:
+{self.get_summary_recommendations(risk_score, scam_type)}
+
+INCIDENT CLASSIFICATION:
+- Severity: {self.get_risk_level_description(risk_score)}
+- Financial Risk: {self.assess_financial_risk(risk_score)}
+- Escalation: {'Required' if risk_score >= 80 else 'Recommended' if risk_score >= 60 else 'Standard Review'}
+- Confidence: {confidence:.1%}
+
+ANALYSIS METADATA:
+- Session ID: {session_id}
+- Total Customer Segments: {len(customer_speech)}
+- Patterns Detected: {len(pattern_names)}
+- Analysis Iterations: {len(self.session_analysis_history.get(session_id, []))}
+
+Summary generated by Enhanced Fraud Detection System
+Generated: {get_current_timestamp()}
+"""
             
-            # Cleanup
-            self.cleanup_session(session_id)
-            
-            logger.info(f"✅ STOP completed for session {session_id}")
+            return summary.strip()
             
         except Exception as e:
-            logger.error(f"❌ Error stopping processing: {e}")
-            await self.send_error(websocket, client_id, f"Failed to stop: {str(e)}")
+            logger.error(f"❌ Error generating enhanced summary: {e}")
+            return f"Error generating summary: {str(e)}"
+    
+    def analyze_request_type(self, customer_text: str, scam_type: str) -> str:
+        """Analyze what the customer was requesting"""
+        text_lower = customer_text.lower()
+        
+        if "transfer" in text_lower or "send money" in text_lower:
+            return "international money transfer with urgency indicators"
+        elif "investment" in text_lower:
+            return "investment opportunity with guaranteed return promises"
+        elif "emergency" in text_lower:
+            return "emergency financial assistance request"
+        elif "help" in text_lower:
+            return "request for immediate financial help"
+        else:
+            return f"potential {scam_type.replace('_', ' ')} scenario"
+    
+    def format_patterns_summary(self, patterns: Dict) -> str:
+        """Format detected patterns for summary"""
+        if not patterns:
+            return "- No specific patterns detected by automated analysis"
+        
+        formatted = []
+        for pattern_name, pattern_data in patterns.items():
+            severity = pattern_data.get('severity', 'medium').upper()
+            count = pattern_data.get('count', 1)
+            matches = pattern_data.get('matches', [])
             
-            # Force cleanup even on error
-            self.cleanup_session(session_id)
-    
-    async def handle_status_request(self, websocket: WebSocket, client_id: str) -> None:
-        """Handle status request"""
+            formatted.append(f"- {pattern_name.replace('_', ' ').title()}: {severity} risk ({count} instances)")
+            if matches:
+                example = matches[0][:50] + "..." if len(matches[0]) > 50 else matches[0]
+                formatted.append(f"  Example: \"{example}\"")
         
-        try:
-            system_status = fraud_detection_system.get_agent_status()
-            audio_status = audio_processor_agent.get_all_sessions_status()
-            
-            await self.send_message(websocket, client_id, {
-                'type': 'status_response',
-                'data': {
-                    'system_status': system_status,
-                    'audio_processor_status': audio_status,
-                    'websocket_sessions': len(self.active_sessions),
-                    'timestamp': get_current_timestamp()
-                }
-            })
-            
-        except Exception as e:
-            logger.error(f"❌ Error getting status: {e}")
-            await self.send_error(websocket, client_id, f"Status error: {str(e)}")
+        return "\n".join(formatted)
     
-    def cleanup_session(self, session_id: str) -> None:
-        """Clean up session data"""
-        try:
-            if session_id in self.active_sessions:
-                del self.active_sessions[session_id]
-            if session_id in self.customer_speech_buffer:
-                del self.customer_speech_buffer[session_id]
-        except Exception as e:
-            logger.error(f"❌ Error cleaning up session {session_id}: {e}")
-    
-    def cleanup_client_sessions(self, client_id: str) -> None:
-        """Clean up all sessions for a disconnected client"""
-        sessions_to_cleanup = [
-            session_id for session_id, session in self.active_sessions.items()
-            if session.get('client_id') == client_id
-        ]
+    def assess_behavior_summary(self, customer_text: str, scam_type: str, risk_score: float) -> str:
+        """Assess customer behavior for summary"""
+        if risk_score >= 80:
+            behavior = "Customer shows strong indicators of being under social engineering influence"
+        elif risk_score >= 60:
+            behavior = "Customer demonstrates vulnerability to manipulation tactics"
+        elif risk_score >= 40:
+            behavior = "Customer behavior suggests potential exposure to fraud attempts"
+        else:
+            behavior = "Customer interaction within normal parameters"
         
-        for session_id in sessions_to_cleanup:
-            try:
-                asyncio.create_task(audio_processor_agent.stop_streaming(session_id))
-                self.cleanup_session(session_id)
-            except Exception as e:
-                logger.error(f"❌ Error cleaning up session {session_id}: {e}")
+        if scam_type == "romance_scam":
+            behavior += ". Emotional attachment to online relationship evident."
+        elif scam_type == "investment_scam":
+            behavior += ". Attracted to unrealistic investment promises."
+        elif scam_type == "impersonation_scam":
+            behavior += ". Responding to perceived authority without verification."
         
-        if sessions_to_cleanup:
-            logger.info(f"🧹 Cleaned up {len(sessions_to_cleanup)} sessions for {client_id}")
+        return behavior
     
-    async def send_message(self, websocket: WebSocket, client_id: str, message: Dict) -> bool:
-        """Send message to client"""
-        try:
-            await websocket.send_text(json.dumps(message))
-            return True
-        except WebSocketDisconnect:
-            logger.warning(f"🔌 Client {client_id} disconnected")
-            self.cleanup_client_sessions(client_id)
-            return False
-        except Exception as e:
-            logger.error(f"❌ Failed to send message to {client_id}: {e}")
-            return False
-    
-    async def send_error(self, websocket: WebSocket, client_id: str, error_message: str) -> None:
-        """Send error message to client"""
-        await self.send_message(websocket, client_id, {
-            'type': 'error',
-            'data': create_error_response(error_message, "PROCESSING_ERROR")
-        })
-    
-    def get_active_sessions_count(self) -> int:
-        """Get count of active sessions"""
-        return len(self.active_sessions)
-    
-    def get_connected_clients(self) -> List[str]:
-        """Get list of connected client IDs"""
-        return [session['client_id'] for session in self.active_sessions.values()]
-    
-    def is_session_active(self, session_id: str) -> bool:
-        """Check if a session is currently active"""
-        return session_id in self.active_sessions
-    
-    def get_session_info(self, session_id: str) -> Optional[Dict]:
-        """Get information about a specific session"""
-        if session_id not in self.active_sessions:
-            return None
+    def get_summary_recommendations(self, risk_score: float, scam_type: str) -> str:
+        """Get recommendations for summary"""
+        recommendations = []
         
-        session = self.active_sessions[session_id]
+        if risk_score >= 80:
+            recommendations.extend([
+                "- IMMEDIATE: Stop all pending transactions",
+                "- IMMEDIATE: Escalate to Fraud Prevention Team",
+                "- Contact customer via secure channel within 15 minutes"
+            ])
+        elif risk_score >= 60:
+            recommendations.extend([
+                "- Enhanced verification procedures required",
+                "- Monitor account for 48 hours",
+                "- Schedule supervisor review"
+            ])
+        elif risk_score >= 40:
+            recommendations.extend([
+                "- Document interaction thoroughly",
+                "- Provide customer education materials",
+                "- Standard monitoring procedures"
+            ])
+        
+        recommendations.extend([
+            f"- Educate customer on {scam_type.replace('_', ' ')} warning signs",
+            "- Follow up within 24-48 hours",
+            "- Update customer risk profile"
+        ])
+        
+        return "\n".join(recommendations)
+    
+    def get_risk_level_description(self, risk_score: float) -> str:
+        """Get descriptive risk level"""
+        if risk_score >= 80:
+            return "CRITICAL - Immediate intervention required"
+        elif risk_score >= 60:
+            return "HIGH - Enhanced monitoring and verification needed"
+        elif risk_score >= 40:
+            return "MEDIUM - Caution advised with standard procedures"
+        else:
+            return "LOW - Standard processing with documentation"
+    
+    def assess_financial_risk(self, risk_score: float) -> str:
+        """Assess financial risk level"""
+        if risk_score >= 80:
+            return "HIGH - Significant financial loss potential"
+        elif risk_score >= 60:
+            return "MEDIUM - Moderate financial exposure"
+        elif risk_score >= 40:
+            return "LOW - Limited financial risk"
+        else:
+            return "MINIMAL - Standard transaction risk"
+    
+    def get_customer_info_from_session(self, session_id: str) -> Dict:
+        """Get customer info for the session"""
+        session_data = self.active_sessions.get(session_id, {})
+        filename = session_data.get('filename', '')
+        
+        # Customer profiles based on audio file
+        customer_profiles = {
+            'romance_scam': {
+                'name': 'Mrs Patricia Williams',
+                'account': '****3847',
+                'phone': '+44 1202 555123'
+            },
+            'investment_scam': {
+                'name': 'Mr David Chen', 
+                'account': '****5691',
+                'phone': '+44 161 555456'
+            },
+            'impersonation_scam': {
+                'name': 'Ms Sarah Thompson',
+                'account': '****7234', 
+                'phone': '+44 121 555789'
+            }
+        }
+        
+        for scam_type, profile in customer_profiles.items():
+            if scam_type in filename:
+                return profile
+                
         return {
-            "session_id": session_id,
-            "client_id": session.get('client_id'),
-            "filename": session.get('filename'),
-            "status": session.get('status'),
-            "start_time": session.get('start_time', '').isoformat() if session.get('start_time') else '',
-            "customer_speech_segments": len(self.customer_speech_buffer.get(session_id, []))
+            'name': 'Unknown Customer',
+            'account': '****0000',
+            'phone': 'Unknown'
         }
     
-    async def get_session_transcription(self, session_id: str) -> Optional[List[Dict]]:
-        """Get transcription segments for a session"""
-        if session_id in self.active_sessions:
-            # Get transcription from audio processor
-            return audio_processor_agent.get_session_transcription(session_id)
-        return None
-    
-    async def get_customer_speech_history(self, session_id: str) -> Optional[List[str]]:
-        """Get customer speech history for fraud analysis"""
-        if session_id in self.customer_speech_buffer:
-            return self.customer_speech_buffer[session_id].copy()
-        return None
-    
-    async def cleanup_stale_sessions(self, max_age_hours: int = 2) -> int:
-        """Clean up stale sessions"""
-        current_time = datetime.now()
-        stale_sessions = []
-        
-        for session_id, session in self.active_sessions.items():
-            start_time = session.get("start_time")
-            if start_time:
-                age_hours = (current_time - start_time).total_seconds() / 3600
-                if age_hours > max_age_hours:
-                    stale_sessions.append(session_id)
-        
-        cleaned_count = 0
-        for session_id in stale_sessions:
-            try:
-                await audio_processor_agent.stop_streaming(session_id)
-                self.cleanup_session(session_id)
-                cleaned_count += 1
-            except Exception as e:
-                logger.error(f"❌ Error cleaning stale session {session_id}: {e}")
-        
-        if cleaned_count > 0:
-            logger.info(f"🧹 Cleaned up {cleaned_count} stale sessions")
-        
-        return cleaned_count
-    
-    def get_system_stats(self) -> Dict[str, Any]:
-        """Get system statistics"""
-        return {
-            'handler_type': 'SimplifiedFraudDetectionHandler',
-            'active_sessions': len(self.active_sessions),
-            'audio_processor_sessions': len(audio_processor_agent.active_sessions),
-            'customer_speech_buffers': len(self.customer_speech_buffer),
-            'system_status': 'operational',
-            'timestamp': get_current_timestamp()
-        }
+    async def create_servicenow_incident(self, incident_data: Dict) -> Dict:
+        """Create ServiceNow incident (mock for demo)"""
+        try:
+            # Mock successful incident creation
+            return {
+                'success': True,
+                'incident_number': f"INC{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                'incident_url': f"https://dev303197.service-now.com/incident/{incident_data['session_id']}"
+            }
+        except Exception as e:
+            return {
+                '

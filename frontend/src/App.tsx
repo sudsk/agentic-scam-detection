@@ -1,4 +1,4 @@
-// frontend/src/App.tsx - CHUNK 1: Imports and Types
+// frontend/src/App.tsx - CHUNK 1: Imports, Types, and Configuration
 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
@@ -29,7 +29,10 @@ import {
   Headphones,
   Bot,
   Zap,
-  BookOpen
+  BookOpen,
+  ExternalLink,
+  Activity,
+  Sparkles
 } from 'lucide-react';
 
 // Environment configuration
@@ -119,7 +122,15 @@ interface ADKProcessingState {
   processingSteps: string[];
 }
 
-// frontend/src/App.tsx - CHUNK 2: Configuration Data
+interface OrchestratorDecision {
+  decision: string;
+  reasoning: string;
+  priority: string;
+  immediate_actions: string[];
+  case_creation_required: boolean;
+  escalation_path: string;
+  customer_impact: string;
+}
 
 // ===== CONFIGURATION DATA =====
 
@@ -216,8 +227,6 @@ const defaultCustomerProfile: CustomerProfile = {
   alerts: []
 };
 
-// frontend/src/App.tsx - CHUNK 3: Utility Functions
-
 // ===== UTILITY FUNCTIONS =====
 
 const getSpeakerIcon = (speaker: string) => {
@@ -253,7 +262,17 @@ const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-// frontend/src/App.tsx - CHUNK 4: Component State
+const getScamTypeIcon = (scamType: string) => {
+  switch (scamType) {
+    case 'romance_scam': return '💕';
+    case 'investment_scam': return '💰';
+    case 'impersonation_scam': return '🎭';
+    case 'authority_scam': return '👮';
+    default: return '❓';
+  }
+};
+
+// frontend/src/App.tsx - CHUNK 2: Main Component State and WebSocket Functions
 
 // ===== MAIN COMPONENT =====
 
@@ -274,6 +293,7 @@ function App() {
   const [showingSegments, setShowingSegments] = useState<AudioSegment[]>([]);
   const [scamType, setScamType] = useState<string>('unknown');
   const [currentCustomer, setCurrentCustomer] = useState<CustomerProfile>(defaultCustomerProfile);
+  const [orchestratorDecision, setOrchestratorDecision] = useState<OrchestratorDecision | null>(null);
   
   // ===== BACKEND INTEGRATION STATE =====
   const [audioFiles, setAudioFiles] = useState<RealAudioFile[]>([]);
@@ -300,8 +320,6 @@ function App() {
   
   // ===== REFS =====
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-// frontend/src/App.tsx - CHUNK 5: WebSocket Functions
 
   // ===== WEBSOCKET FUNCTIONS =====
 
@@ -349,8 +367,6 @@ function App() {
       console.error('❌ Error creating WebSocket connection:', error);
     }
   };
-
-// frontend/src/App.tsx - CHUNK 6: Message Handling Part 1
 
   const handleWebSocketMessage = (message: WebSocketMessage): void => {
     console.log('📨 WebSocket message received:', message);
@@ -403,9 +419,7 @@ function App() {
       case 'policy_guidance_ready':
         handlePolicyGuidanceReady(message.data);
         break;
-		    
-// frontend/src/App.tsx - CHUNK 7: Message Handling Part 2
-
+        
       case 'adk_orchestrator_started':
         setAdkProcessing(prev => ({
           ...prev,
@@ -417,12 +431,7 @@ function App() {
         break;
         
       case 'adk_orchestrator_decision':
-        setAdkProcessing(prev => ({
-          ...prev,
-          orchestratorActive: false,
-          processingSteps: [...prev.processingSteps, '✅ ADK Orchestrator decision complete']
-        }));
-        setProcessingStage('✅ ADK Orchestrator decision ready');
+        handleOrchestratorDecision(message.data);
         break;
         
       case 'adk_summarization_started':
@@ -480,8 +489,6 @@ function App() {
         console.log('Unknown message type:', message.type);
     }
   };
-
-// frontend/src/App.tsx - CHUNK 8: Message Handlers
 
   // ===== MESSAGE HANDLERS =====
 
@@ -580,6 +587,16 @@ function App() {
     setProcessingStage('📚 RAG Policy guidance ready');
   };
 
+  const handleOrchestratorDecision = (data: any) => {
+    setOrchestratorDecision(data.decision);
+    setAdkProcessing(prev => ({
+      ...prev,
+      orchestratorActive: false,
+      processingSteps: [...prev.processingSteps, `✅ ADK Decision: ${data.decision?.decision || 'Complete'}`]
+    }));
+    setProcessingStage(`🎭 ADK Decision: ${data.decision?.decision || 'Complete'}`);
+  };
+
   const handleAutoIncidentCreated = (data: any) => {
     setAutoIncidentCreated(data.incident_number);
     setProcessingStage(`✅ ADK Auto-incident: ${data.incident_number}`);
@@ -600,7 +617,7 @@ function App() {
     }
   };
 
-// frontend/src/App.tsx - CHUNK 9: Audio Processing Functions
+// frontend/src/App.tsx - CHUNK 3: Audio Processing and Utility Functions
 
   // ===== AUDIO PROCESSING FUNCTIONS =====
 
@@ -733,8 +750,6 @@ function App() {
     }
   };
 
-// frontend/src/App.tsx - CHUNK 10: Utility and Service Functions
-
   // ===== UTILITY FUNCTIONS =====
 
   const resetState = (): void => {
@@ -746,6 +761,7 @@ function App() {
     setAccumulatedPatterns({});
     setAnalysisHistory([]);
     setPolicyGuidance(null);
+    setOrchestratorDecision(null);
     setProcessingStage('');
     setShowingSegments([]);
     setSessionId('');
@@ -848,11 +864,10 @@ Click OK to open the case in ServiceNow.
       
     } catch (error) {
       console.error('Error creating ServiceNow case:', error);
-      setProcessingStage(`❌ Error: ${error instanceof Error ? error.me// frontend/src/App.tsx - CHUNK 10: Utility and Service Functions
-
-  // ===== UTILITY FUNCTIONS =====
-
-// frontend/src/App.tsx - CHUNK 11: Component Functions
+      setProcessingStage(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`Error creating case: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
 
   // ===== COMPONENT FUNCTIONS =====
 
@@ -923,7 +938,7 @@ Click OK to open the case in ServiceNow.
     };
   }, []);
 
-// frontend/src/App.tsx - CHUNK 12: JSX Header and Demo Section
+// frontend/src/App.tsx - CHUNK 4: Complete JSX UI Layout
 
   // ===== RENDER =====
 
@@ -1006,7 +1021,6 @@ Click OK to open the case in ServiceNow.
           </div>
         </div>
       </div>
-// frontend/src/App.tsx - CHUNK 13: Left Sidebar Customer Info
 
       {/* Main Content Grid */}
       <div className="flex h-[calc(100vh-120px)]">
@@ -1088,7 +1102,6 @@ Click OK to open the case in ServiceNow.
               </div>
             </div>
           </div>
-// frontend/src/App.tsx - CHUNK 14: Left Sidebar Quick Actions and ADK Status
 
           {/* Enhanced Quick Actions */}
           <div className="p-4 border-b border-gray-200">
@@ -1131,9 +1144,9 @@ Click OK to open the case in ServiceNow.
                       const url = `https://dev303197.service-now.com/incident/${autoIncidentCreated}`;
                       window.open(url, '_blank');
                     }}
-                    className="ml-auto text-xs text-green-600 hover:text-green-800"
+                    className="ml-auto text-xs text-green-600 hover:text-green-800 flex items-center"
                   >
-                    View
+                    <ExternalLink className="w-3 h-3" />
                   </button>
                 </div>
               )}
@@ -1175,7 +1188,6 @@ Click OK to open the case in ServiceNow.
               )}
             </div>
           )}
-// frontend/src/App.tsx - CHUNK 15: Left Sidebar Recent Activity and Center Transcription
 
           {/* Recent Activity */}
           <div className="p-4 flex-1">
@@ -1254,9 +1266,6 @@ Click OK to open the case in ServiceNow.
             </div>
           </div>
 
-
-// frontend/src/App.tsx - CHUNK 16: Transcription Content
-
           <div className="p-4 h-full overflow-y-auto">
             {showingSegments.length === 0 ? (
               <div className="flex items-center justify-center h-64 text-gray-500">
@@ -1331,4 +1340,125 @@ Click OK to open the case in ServiceNow.
                         isInterim 
                           ? 'bg-yellow-50 border-yellow-400' 
                           : segment.speaker === 'customer'
-                          ?		
+                          ? 'bg-blue-50 border-blue-400'
+                          : 'bg-green-50 border-green-400'
+                      }`}>
+                        <p className="text-sm text-gray-800">{segment.text}</p>
+                        <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+                          <span>{formatTime(segment.start)}</span>
+                          {segment.confidence && (
+                            <span>Confidence: {Math.round(segment.confidence * 100)}%</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Sidebar - Enhanced Analysis Results */}
+        <div className="w-96 bg-white overflow-y-auto">
+          {/* Enhanced Risk Assessment */}
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+              <Shield className="w-5 h-5 mr-2" />
+              Risk Assessment
+              {riskScore > 0 && (
+                <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                  ADK
+                </span>
+              )}
+            </h3>
+            
+            <div className="space-y-4">
+              {/* Risk Score Display */}
+              <div className="text-center">
+                <div className={`inline-flex items-center px-4 py-2 rounded-lg text-lg font-bold border-2 ${getRiskColor(riskScore)}`}>
+                  <TrendingUp className="w-5 h-5 mr-2" />
+                  {riskScore.toFixed(1)}% Risk
+                </div>
+                <p className="text-sm text-gray-600 mt-2">Risk Level: {riskLevel}</p>
+                
+                {/* Scam Type Display */}
+                {scamType !== 'unknown' && (
+                  <div className="mt-2 flex items-center justify-center space-x-2">
+                    <span className="text-lg">{getScamTypeIcon(scamType)}</span>
+                    <span className="text-sm font-medium text-gray-700">
+                      {scamType.replace('_', ' ').toUpperCase()}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Progress Indicator */}
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className={`h-2 rounded-full transition-all duration-500 ${
+                    riskScore >= 80 ? 'bg-red-500' :
+                    riskScore >= 60 ? 'bg-orange-500' :
+                    riskScore >= 40 ? 'bg-yellow-500' :
+                    'bg-green-500'
+                  }`}
+                  style={{ width: `${Math.min(riskScore, 100)}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Enhanced Detected Patterns */}
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+              <Brain className="w-4 h-4 mr-2" />
+              Detected Patterns
+              {Object.keys(accumulatedPatterns).length > 0 && (
+                <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                  ADK
+                </span>
+              )}
+            </h3>
+            
+            {Object.keys(accumulatedPatterns).length === 0 ? (
+              <p className="text-sm text-gray-500">No patterns detected yet</p>
+            ) : (
+              <div className="space-y-2">
+                {Object.entries(accumulatedPatterns).map(([key, pattern]) => (
+                  <div key={key} className="p-2 bg-gray-50 rounded border">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">
+                        {pattern.pattern_name.replace('_', ' ').toUpperCase()}
+                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          pattern.severity === 'critical' ? 'bg-red-100 text-red-800' :
+                          pattern.severity === 'high' ? 'bg-orange-100 text-orange-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {pattern.severity}
+                        </span>
+                        <span className="text-xs text-gray-600">×{pattern.count}</span>
+                      </div>
+                    </div>
+                    {pattern.matches && pattern.matches.length > 0 && (
+                      <div className="mt-1">
+                        <p className="text-xs text-gray-600">
+                          Matches: {pattern.matches.slice(0, 2).join(', ')}
+                          {pattern.matches.length > 2 && '...'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* RAG Policy Guidance */}
+          {policyGuidance && (
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <BookOpen className="w-4 h-4 mr-2" />
+                Policy Guidance
+                {policyGuidance.

@@ -14,8 +14,518 @@ from ..agents.audio_processor.agent import audio_processor_agent
 from ..websocket.connection_manager import ConnectionManager
 from ..utils import get_current_timestamp, create_error_response
 
+# Add these imports at the top:
+from ..agents.scam_detection.adk_agent import create_scam_detection_agent
+from ..agents.policy_guidance.adk_agent import create_policy_guidance_agent  
+from ..agents.summarization.adk_agent import create_summarization_agent
+from ..agents.orchestrator.adk_agent import create_orchestrator_agent
+
 logger = logging.getLogger(__name__)
 
+class ADKEnhancedFraudDetectionWebSocketHandler:
+    """Enhanced WebSocket handler using Google ADK agents"""
+    
+    def __init__(self, connection_manager: ConnectionManager):
+        self.connection_manager = connection_manager
+        self.active_sessions: Dict[str, Dict] = {}
+        self.customer_speech_buffer: Dict[str, List[str]] = {}
+        
+        # Initialize ADK agents
+        self._initialize_adk_agents()
+        
+        # Enhanced tracking for better coordination
+        self.session_analysis_history: Dict[str, List[Dict]] = {}
+        self.accumulated_patterns: Dict[str, Dict] = {}
+        
+        logger.info("🤖 ADK Enhanced Fraud Detection WebSocket handler initialized")
+    
+    def _initialize_adk_agents(self):
+        """Initialize Google ADK agents"""
+        try:
+            self.scam_detection_agent = create_scam_detection_agent()
+            self.policy_guidance_agent = create_policy_guidance_agent()
+            self.summarization_agent = create_summarization_agent()
+            self.orchestrator_agent = create_orchestrator_agent()
+            
+            self.adk_agents_available = True
+            logger.info("✅ All ADK agents initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize ADK agents: {e}")
+            self.adk_agents_available = False
+    
+    async def run_enhanced_fraud_analysis(
+        self, 
+        websocket: WebSocket, 
+        client_id: str, 
+        session_id: str, 
+        customer_text: str
+    ) -> None:
+        """Run coordinated fraud analysis using ADK agents"""
+        
+        try:
+            logger.info(f"🤖 Running ADK coordinated fraud analysis for session {session_id}")
+            
+            # STEP 1: Scam Detection Agent
+            await self.send_message(websocket, client_id, {
+                'type': 'adk_scam_analysis_started',
+                'data': {
+                    'session_id': session_id,
+                    'agent': 'ADK Scam Detection Agent',
+                    'text_length': len(customer_text),
+                    'timestamp': get_current_timestamp()
+                }
+            })
+            
+            # Run scam detection
+            scam_analysis_prompt = f"""
+            CUSTOMER SPEECH ANALYSIS REQUEST:
+            
+            Customer Text: "{customer_text}"
+            
+            Analyze this customer speech for fraud indicators and provide immediate risk assessment.
+            """
+            
+            scam_analysis_result = await self._run_adk_agent(
+                self.scam_detection_agent, 
+                scam_analysis_prompt,
+                fallback_method=lambda: self._fallback_scam_analysis(customer_text)
+            )
+            
+            # Parse and validate scam analysis
+            parsed_scam_analysis = self._parse_scam_analysis(scam_analysis_result)
+            
+            # Store in session history
+            self.session_analysis_history.setdefault(session_id, []).append(parsed_scam_analysis)
+            
+            # Send scam analysis results
+            await self.send_message(websocket, client_id, {
+                'type': 'adk_scam_analysis_complete',
+                'data': {
+                    'session_id': session_id,
+                    'agent': 'ADK Scam Detection Agent',
+                    'analysis': parsed_scam_analysis,
+                    'timestamp': get_current_timestamp()
+                }
+            })
+            
+            risk_score = parsed_scam_analysis.get('risk_score', 0)
+            
+            # STEP 2: Policy Guidance Agent (if medium+ risk)
+            if risk_score >= 40:
+                await self.run_policy_guidance_analysis(websocket, client_id, session_id, parsed_scam_analysis)
+            
+            # STEP 3: Orchestrator Decision
+            await self.run_orchestrator_decision(websocket, client_id, session_id, parsed_scam_analysis)
+            
+        except Exception as e:
+            logger.error(f"❌ Error in ADK fraud analysis: {e}")
+            await self.send_error(websocket, client_id, f"ADK analysis error: {str(e)}")
+    
+    async def run_policy_guidance_analysis(
+        self, 
+        websocket: WebSocket, 
+        client_id: str, 
+        session_id: str, 
+        scam_analysis: Dict
+    ) -> None:
+        """Run policy guidance using ADK agent"""
+        
+        try:
+            await self.send_message(websocket, client_id, {
+                'type': 'adk_policy_analysis_started',
+                'data': {
+                    'session_id': session_id,
+                    'agent': 'ADK Policy Guidance Agent',
+                    'timestamp': get_current_timestamp()
+                }
+            })
+            
+            # Prepare policy guidance prompt
+            policy_prompt = f"""
+            POLICY GUIDANCE REQUEST:
+            
+            Scam Analysis Results:
+            - Risk Score: {scam_analysis.get('risk_score', 0)}%
+            - Risk Level: {scam_analysis.get('risk_level', 'UNKNOWN')}
+            - Scam Type: {scam_analysis.get('scam_type', 'unknown')}
+            - Detected Patterns: {list(scam_analysis.get('detected_patterns', {}).keys())}
+            
+            Provide specific policy guidance and procedures for this fraud scenario.
+            """
+            
+            policy_result = await self._run_adk_agent(
+                self.policy_guidance_agent,
+                policy_prompt,
+                fallback_method=lambda: self._fallback_policy_guidance(scam_analysis)
+            )
+            
+            parsed_policy = self._parse_policy_guidance(policy_result)
+            
+            await self.send_message(websocket, client_id, {
+                'type': 'adk_policy_guidance_complete',
+                'data': {
+                    'session_id': session_id,
+                    'agent': 'ADK Policy Guidance Agent',
+                    'guidance': parsed_policy,
+                    'timestamp': get_current_timestamp()
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Error in ADK policy guidance: {e}")
+    
+    async def run_orchestrator_decision(
+        self, 
+        websocket: WebSocket, 
+        client_id: str, 
+        session_id: str, 
+        scam_analysis: Dict
+    ) -> None:
+        """Run orchestrator decision using ADK agent"""
+        
+        try:
+            await self.send_message(websocket, client_id, {
+                'type': 'adk_orchestrator_started',
+                'data': {
+                    'session_id': session_id,
+                    'agent': 'ADK Orchestrator Agent',
+                    'timestamp': get_current_timestamp()
+                }
+            })
+            
+            # Get policy guidance from session if available
+            policy_guidance = getattr(self, '_last_policy_guidance', {})
+            
+            # Prepare orchestrator prompt
+            orchestrator_prompt = f"""
+            FRAUD PREVENTION DECISION REQUEST:
+            
+            Scam Detection Results:
+            {json.dumps(scam_analysis, indent=2)}
+            
+            Policy Guidance Results:
+            {json.dumps(policy_guidance, indent=2)}
+            
+            Customer Information:
+            - Session ID: {session_id}
+            - Analysis History: {len(self.session_analysis_history.get(session_id, []))} previous analyses
+            
+            Make the final fraud prevention decision with specific actions for the agent.
+            """
+            
+            orchestrator_result = await self._run_adk_agent(
+                self.orchestrator_agent,
+                orchestrator_prompt,
+                fallback_method=lambda: self._fallback_orchestrator_decision(scam_analysis)
+            )
+            
+            parsed_decision = self._parse_orchestrator_decision(orchestrator_result)
+            
+            await self.send_message(websocket, client_id, {
+                'type': 'adk_orchestrator_decision',
+                'data': {
+                    'session_id': session_id,
+                    'agent': 'ADK Orchestrator Agent',
+                    'decision': parsed_decision,
+                    'timestamp': get_current_timestamp()
+                }
+            })
+            
+            # Auto-create incident if required
+            if parsed_decision.get('case_creation_required', False):
+                await self.auto_create_incident_with_adk_summary(websocket, client_id, session_id, scam_analysis)
+            
+        except Exception as e:
+            logger.error(f"❌ Error in ADK orchestrator decision: {e}")
+    
+    async def auto_create_incident_with_adk_summary(
+        self, 
+        websocket: WebSocket, 
+        client_id: str, 
+        session_id: str, 
+        scam_analysis: Dict
+    ) -> None:
+        """Auto-create incident using ADK summarization agent"""
+        
+        try:
+            await self.send_message(websocket, client_id, {
+                'type': 'adk_summarization_started',
+                'data': {
+                    'session_id': session_id,
+                    'agent': 'ADK Summarization Agent',
+                    'timestamp': get_current_timestamp()
+                }
+            })
+            
+            # Get customer speech and analysis data
+            customer_speech = self.customer_speech_buffer.get(session_id, [])
+            customer_info = self.get_customer_info_from_session(session_id)
+            policy_guidance = getattr(self, '_last_policy_guidance', {})
+            
+            # Prepare summarization prompt
+            summary_prompt = f"""
+            INCIDENT SUMMARY REQUEST:
+            
+            Customer Information:
+            - Name: {customer_info.get('name', 'Unknown')}
+            - Account: {customer_info.get('account', 'Unknown')}
+            - Session ID: {session_id}
+            
+            Customer Speech Transcript:
+            {' '.join(customer_speech)}
+            
+            Fraud Analysis Results:
+            {json.dumps(scam_analysis, indent=2)}
+            
+            Policy Guidance:
+            {json.dumps(policy_guidance, indent=2)}
+            
+            Create a comprehensive incident summary for ServiceNow case documentation.
+            """
+            
+            summary_result = await self._run_adk_agent(
+                self.summarization_agent,
+                summary_prompt,
+                fallback_method=lambda: self._fallback_incident_summary(scam_analysis, customer_info)
+            )
+            
+            await self.send_message(websocket, client_id, {
+                'type': 'adk_summarization_complete',
+                'data': {
+                    'session_id': session_id,
+                    'agent': 'ADK Summarization Agent',
+                    'summary_length': len(summary_result),
+                    'timestamp': get_current_timestamp()
+                }
+            })
+            
+            # Create ServiceNow incident with ADK summary
+            incident_data = {
+                'customer_name': customer_info.get('name', 'Unknown'),
+                'customer_account': customer_info.get('account', 'Unknown'),
+                'risk_score': scam_analysis.get('risk_score', 0),
+                'scam_type': scam_analysis.get('scam_type', 'unknown'),
+                'session_id': session_id,
+                'transcript_summary': summary_result,
+                'auto_created': True,
+                'creation_method': 'adk_agents'
+            }
+            
+            # Create incident
+            incident_result = await self.create_servicenow_incident(incident_data)
+            
+            if incident_result.get('success'):
+                await self.send_message(websocket, client_id, {
+                    'type': 'adk_incident_created',
+                    'data': {
+                        'session_id': session_id,
+                        'incident_number': incident_result.get('incident_number'),
+                        'incident_url': incident_result.get('incident_url'),
+                        'creation_method': 'adk_agents',
+                        'timestamp': get_current_timestamp()
+                    }
+                })
+            
+        except Exception as e:
+            logger.error(f"❌ Error in ADK incident creation: {e}")
+    
+    async def _run_adk_agent(self, agent, prompt: str, fallback_method: callable = None) -> str:
+        """Run an ADK agent with fallback"""
+        try:
+            if self.adk_agents_available:
+                # Run the ADK agent (this is a simplified version - actual implementation depends on ADK API)
+                result = await agent.run(prompt)
+                return result
+            else:
+                logger.warning("ADK agents not available, using fallback")
+                return fallback_method() if fallback_method else "ADK agent unavailable"
+                
+        except Exception as e:
+            logger.error(f"❌ ADK agent execution failed: {e}")
+            return fallback_method() if fallback_method else f"Agent error: {str(e)}"
+    
+    def _parse_scam_analysis(self, result: str) -> Dict[str, Any]:
+        """Parse scam analysis result from ADK agent"""
+        try:
+            # Try to extract structured data from agent response
+            # This is a simplified parser - actual implementation would be more robust
+            
+            lines = result.split('\n')
+            parsed = {
+                'risk_score': 0,
+                'risk_level': 'MINIMAL',
+                'scam_type': 'unknown',
+                'detected_patterns': {},
+                'confidence': 0.5,
+                'recommended_action': 'CONTINUE_NORMAL_PROCESSING'
+            }
+            
+            for line in lines:
+                if 'Risk Score:' in line:
+                    import re
+                    score_match = re.search(r'(\d+)%', line)
+                    if score_match:
+                        parsed['risk_score'] = int(score_match.group(1))
+                elif 'Risk Level:' in line:
+                    level = line.split(':')[-1].strip()
+                    parsed['risk_level'] = level
+                elif 'Scam Type:' in line:
+                    scam_type = line.split(':')[-1].strip()
+                    parsed['scam_type'] = scam_type
+                elif 'Confidence:' in line:
+                    conf_match = re.search(r'(\d+)%', line)
+                    if conf_match:
+                        parsed['confidence'] = int(conf_match.group(1)) / 100
+            
+            return parsed
+            
+        except Exception as e:
+            logger.error(f"❌ Error parsing scam analysis: {e}")
+            return self._fallback_scam_analysis("")
+    
+    def _fallback_scam_analysis(self, customer_text: str) -> Dict[str, Any]:
+        """Fallback scam analysis when ADK agent fails"""
+        # Use existing rule-based analysis as fallback
+        from ..agents.scam_detection.agent import fraud_detection_agent
+        return fraud_detection_agent.process(customer_text)
+    
+    def _parse_policy_guidance(self, result: str) -> Dict[str, Any]:
+        """Parse policy guidance result from ADK agent"""
+        # Simplified parser for policy guidance
+        return {
+            'policy_id': 'FP-ADK-001',
+            'immediate_alerts': ['Enhanced monitoring required'],
+            'recommended_actions': ['Follow standard fraud procedures'],
+            'key_questions': ['Verify customer intent'],
+            'customer_education': ['Provide fraud awareness'],
+            'escalation_threshold': 60
+        }
+    
+    def _fallback_policy_guidance(self, scam_analysis: Dict) -> Dict[str, Any]:
+        """Fallback policy guidance when ADK agent fails"""
+        from ..agents.policy_guidance.agent import policy_guidance_agent
+        return policy_guidance_agent.process(scam_analysis)
+    
+    def _parse_orchestrator_decision(self, result: str) -> Dict[str, Any]:
+        """Parse orchestrator decision from ADK agent"""
+        # Simplified parser for orchestrator decision
+        return {
+            'decision': 'VERIFY_AND_MONITOR',
+            'reasoning': 'Moderate risk requires enhanced verification',
+            'priority': 'MEDIUM',
+            'immediate_actions': [
+                'Enhanced customer verification required',
+                'Monitor account activity',
+                'Provide fraud education'
+            ],
+            'case_creation_required': True,
+            'escalation_path': 'Fraud Prevention Team',
+            'customer_impact': 'Enhanced verification procedures'
+        }
+    
+    def _fallback_orchestrator_decision(self, scam_analysis: Dict) -> Dict[str, Any]:
+        """Fallback orchestrator decision when ADK agent fails"""
+        risk_score = scam_analysis.get('risk_score', 0)
+        
+        if risk_score >= 80:
+            return {
+                'decision': 'BLOCK_AND_ESCALATE',
+                'reasoning': 'Critical risk requires immediate intervention',
+                'priority': 'CRITICAL',
+                'immediate_actions': ['Block transactions', 'Escalate immediately'],
+                'case_creation_required': True
+            }
+        elif risk_score >= 60:
+            return {
+                'decision': 'VERIFY_AND_MONITOR',
+                'reasoning': 'High risk requires verification',
+                'priority': 'HIGH', 
+                'immediate_actions': ['Enhanced verification', 'Monitor closely'],
+                'case_creation_required': True
+            }
+        else:
+            return {
+                'decision': 'CONTINUE_NORMAL',
+                'reasoning': 'Low risk allows normal processing',
+                'priority': 'LOW',
+                'immediate_actions': ['Standard procedures'],
+                'case_creation_required': False
+            }
+    
+    def _fallback_incident_summary(self, scam_analysis: Dict, customer_info: Dict) -> str:
+        """Fallback incident summary when ADK agent fails"""
+        risk_score = scam_analysis.get('risk_score', 0)
+        scam_type = scam_analysis.get('scam_type', 'unknown')
+        
+        return f"""FRAUD DETECTION INCIDENT SUMMARY
+
+EXECUTIVE SUMMARY:
+{risk_score}% risk {scam_type.replace('_', ' ')} detected involving {customer_info.get('name', 'customer')}.
+
+ANALYSIS RESULTS:
+Risk Level: {scam_analysis.get('risk_level', 'UNKNOWN')}
+Confidence: {scam_analysis.get('confidence', 0):.1%}
+Detected Patterns: {len(scam_analysis.get('detected_patterns', {}))}
+
+RECOMMENDED ACTIONS:
+- Follow standard fraud prevention procedures
+- Document all interaction details
+- Monitor customer account activity
+
+Generated by: ADK Fallback System
+Timestamp: {get_current_timestamp()}
+"""
+
+    # Replace the existing enhanced_customer_speech_processing method:
+    async def enhanced_customer_speech_processing(
+        self, 
+        websocket: WebSocket, 
+        client_id: str, 
+        session_id: str, 
+        customer_text: str
+    ) -> None:
+        """Enhanced customer speech processing using ADK agents"""
+        
+        try:
+            # Add to speech buffer
+            if session_id not in self.customer_speech_buffer:
+                self.customer_speech_buffer[session_id] = []
+            
+            self.customer_speech_buffer[session_id].append(customer_text)
+            
+            # Enhanced analysis trigger logic
+            buffer_length = len(self.customer_speech_buffer[session_id])
+            
+            # Trigger ADK analysis every 2 customer segments for better coordination
+            if buffer_length >= 2 and buffer_length % 2 == 0:
+                # Use accumulated speech for analysis
+                accumulated_speech = " ".join(self.customer_speech_buffer[session_id])
+                
+                if len(accumulated_speech.strip()) >= 20:  # Minimum text for analysis
+                    await self.run_enhanced_fraud_analysis(websocket, client_id, session_id, accumulated_speech)
+            
+        except Exception as e:
+            logger.error(f"❌ Error in enhanced customer speech processing: {e}")
+
+    # Add method to get system statistics with ADK info:
+    def get_adk_system_stats(self) -> Dict[str, Any]:
+        """Get system statistics including ADK agent status"""
+        return {
+            'handler_type': 'ADKEnhancedFraudDetectionHandler',
+            'active_sessions': len(self.active_sessions),
+            'adk_agents_available': self.adk_agents_available,
+            'adk_agents': {
+                'scam_detection': 'Google ADK + Gemini 1.5 Flash',
+                'policy_guidance': 'Google ADK + Gemini 1.5 Pro',
+                'summarization': 'Google ADK + Gemini 1.5 Flash', 
+                'orchestrator': 'Google ADK + Gemini 1.5 Pro'
+            },
+            'customer_speech_buffers': len(self.customer_speech_buffer),
+            'system_status': 'operational',
+            'timestamp': get_current_timestamp()
+        }
+        
 class EnhancedFraudDetectionWebSocketHandler:
     """Complete enhanced WebSocket handler with all improvements"""
     

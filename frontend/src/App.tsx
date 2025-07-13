@@ -1461,4 +1461,246 @@ Click OK to open the case in ServiceNow.
               <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <BookOpen className="w-4 h-4 mr-2" />
                 Policy Guidance
-                {policyGuidance.
+                {policyGuidance.rag_powered && (
+                  <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                    RAG
+                  </span>
+                )}
+              </h3>
+              
+              <div className="space-y-3">
+                {/* Policy Metadata */}
+                <div className="text-xs text-gray-600">
+                  <div>Policy: {policyGuidance.policy_id}</div>
+                  <div>Version: {policyGuidance.policy_version}</div>
+                </div>
+
+                {/* Immediate Alerts */}
+                {policyGuidance.immediate_alerts.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-red-700 mb-2">🚨 IMMEDIATE ALERTS</h4>
+                    <div className="space-y-1">
+                      {policyGuidance.immediate_alerts.map((alert, index) => (
+                        <div key={index} className="text-xs p-2 bg-red-50 border border-red-200 rounded text-red-800">
+                          {alert}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recommended Actions */}
+                {policyGuidance.recommended_actions.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-blue-700 mb-2">📋 ACTIONS</h4>
+                    <div className="space-y-1">
+                      {policyGuidance.recommended_actions.slice(0, 4).map((action, index) => (
+                        <div key={index} className="text-xs p-2 bg-blue-50 border border-blue-200 rounded text-blue-800">
+                          {action}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Key Questions */}
+                {policyGuidance.key_questions.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-purple-700 mb-2">❓ KEY QUESTIONS</h4>
+                    <div className="space-y-1">
+                      {policyGuidance.key_questions.slice(0, 3).map((question, index) => (
+                        <div key={index} className="text-xs p-2 bg-purple-50 border border-purple-200 rounded text-purple-800">
+                          {question}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Customer Education */}
+                {policyGuidance.customer_education.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-green-700 mb-2">🎓 CUSTOMER EDUCATION</h4>
+                    <div className="space-y-1">
+                      {policyGuidance.customer_education.slice(0, 3).map((education, index) => (
+                        <div key={index} className="text-xs p-2 bg-green-50 border border-green-200 rounded text-green-800">
+                          {education}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ADK Orchestrator Decision */}
+          {orchestratorDecision && (
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <Bot className="w-4 h-4 mr-2 text-purple-600" />
+                ADK Decision
+                <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                  Orchestrator
+                </span>
+              </h3>
+              
+              <div className="space-y-3">
+                {/* Decision */}
+                <div className={`p-3 rounded-lg border-2 ${
+                  orchestratorDecision.priority === 'CRITICAL' ? 'bg-red-50 border-red-300' :
+                  orchestratorDecision.priority === 'HIGH' ? 'bg-orange-50 border-orange-300' :
+                  orchestratorDecision.priority === 'MEDIUM' ? 'bg-yellow-50 border-yellow-300' :
+                  'bg-green-50 border-green-300'
+                }`}>
+                  <div className="text-sm font-bold">{orchestratorDecision.decision}</div>
+                  <div className="text-xs mt-1">{orchestratorDecision.reasoning}</div>
+                </div>
+
+                {/* Priority */}
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-gray-600">Priority:</span>
+                  <span className={`text-xs px-2 py-1 rounded font-medium ${
+                    orchestratorDecision.priority === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                    orchestratorDecision.priority === 'HIGH' ? 'bg-orange-100 text-orange-800' :
+                    orchestratorDecision.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-green-100 text-green-800'
+                  }`}>
+                    {orchestratorDecision.priority}
+                  </span>
+                </div>
+
+                {/* Immediate Actions */}
+                {orchestratorDecision.immediate_actions && orchestratorDecision.immediate_actions.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-700 mb-2">Immediate Actions:</h4>
+                    <div className="space-y-1">
+                      {orchestratorDecision.immediate_actions.slice(0, 4).map((action, index) => (
+                        <div key={index} className="text-xs p-2 bg-gray-50 border border-gray-200 rounded">
+                          • {action}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Case Creation Required */}
+                {orchestratorDecision.case_creation_required && (
+                  <div className="flex items-center space-x-2 text-xs">
+                    <FileText className="w-3 h-3 text-blue-600" />
+                    <span className="text-blue-600 font-medium">Case Creation Required</span>
+                  </div>
+                )}
+
+                {/* Escalation Path */}
+                {orchestratorDecision.escalation_path && (
+                  <div className="text-xs">
+                    <span className="text-gray-600">Escalation:</span>
+                    <span className="ml-1 font-medium">{orchestratorDecision.escalation_path}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Analysis History */}
+          {analysisHistory.length > 0 && (
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <Activity className="w-4 h-4 mr-2" />
+                Analysis History
+                <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                  ADK
+                </span>
+              </h3>
+              
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {analysisHistory.slice(-5).map((analysis, index) => (
+                  <div key={index} className="p-2 bg-gray-50 rounded border text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Analysis #{analysis.analysis_number}</span>
+                      <span className={`px-2 py-1 rounded ${getRiskColor(analysis.risk_score)}`}>
+                        {analysis.risk_score}%
+                      </span>
+                    </div>
+                    <div className="text-gray-600 mt-1">
+                      Patterns: {Object.keys(analysis.patterns || {}).length}
+                    </div>
+                    {analysis.adk_powered && (
+                      <div className="flex items-center mt-1">
+                        <Bot className="w-3 h-3 text-purple-600 mr-1" />
+                        <span className="text-purple-600">ADK Powered</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Call Summary */}
+          <div className="p-4">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Call Summary</h3>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Duration:</span>
+                <span>{formatTime(currentTime)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Segments:</span>
+                <span>{showingSegments.filter(s => s.is_final).length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Final Risk:</span>
+                <span className={`font-medium ${
+                  riskScore >= 80 ? 'text-red-600' :
+                  riskScore >= 60 ? 'text-orange-600' :
+                  riskScore >= 40 ? 'text-yellow-600' :
+                  'text-green-600'
+                }`}>
+                  {riskScore.toFixed(1)}%
+                </span>
+              </div>
+              {sessionId && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Session:</span>
+                  <span className="font-mono">{sessionId.slice(-8)}</span>
+                </div>
+              )}
+              
+              {/* Processing Summary */}
+              {serverProcessing && (
+                <div className="mt-3 p-2 bg-purple-50 border border-purple-200 rounded">
+                  <div className="flex items-center space-x-2">
+                    <Bot className="w-4 h-4 text-purple-600 animate-pulse" />
+                    <span className="text-purple-700 font-medium">ADK Processing Active</span>
+                  </div>
+                  <div className="text-purple-600 mt-1">
+                    {adkProcessing.currentAgent || 'Multi-agent processing'}
+                  </div>
+                </div>
+              )}
+              
+              {/* Completion Status */}
+              {!serverProcessing && riskScore > 0 && (
+                <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded">
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="text-green-700 font-medium">ADK Analysis Complete</span>
+                  </div>
+                  {autoIncidentCreated && (
+                    <div className="text-green-600 mt-1">
+                      Auto-incident: {autoIncidentCreated}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;

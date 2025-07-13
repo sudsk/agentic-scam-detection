@@ -1,7 +1,7 @@
-# backend/websocket/fraud_detection_handler.py - COMPLETE VERSION
+# backend/websocket/fraud_detection_handler.py - UPDATED WITH ADK CASE MANAGEMENT INTEGRATION
 """
-Complete Fraud Detection WebSocket Handler
-All functionality preserved, but cleanly delegated to individual ADK agents
+Complete Fraud Detection WebSocket Handler - UPDATED
+Now integrates with the new Case Management ADK Agent for ServiceNow incident creation
 """
 
 import asyncio
@@ -14,6 +14,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 import uuid
 
 from ..agents.audio_processor.agent import audio_processor_agent 
+from ..agents.case_management.adk_agent import PureADKCaseManagementAgent
 from ..websocket.connection_manager import ConnectionManager
 from ..utils import get_current_timestamp, create_error_response
 from ..config.settings import get_settings
@@ -21,7 +22,7 @@ from ..config.settings import get_settings
 logger = logging.getLogger(__name__)
 
 class FraudDetectionWebSocketHandler:
-    """Complete fraud detection WebSocket handler with all original functionality"""
+    """Complete fraud detection WebSocket handler with ADK Case Management integration"""
     
     def __init__(self, connection_manager: ConnectionManager):
         self.connection_manager = connection_manager
@@ -41,10 +42,13 @@ class FraudDetectionWebSocketHandler:
         # Import individual ADK agents
         self._import_adk_agents()
         
+        # UPDATED: Initialize ADK Case Management Agent
+        self.case_management_agent = PureADKCaseManagementAgent()
+        
         # Initialize customer profiles (preserved from original)
         self._initialize_customer_profiles()
         
-        logger.info("🤖 Complete Fraud Detection WebSocket handler initialized")
+        logger.info("🤖 Complete Fraud Detection WebSocket handler initialized with ADK Case Management")
     
     def _import_adk_agents(self):
         """Import individual ADK agents"""
@@ -164,6 +168,7 @@ class FraudDetectionWebSocketHandler:
                 'policy_analysis_active': False,
                 'summarization_active': False,
                 'orchestrator_active': False,
+                'case_management_active': False,  # UPDATED: Added case management
                 'current_agent': '',
                 'agents_completed': []
             }
@@ -192,8 +197,9 @@ class FraudDetectionWebSocketHandler:
                     'filename': filename,
                     'audio_duration': result.get('audio_duration', 0),
                     'channels': result.get('channels', 1),
-                    'processing_mode': 'complete_adk_agents',
+                    'processing_mode': 'complete_adk_agents_with_case_management',
                     'adk_agents_enabled': self.adk_agents_available,
+                    'case_management_enabled': True,  # UPDATED
                     'scam_context': scam_context,
                     'customer_profile': self.active_sessions[session_id]['customer_profile'],
                     'channel_mapping': result.get('channel_mapping', 'Unknown'),
@@ -201,7 +207,7 @@ class FraudDetectionWebSocketHandler:
                 }
             })
             
-            logger.info(f"✅ Complete processing started for session {session_id}")
+            logger.info(f"✅ Complete processing with ADK Case Management started for session {session_id}")
             
         except Exception as e:
             logger.error(f"❌ Error starting complete processing: {e}")
@@ -615,52 +621,53 @@ Provide enhanced risk assessment considering customer demographics and call prog
             
             logger.info(f"🏁 Complete processing finished for {session_id}, final risk: {final_risk_score}%")
             
-            # Auto-create incident for medium+ risk (preserved threshold)
+            # UPDATED: Auto-create incident using ADK Case Management Agent for medium+ risk
             if final_risk_score >= 50:
-                await self.auto_create_incident_comprehensive(websocket, client_id, session_id, final_analysis)
+                await self.auto_create_incident_with_adk_case_management(websocket, client_id, session_id, final_analysis)
             
         except Exception as e:
             logger.error(f"❌ Error handling comprehensive processing completion: {e}")
     
-    async def auto_create_incident_comprehensive(
+    # UPDATED: New method to use ADK Case Management Agent
+    async def auto_create_incident_with_adk_case_management(
         self, 
         websocket: WebSocket, 
         client_id: str, 
         session_id: str, 
         final_analysis: Dict
     ) -> None:
-        """Auto-create incident with comprehensive functionality (preserved from original)"""
+        """UPDATED: Auto-create incident using ADK Case Management Agent"""
         
         try:
-            logger.info(f"📋 Auto-creating comprehensive incident for session {session_id}")
+            logger.info(f"📋 Auto-creating incident using ADK Case Management Agent for session {session_id}")
             
-            # Send notification (preserved from original)
+            # Send notification
             await self.send_message(websocket, client_id, {
                 'type': 'auto_incident_creation_started',
                 'data': {
                     'session_id': session_id,
                     'risk_score': final_analysis.get('risk_score', 0),
-                    'reason': 'Medium/High risk detected - ADK auto-creating incident',
+                    'reason': 'Medium/High risk detected - ADK Case Management auto-creating incident',
                     'adk_powered': True,
+                    'case_management_agent': True,  # UPDATED
                     'timestamp': get_current_timestamp()
                 }
             })
             
-            # Run ADK summarization agent
+            # UPDATED: Set agent state for case management
+            self.agent_states[session_id]['case_management_active'] = True
+            self.agent_states[session_id]['current_agent'] = 'ADK Case Management Agent'
+            
             await self.send_message(websocket, client_id, {
-                'type': 'adk_summarization_started',
+                'type': 'adk_case_management_started',
                 'data': {
                     'session_id': session_id,
-                    'agent': 'ADK Summarization Agent',
+                    'agent': 'ADK Case Management Agent',
                     'timestamp': get_current_timestamp()
                 }
             })
             
-            # Update agent state
-            self.agent_states[session_id]['summarization_active'] = True
-            self.agent_states[session_id]['current_agent'] = 'ADK Summarization Agent'
-            
-            # Prepare comprehensive incident data (preserved structure)
+            # UPDATED: Prepare comprehensive incident data for ADK Case Management Agent
             incident_context = {
                 'session_id': session_id,
                 'customer_profile': self.active_sessions[session_id].get('customer_profile', {}),
@@ -672,31 +679,7 @@ Provide enhanced risk assessment considering customer demographics and call prog
                 'processing_timeline': self.processing_steps.get(session_id, [])
             }
             
-            # Run summarization agent
-            summary_result = await self.summarization_agent.run(
-                json.dumps(incident_context, indent=2),
-                incident_context
-            )
-            
-            # Parse summary result
-            parsed_summary = self.summarization_agent.parse_result(summary_result)
-            
-            # Update agent state
-            self.agent_states[session_id]['summarization_active'] = False
-            self.agent_states[session_id]['agents_completed'].append('summarization')
-            self.processing_steps[session_id].append('✅ ADK Summary complete')
-            
-            await self.send_message(websocket, client_id, {
-                'type': 'adk_summarization_complete',
-                'data': {
-                    'session_id': session_id,
-                    'summary': parsed_summary,
-                    'adk_powered': True,
-                    'timestamp': get_current_timestamp()
-                }
-            })
-            
-            # Create ServiceNow incident (preserved from original)
+            # UPDATED: Prepare incident data for ADK Case Management Agent
             incident_data = {
                 'customer_name': incident_context['customer_profile'].get('name', 'Unknown'),
                 'customer_account': incident_context['customer_profile'].get('account', 'Unknown'),
@@ -705,64 +688,94 @@ Provide enhanced risk assessment considering customer demographics and call prog
                 'scam_type': final_analysis.get('scam_type', 'unknown'),
                 'session_id': session_id,
                 'confidence_score': final_analysis.get('confidence', 0.0),
-                'transcript_summary': summary_result,
+                'transcript_segments': [
+                    {
+                        'text': segment['text'],
+                        'timestamp': segment['timestamp'],
+                        'confidence': segment['confidence']
+                    } for segment in self.customer_speech_buffer.get(session_id, [])
+                ],
                 'detected_patterns': self.accumulated_patterns.get(session_id, {}),
                 'recommended_actions': incident_context['policy_guidance'].get('recommended_actions', []),
                 'auto_created': True,
-                'creation_method': 'adk_agents',
+                'creation_method': 'adk_case_management_agent',
                 'orchestrator_decision': incident_context['orchestrator_decision'].get('decision', 'REVIEW_REQUIRED'),
                 'processing_timeline': self.processing_steps.get(session_id, [])
             }
             
-            # Mock ServiceNow incident creation (would be real ServiceNow API call)
-            incident_result = await self.create_servicenow_incident_mock(incident_data)
+            # UPDATED: Use ADK Case Management Agent to create incident
+            case_result = await self.case_management_agent.create_fraud_incident(
+                incident_data=incident_data,
+                context=incident_context
+            )
             
-            if incident_result.get('success'):
+            # Update agent state
+            self.agent_states[session_id]['case_management_active'] = False
+            self.agent_states[session_id]['agents_completed'].append('case_management')
+            
+            if case_result.get('success'):
                 # Store incident info in session
                 self.active_sessions[session_id]['auto_incident'] = {
-                    'incident_number': incident_result.get('incident_number'),
-                    'incident_url': incident_result.get('incident_url'),
-                    'created_at': get_current_timestamp()
+                    'incident_number': case_result.get('incident_number'),
+                    'incident_sys_id': case_result.get('incident_sys_id'),
+                    'incident_url': case_result.get('incident_url'),
+                    'priority': case_result.get('priority'),
+                    'urgency': case_result.get('urgency'),
+                    'category': case_result.get('category'),
+                    'assignment_group': case_result.get('assignment_group'),
+                    'created_at': get_current_timestamp(),
+                    'creation_method': 'adk_case_management_agent'
                 }
+                
+                self.processing_steps[session_id].append(f"📋 ADK Case Management: {case_result.get('incident_number')}")
                 
                 await self.send_message(websocket, client_id, {
                     'type': 'auto_incident_created',
                     'data': {
                         'session_id': session_id,
-                        'incident_number': incident_result.get('incident_number'),
-                        'incident_url': incident_result.get('incident_url'),
+                        'incident_number': case_result.get('incident_number'),
+                        'incident_sys_id': case_result.get('incident_sys_id'),
+                        'incident_url': case_result.get('incident_url'),
+                        'priority': case_result.get('priority'),
+                        'urgency': case_result.get('urgency'),
+                        'category': case_result.get('category'),
+                        'assignment_group': case_result.get('assignment_group'),
                         'risk_score': final_analysis.get('risk_score', 0),
-                        'summary_sections': len(parsed_summary),
-                        'creation_method': 'adk_agents',
+                        'creation_method': 'adk_case_management_agent',
                         'adk_powered': True,
+                        'structured_by_adk': True,
                         'timestamp': get_current_timestamp()
                     }
                 })
                 
-                logger.info(f"✅ Auto-created incident {incident_result.get('incident_number')} for session {session_id}")
+                logger.info(f"✅ ADK Case Management created incident {case_result.get('incident_number')} for session {session_id}")
             else:
-                logger.error(f"❌ Failed to auto-create incident: {incident_result.get('error')}")
+                error_msg = case_result.get('error', 'Unknown error in case creation')
+                logger.error(f"❌ ADK Case Management failed to create incident: {error_msg}")
+                
+                await self.send_message(websocket, client_id, {
+                    'type': 'auto_incident_creation_failed',
+                    'data': {
+                        'session_id': session_id,
+                        'error': error_msg,
+                        'creation_method': 'adk_case_management_agent',
+                        'timestamp': get_current_timestamp()
+                    }
+                })
             
         except Exception as e:
-            logger.error(f"❌ Error in comprehensive auto-incident creation: {e}")
+            logger.error(f"❌ Error in ADK Case Management auto-incident creation: {e}")
+            await self.send_message(websocket, client_id, {
+                'type': 'auto_incident_creation_failed',
+                'data': {
+                    'session_id': session_id,
+                    'error': str(e),
+                    'creation_method': 'adk_case_management_agent',
+                    'timestamp': get_current_timestamp()
+                }
+            })
     
-    async def create_servicenow_incident_mock(self, incident_data: Dict) -> Dict:
-        """Create ServiceNow incident (mock implementation - preserved from original)"""
-        try:
-            # Mock successful incident creation
-            incident_number = f"INC{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            return {
-                'success': True,
-                'incident_number': incident_number,
-                'incident_url': f"https://dev303197.service-now.com/incident/{incident_data['session_id']}"
-            }
-        except Exception as e:
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    # ===== ADDITIONAL REQUEST HANDLERS (preserved from original) =====
+    # ===== ADDITIONAL REQUEST HANDLERS (UPDATED) =====
     
     async def handle_session_analysis_request(self, websocket: WebSocket, client_id: str, data: Dict):
         """Handle request for session analysis data (preserved from original)"""
@@ -784,7 +797,9 @@ Provide enhanced risk assessment considering customer demographics and call prog
                     'filename': self.active_sessions[session_id]['filename'],
                     'status': self.active_sessions[session_id]['status'],
                     'customer_profile': self.active_sessions[session_id].get('customer_profile', {})
-                }
+                },
+                'auto_incident': self.active_sessions[session_id].get('auto_incident'),  # UPDATED: Include incident info
+                'case_management_enabled': True  # UPDATED
             }
             
             await self.send_message(websocket, client_id, {
@@ -797,7 +812,7 @@ Provide enhanced risk assessment considering customer demographics and call prog
             await self.send_error(websocket, client_id, f"Failed to get session analysis: {str(e)}")
     
     async def handle_manual_case_creation(self, websocket: WebSocket, client_id: str, data: Dict):
-        """Handle manual case creation request (preserved from original)"""
+        """UPDATED: Handle manual case creation request using ADK Case Management Agent"""
         session_id = data.get('session_id')
         if not session_id or session_id not in self.active_sessions:
             await self.send_error(websocket, client_id, "Invalid session ID")
@@ -809,8 +824,33 @@ Provide enhanced risk assessment considering customer demographics and call prog
             if self.session_analysis_history.get(session_id):
                 latest_analysis = self.session_analysis_history[session_id][-1]
             
-            # Prepare manual case data
+            # UPDATED: Prepare manual case data for ADK Case Management Agent
             case_data = {
+                'customer_name': self.active_sessions[session_id].get('customer_profile', {}).get('name', 'Unknown'),
+                'customer_account': self.active_sessions[session_id].get('customer_profile', {}).get('account', 'Unknown'),
+                'customer_phone': self.active_sessions[session_id].get('customer_profile', {}).get('phone', 'Unknown'),
+                'risk_score': latest_analysis.get('risk_score', 0),
+                'scam_type': latest_analysis.get('scam_type', 'unknown'),
+                'session_id': session_id,
+                'confidence_score': latest_analysis.get('confidence', 0.0),
+                'transcript_segments': [
+                    {
+                        'text': segment['text'],
+                        'timestamp': segment['timestamp'],
+                        'confidence': segment['confidence']
+                    } for segment in self.customer_speech_buffer.get(session_id, [])
+                ],
+                'detected_patterns': self.accumulated_patterns.get(session_id, {}),
+                'recommended_actions': self.active_sessions[session_id].get('policy_guidance', {}).get('recommended_actions', []),
+                'auto_created': False,
+                'creation_method': 'manual_via_adk_case_management',
+                'orchestrator_decision': self.active_sessions[session_id].get('orchestrator_decision', {}),
+                'manual_override': data.get('override_reason', 'Manual case creation requested'),
+                'created_by': data.get('agent_id', 'unknown')
+            }
+            
+            # Prepare context for ADK Case Management Agent
+            case_context = {
                 'session_id': session_id,
                 'creation_type': 'manual',
                 'customer_profile': self.active_sessions[session_id].get('customer_profile', {}),
@@ -818,12 +858,14 @@ Provide enhanced risk assessment considering customer demographics and call prog
                 'accumulated_patterns': self.accumulated_patterns.get(session_id, {}),
                 'agent_decision': self.active_sessions[session_id].get('orchestrator_decision', {}),
                 'customer_speech': [segment['text'] for segment in self.customer_speech_buffer.get(session_id, [])],
-                'manual_override': data.get('override_reason', 'Manual case creation requested'),
-                'created_by': data.get('agent_id', 'unknown')
+                'processing_timeline': self.processing_steps.get(session_id, [])
             }
             
-            # Create manual case
-            case_result = await self.create_servicenow_incident_mock(case_data)
+            # UPDATED: Use ADK Case Management Agent for manual case creation
+            case_result = await self.case_management_agent.create_fraud_incident(
+                incident_data=case_data,
+                context=case_context
+            )
             
             if case_result.get('success'):
                 await self.send_message(websocket, client_id, {
@@ -831,8 +873,15 @@ Provide enhanced risk assessment considering customer demographics and call prog
                     'data': {
                         'session_id': session_id,
                         'case_number': case_result.get('incident_number'),
+                        'case_sys_id': case_result.get('incident_sys_id'),
                         'case_url': case_result.get('incident_url'),
+                        'priority': case_result.get('priority'),
+                        'urgency': case_result.get('urgency'),
+                        'category': case_result.get('category'),
+                        'assignment_group': case_result.get('assignment_group'),
                         'creation_type': 'manual',
+                        'creation_method': 'adk_case_management_agent',
+                        'adk_powered': True,
                         'timestamp': get_current_timestamp()
                     }
                 })
@@ -900,6 +949,7 @@ Provide enhanced risk assessment considering customer demographics and call prog
                     'final_analysis_count': len(self.session_analysis_history.get(session_id, [])),
                     'final_pattern_count': len(self.accumulated_patterns.get(session_id, {})),
                     'processing_steps': len(self.processing_steps.get(session_id, [])),
+                    'case_management_enabled': True,  # UPDATED
                     'timestamp': get_current_timestamp()
                 }
             })
@@ -947,7 +997,7 @@ Provide enhanced risk assessment considering customer demographics and call prog
             logger.info(f"🧹 Cleaned up {len(sessions_to_cleanup)} sessions for {client_id}")
     
     async def handle_status_request(self, websocket: WebSocket, client_id: str):
-        """Handle status request (complete functionality preserved)"""
+        """UPDATED: Handle status request (complete functionality preserved with case management info)"""
         try:
             # Calculate comprehensive statistics
             total_sessions = len(self.active_sessions)
@@ -957,33 +1007,48 @@ Provide enhanced risk assessment considering customer demographics and call prog
             # Agent status summary
             agent_summary = {}
             for session_id, states in self.agent_states.items():
-                for agent in ['scam_detection', 'policy_guidance', 'summarization', 'orchestrator']:
+                for agent in ['scam_detection', 'policy_guidance', 'summarization', 'orchestrator', 'case_management']:  # UPDATED: Added case_management
                     if agent not in agent_summary:
                         agent_summary[agent] = 0
                     if agent in states.get('agents_completed', []):
                         agent_summary[agent] += 1
             
+            # Count auto-created incidents
+            auto_incidents_count = len([
+                s for s in self.active_sessions.values() 
+                if s.get('auto_incident') is not None
+            ])
+            
             status = {
-                'handler_type': 'CompleteFraudDetectionHandler',
+                'handler_type': 'CompleteFraudDetectionHandlerWithADKCaseManagement',  # UPDATED
                 'active_sessions': total_sessions,
                 'adk_agents_available': self.adk_agents_available,
+                'case_management_agent_available': True,  # UPDATED
                 'total_analyses_performed': total_analyses,
                 'total_patterns_detected': total_patterns,
                 'agent_completion_summary': agent_summary,
                 'customer_profiles_loaded': len(self.customer_profiles),
-                'sessions_with_incidents': len([
-                    s for s in self.active_sessions.values() 
-                    if s.get('auto_incident') is not None
-                ]),
+                'sessions_with_incidents': auto_incidents_count,  # UPDATED
+                'auto_incidents_created': auto_incidents_count,  # UPDATED
                 'system_status': 'operational',
                 'features': [
                     'Complete session tracking',
                     'Pattern accumulation across segments',
                     'ADK agent pipeline',
-                    'Auto-incident creation',
-                    'Manual case creation',
+                    'ADK Case Management Agent integration',  # UPDATED
+                    'Auto-incident creation via ADK',  # UPDATED
+                    'Manual case creation via ADK',  # UPDATED
+                    'ServiceNow integration',  # UPDATED
                     'Customer profile management',
                     'Processing step tracking'
+                ],
+                'case_management_features': [  # UPDATED: New section
+                    'ADK-structured incident creation',
+                    'Priority and urgency mapping',
+                    'Automatic assignment group routing',
+                    'ServiceNow API integration',
+                    'Evidence preservation',
+                    'Regulatory compliance notes'
                 ],
                 'timestamp': get_current_timestamp()
             }
@@ -1002,7 +1067,7 @@ Provide enhanced risk assessment considering customer demographics and call prog
         return len(self.active_sessions)
     
     def get_comprehensive_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive system statistics (new method for monitoring)"""
+        """UPDATED: Get comprehensive system statistics (with case management info)"""
         return {
             'active_sessions': len(self.active_sessions),
             'total_customer_speech_segments': sum(len(buffer) for buffer in self.customer_speech_buffer.values()),
@@ -1015,7 +1080,15 @@ Provide enhanced risk assessment considering customer demographics and call prog
             ]),
             'agent_states_tracking': len(self.agent_states),
             'customer_profiles_available': len(self.customer_profiles),
-            'adk_agents_available': self.adk_agents_available
+            'adk_agents_available': self.adk_agents_available,
+            'case_management_agent_available': True,  # UPDATED
+            'case_management_features': {  # UPDATED: New section
+                'adk_structured_incidents': True,
+                'servicenow_integration': True,
+                'auto_priority_mapping': True,
+                'evidence_preservation': True,
+                'regulatory_compliance': True
+            }
         }
     
     # ===== WEBSOCKET COMMUNICATION (preserved from original) =====

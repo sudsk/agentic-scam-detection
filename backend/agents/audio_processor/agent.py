@@ -692,10 +692,10 @@ class AudioProcessorAgent(BaseAgent):
                     #logger.info(f"🔍 Found result.channel: {channel_tag}")
                 
                 # Log what we found
-                if channel_tag is not None:
-                    #logger.info(f"🎯 Channel detected: {channel_tag} for text: '{transcript[:30]}...'")
-                else:
-                    logger.warning(f"🎯 No channel info for text: '{transcript[:30]}...'")
+                #if channel_tag is not None:
+                #    logger.info(f"🎯 Channel detected: {channel_tag} for text: '{transcript[:30]}...'")
+                #else:
+                #    logger.warning(f"🎯 No channel info for text: '{transcript[:30]}...'")
                 
                 # Use improved speaker detection
                 detected_speaker = speaker_tracker.detect_speaker_from_channel(channel_tag)

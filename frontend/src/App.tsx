@@ -202,44 +202,6 @@ const defaultCustomerProfile: CustomerProfile = {
 
 // ===== UTILITY FUNCTIONS =====
 
-// Safe helper function to check arrays
-const safeArray = (arr: any): any[] => {
-  if (Array.isArray(arr)) return arr;
-  if (typeof arr === 'string') return [arr];
-  return [];
-};
-
-// Safe helper to get array length
-const safeLength = (arr: any): number => {
-  return safeArray(arr).length;
-};
-
-// ===== ADD THE DEBUG COMPONENT HERE (right before return) =====
-const DebugPolicyData = () => {
-  if (!policyGuidance) return null;
-  
-  return (
-    <div style={{
-      position: 'fixed',
-      bottom: '10px',
-      right: '10px',
-      background: 'rgba(0,0,0,0.8)',
-      color: 'white',
-      padding: '10px',
-      fontSize: '10px',
-      maxWidth: '300px',
-      borderRadius: '4px',
-      zIndex: 9999
-    }}>
-      <div>🐛 Policy Debug:</div>
-      <div>policy_id: {policyGuidance.policy_id || 'undefined'}</div>
-      <div>recommended_actions: {typeof policyGuidance.recommended_actions} ({Array.isArray(policyGuidance.recommended_actions) ? policyGuidance.recommended_actions.length : 'not array'})</div>
-      <div>key_questions: {typeof policyGuidance.key_questions} ({Array.isArray(policyGuidance.key_questions) ? policyGuidance.key_questions.length : 'not array'})</div>
-      <div>customer_education: {typeof policyGuidance.customer_education} ({Array.isArray(policyGuidance.customer_education) ? policyGuidance.customer_education.length : 'not array'})</div>
-    </div>
-  );
-};
-
 const getSpeakerIcon = (speaker: string) => {
   if (speaker === 'customer') {
     return <User className="w-3 h-3 text-blue-600" />;
@@ -490,42 +452,6 @@ function App() {
     }
   };
 
-  // Also add this component to debug the current state
-  const DebugPanel = () => {
-    return (
-      <div style={{
-        position: 'fixed',
-        top: '10px',
-        right: '10px',
-        background: 'white',
-        border: '1px solid #ccc',
-        padding: '10px',
-        fontSize: '12px',
-        maxWidth: '300px',
-        maxHeight: '400px',
-        overflow: 'auto',
-        zIndex: 9999
-      }}>
-        <h4>🐛 Debug Info</h4>
-        <div><strong>Risk Score:</strong> {riskScore}</div>
-        <div><strong>Scam Type:</strong> {scamType}</div>
-        <div><strong>Detected Patterns:</strong> {JSON.stringify(detectedPatterns)}</div>
-        <div><strong>Policy Guidance:</strong></div>
-        {policyGuidance ? (
-          <div style={{marginLeft: '10px'}}>
-            <div>Policy ID: {policyGuidance.policy_id || 'None'}</div>
-            <div>Immediate Alerts: {Array.isArray(policyGuidance.immediate_alerts) ? `Array(${policyGuidance.immediate_alerts.length})` : typeof policyGuidance.immediate_alerts}</div>
-            <div>Recommended Actions: {Array.isArray(policyGuidance.recommended_actions) ? `Array(${policyGuidance.recommended_actions.length})` : typeof policyGuidance.recommended_actions}</div>
-            <div>Key Questions: {Array.isArray(policyGuidance.key_questions) ? `Array(${policyGuidance.key_questions.length})` : typeof policyGuidance.key_questions}</div>
-            <div>Customer Education: {Array.isArray(policyGuidance.customer_education) ? `Array(${policyGuidance.customer_education.length})` : typeof policyGuidance.customer_education}</div>
-          </div>
-        ) : (
-          <div style={{marginLeft: '10px'}}>null</div>
-        )}
-      </div>
-    );
-  };
-  
   // ===== AUDIO PROCESSING FUNCTIONS =====
 
   const startServerProcessing = async (audioFile: RealAudioFile): Promise<void> => {
@@ -769,6 +695,44 @@ Click OK to open the case in ServiceNow.
     </div>
   );
 
+// Safe helper function to check arrays
+const safeArray = (arr: any): any[] => {
+  if (Array.isArray(arr)) return arr;
+  if (typeof arr === 'string') return [arr];
+  return [];
+};
+
+// Safe helper to get array length
+const safeLength = (arr: any): number => {
+  return safeArray(arr).length;
+};
+
+// ===== ADD THE DEBUG COMPONENT HERE (right before return) =====
+const DebugPolicyData = () => {
+  if (!policyGuidance) return null;
+  
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: '10px',
+      right: '10px',
+      background: 'rgba(0,0,0,0.8)',
+      color: 'white',
+      padding: '10px',
+      fontSize: '10px',
+      maxWidth: '300px',
+      borderRadius: '4px',
+      zIndex: 9999
+    }}>
+      <div>🐛 Policy Debug:</div>
+      <div>policy_id: {policyGuidance.policy_id || 'undefined'}</div>
+      <div>recommended_actions: {typeof policyGuidance.recommended_actions} ({Array.isArray(policyGuidance.recommended_actions) ? policyGuidance.recommended_actions.length : 'not array'})</div>
+      <div>key_questions: {typeof policyGuidance.key_questions} ({Array.isArray(policyGuidance.key_questions) ? policyGuidance.key_questions.length : 'not array'})</div>
+      <div>customer_education: {typeof policyGuidance.customer_education} ({Array.isArray(policyGuidance.customer_education) ? policyGuidance.customer_education.length : 'not array'})</div>
+    </div>
+  );
+};
+  
   // ===== EFFECTS =====
 
   useEffect(() => {

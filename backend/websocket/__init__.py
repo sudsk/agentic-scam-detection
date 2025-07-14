@@ -2,11 +2,10 @@
 
 """
 WebSocket module for real-time communication
-Provides connection management and specialized handlers for fraud detection
+Provides connection management for WebSocket functionality
 """
 
 from .connection_manager import ConnectionManager, WebSocketConnection
-from .fraud_detection_handler import FraudDetectionWebSocketHandler
 
 __all__ = [
     'ConnectionManager',

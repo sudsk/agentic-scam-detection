@@ -984,33 +984,102 @@ Recommended Action: {action}
             return {'error': str(e), 'raw_text': result_text}
     
     def _parse_policy_response(self, response_text: str) -> Dict:
-        """Parse policy guidance response"""
+        """Parse policy guidance response with proper formatting for UI"""
         try:
             parsed = {}
             lines = response_text.split('\n')
             
+            # Initialize arrays for UI
+            immediate_alerts = []
+            recommended_actions = []
+            key_questions = []
+            customer_education = []
+            
+            current_section = None
+            
             for line in lines:
                 line = line.strip()
-                if ':' in line and not line.startswith('-'):
+                if not line:
+                    continue
+                    
+                # Check for section headers
+                if 'immediate alerts:' in line.lower():
+                    current_section = 'immediate_alerts'
+                    # Extract content after colon
+                    content = line.split(':', 1)[1].strip() if ':' in line else ''
+                    if content and content != 'None':
+                        immediate_alerts.append(content.strip('"'))
+                elif 'recommended actions:' in line.lower():
+                    current_section = 'recommended_actions'
+                    content = line.split(':', 1)[1].strip() if ':' in line else ''
+                    if content and content != 'None':
+                        recommended_actions.append(content.strip('"'))
+                elif 'key questions:' in line.lower():
+                    current_section = 'key_questions'
+                    content = line.split(':', 1)[1].strip() if ':' in line else ''
+                    if content and content != 'None':
+                        key_questions.append(content.strip('"'))
+                elif 'customer education:' in line.lower():
+                    current_section = 'customer_education'
+                    content = line.split(':', 1)[1].strip() if ':' in line else ''
+                    if content and content != 'None':
+                        customer_education.append(content.strip('"'))
+                elif ':' in line and not line.startswith('-'):
+                    # Handle other fields
                     key, value = line.split(':', 1)
                     key = key.strip().lower().replace(' ', '_')
                     value = value.strip()
                     parsed[key] = value
+                    current_section = None
+                elif line.startswith('-') or line.startswith('•') and current_section:
+                    # Add to current section
+                    content = line.lstrip('-•').strip()
+                    if content:
+                        if current_section == 'immediate_alerts':
+                            immediate_alerts.append(content.strip('"'))
+                        elif current_section == 'recommended_actions':
+                            recommended_actions.append(content.strip('"'))
+                        elif current_section == 'key_questions':
+                            key_questions.append(content.strip('"'))
+                        elif current_section == 'customer_education':
+                            customer_education.append(content.strip('"'))
+                elif current_section and line:
+                    # Add line content to current section
+                    if line.startswith('"') and line.endswith('"'):
+                        line = line.strip('"')
+                    if current_section == 'immediate_alerts':
+                        immediate_alerts.append(line)
+                    elif current_section == 'recommended_actions':
+                        recommended_actions.append(line)
+                    elif current_section == 'key_questions':
+                        key_questions.append(line)
+                    elif current_section == 'customer_education':
+                        customer_education.append(line)
             
-            # Ensure required fields exist
+            # Ensure required fields exist with defaults for UI
             parsed.setdefault('policy_id', 'FP-AUTO-001')
             parsed.setdefault('policy_title', 'Automated Policy Guidance')
-            parsed.setdefault('immediate_alerts', [])
-            parsed.setdefault('recommended_actions', [])
-            parsed.setdefault('key_questions', [])
-            parsed.setdefault('customer_education', [])
+            parsed['immediate_alerts'] = immediate_alerts or ["Review customer request carefully"]
+            parsed['recommended_actions'] = recommended_actions or ["Follow standard fraud prevention procedures"]
+            parsed['key_questions'] = key_questions or ["Can you verify your identity?", "Is this request unusual for you?"]
+            parsed['customer_education'] = customer_education or ["Be aware of common fraud tactics", "Take time to verify requests"]
             parsed.setdefault('escalation_threshold', 60)
             
             return parsed
             
         except Exception as e:
             logger.error(f"❌ Error parsing policy response: {e}")
-            return {}
+            # Return safe defaults for UI
+            return {
+                'policy_id': 'FP-ERROR-001',
+                'policy_title': 'Error in Policy Retrieval',
+                'immediate_alerts': ["Policy system error - use manual procedures"],
+                'recommended_actions': ["Follow standard fraud prevention procedures", "Escalate to supervisor if needed"],
+                'key_questions': ["Can you verify your identity?", "Is this request unusual for you?"],
+                'customer_education': ["Be cautious with unusual requests", "Verify before proceeding"],
+                'escalation_threshold': 60,
+                'error': str(e)
+            }
     
     def _parse_decision_response(self, response_text: str, risk_score: float) -> Dict:
         """Parse decision response"""

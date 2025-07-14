@@ -386,6 +386,14 @@ function App() {
         
       case 'fraud_analysis_update':
         const analysis = message.data;
+        
+        // DEBUG: Log analysis data structure
+        console.log('🔍 Fraud Analysis Update:');
+        console.log('  - risk_score:', analysis.risk_score);
+        console.log('  - detected_patterns:', analysis.detected_patterns);
+        console.log('  - detected_patterns type:', typeof analysis.detected_patterns);
+        console.log('  - detected_patterns keys:', Object.keys(analysis.detected_patterns || {}));        
+       
         setRiskScore(analysis.risk_score || 0);
         setRiskLevel(analysis.risk_level || 'MINIMAL');
         setScamType(analysis.scam_type || 'unknown');
@@ -399,6 +407,20 @@ function App() {
         
       case 'policy_guidance_ready':
         setPolicyGuidance(message.data);
+        
+        const policyData = message.data.policy_guidance;
+        // DEBUG: Log policy data structure
+        console.log('📚 Policy Guidance Ready:');
+        console.log('  - Full policy data:', policyData);
+        console.log('  - immediate_alerts:', policyData?.immediate_alerts);
+        console.log('  - immediate_alerts type:', typeof policyData?.immediate_alerts);
+        console.log('  - immediate_alerts is array:', Array.isArray(policyData?.immediate_alerts));
+        console.log('  - recommended_actions:', policyData?.recommended_actions);
+        console.log('  - recommended_actions type:', typeof policyData?.recommended_actions);
+        console.log('  - recommended_actions is array:', Array.isArray(policyData?.recommended_actions));
+        console.log('  - key_questions:', policyData?.key_questions);
+        console.log('  - customer_education:', policyData?.customer_education);   
+        
         setProcessingStage('📚 Policy guidance ready');
         break;
         
@@ -426,10 +448,46 @@ function App() {
         break;
         
       default:
-        console.log('Unknown message type:', message.type);
+        console.log('❓ Unknown message type:', message.type);
     }
   };
 
+  // Also add this component to debug the current state
+  const DebugPanel = () => {
+    return (
+      <div style={{
+        position: 'fixed',
+        top: '10px',
+        right: '10px',
+        background: 'white',
+        border: '1px solid #ccc',
+        padding: '10px',
+        fontSize: '12px',
+        maxWidth: '300px',
+        maxHeight: '400px',
+        overflow: 'auto',
+        zIndex: 9999
+      }}>
+        <h4>🐛 Debug Info</h4>
+        <div><strong>Risk Score:</strong> {riskScore}</div>
+        <div><strong>Scam Type:</strong> {scamType}</div>
+        <div><strong>Detected Patterns:</strong> {JSON.stringify(detectedPatterns)}</div>
+        <div><strong>Policy Guidance:</strong></div>
+        {policyGuidance ? (
+          <div style={{marginLeft: '10px'}}>
+            <div>Policy ID: {policyGuidance.policy_id || 'None'}</div>
+            <div>Immediate Alerts: {Array.isArray(policyGuidance.immediate_alerts) ? `Array(${policyGuidance.immediate_alerts.length})` : typeof policyGuidance.immediate_alerts}</div>
+            <div>Recommended Actions: {Array.isArray(policyGuidance.recommended_actions) ? `Array(${policyGuidance.recommended_actions.length})` : typeof policyGuidance.recommended_actions}</div>
+            <div>Key Questions: {Array.isArray(policyGuidance.key_questions) ? `Array(${policyGuidance.key_questions.length})` : typeof policyGuidance.key_questions}</div>
+            <div>Customer Education: {Array.isArray(policyGuidance.customer_education) ? `Array(${policyGuidance.customer_education.length})` : typeof policyGuidance.customer_education}</div>
+          </div>
+        ) : (
+          <div style={{marginLeft: '10px'}}>null</div>
+        )}
+      </div>
+    );
+  };
+  
   // ===== AUDIO PROCESSING FUNCTIONS =====
 
   const startServerProcessing = async (audioFile: RealAudioFile): Promise<void> => {

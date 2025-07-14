@@ -76,18 +76,25 @@ class FraudDetectionOrchestrator:
             logger.warning("Settings import failed, using defaults")
             self.settings = self._get_default_settings()
         
-        # FIXED: Initialize ADK components properly
+        # FIXED: Initialize all attributes to prevent AttributeError
         self.session_service = None
         self.agents = {}
         self.runners = {}
+        self.case_management_agent = None
+        self.types = None
         
         # Initialize ADK system
-        self._initialize_adk_system()
+        adk_success = self._initialize_adk_system()
         
         # Initialize customer profiles
         self._initialize_customer_profiles()
         
-        logger.info("🎭 Fraud Detection Orchestrator initialized with proper ADK session management")
+        if adk_success:
+            logger.info("🎭 Fraud Detection Orchestrator initialized successfully with ADK")
+        else:
+            logger.warning("🎭 Fraud Detection Orchestrator initialized with fallback mode (ADK failed)")
+        
+        logger.info(f"🎭 Fraud Detection Orchestrator ready - Agents: {len(self.agents)}, Runners: {len(self.runners)}")
     
     def _get_default_settings(self):
         """Fallback settings if import fails"""
@@ -161,11 +168,16 @@ class FraudDetectionOrchestrator:
                     logger.error(f"❌ Error creating agent {agent_key}: {e}")
                     continue
             
-            # Case management agent
+            # Case management agent initialization
             try:
                 from ..agents.case_management.adk_agent import PureADKCaseManagementAgent
                 self.case_management_agent = PureADKCaseManagementAgent()
-            except ImportError:
+                logger.info("✅ Case management agent initialized")
+            except ImportError as e:
+                logger.warning(f"⚠️ Case management agent not available: {e}")
+                self.case_management_agent = None
+            except Exception as e:
+                logger.error(f"❌ Error initializing case management agent: {e}")
                 self.case_management_agent = None
             
             success = len(self.agents) > 0
@@ -1070,21 +1082,31 @@ Recommended Action: {action}
     # ===== STATUS AND MONITORING =====
     
     def get_orchestrator_status(self) -> Dict[str, Any]:
-        """Get orchestrator status"""
+        """Get orchestrator status with safe attribute access"""
         try:
             from ..utils import get_current_timestamp
         except ImportError:
             def get_current_timestamp():
                 return datetime.now().isoformat()
         
+        # FIXED: Safe attribute access with defaults
+        agents = getattr(self, 'agents', {})
+        runners = getattr(self, 'runners', {})
+        session_service = getattr(self, 'session_service', None)
+        case_management_agent = getattr(self, 'case_management_agent', None)
+        
+        agents_managed = list(agents.keys())
+        if case_management_agent is not None:
+            agents_managed.append('case_management')
+        
         return {
             'orchestrator_type': 'FraudDetectionOrchestrator',
-            'system_status': 'operational' if self.session_service else 'degraded',
-            'active_sessions': len(self.active_sessions),
-            'agents_available': len(self.agents) > 0,
-            'adk_session_service': self.session_service is not None,
-            'adk_runners': len(self.runners),
-            'agents_managed': list(self.agents.keys()) + (['case_management'] if self.case_management_agent else []),
+            'system_status': 'operational' if session_service else 'degraded',
+            'active_sessions': len(getattr(self, 'active_sessions', {})),
+            'agents_available': len(agents) > 0,
+            'adk_session_service': session_service is not None,
+            'adk_runners': len(runners),
+            'agents_managed': agents_managed,
             'capabilities': [
                 'ADK Agent execution with proper session management',
                 'Multi-agent orchestration',
@@ -1097,15 +1119,16 @@ Recommended Action: {action}
                 'Proper warning suppression'
             ],
             'statistics': {
-                'total_sessions': len(self.active_sessions),
-                'total_analyses': sum(len(history) for history in self.session_analysis_history.values()),
-                'total_patterns': sum(len(patterns) for patterns in self.accumulated_patterns.values())
+                'total_sessions': len(getattr(self, 'active_sessions', {})),
+                'total_analyses': sum(len(history) for history in getattr(self, 'session_analysis_history', {}).values()),
+                'total_patterns': sum(len(patterns) for patterns in getattr(self, 'accumulated_patterns', {}).values())
             },
             'adk_info': {
-                'session_service_active': self.session_service is not None,
-                'agents_initialized': len(self.agents),
-                'runners_created': len(self.runners),
-                'warning_suppression': True
+                'session_service_active': session_service is not None,
+                'agents_initialized': len(agents),
+                'runners_created': len(runners),
+                'warning_suppression': True,
+                'case_management_available': case_management_agent is not None
             },
             'timestamp': get_current_timestamp()
         }

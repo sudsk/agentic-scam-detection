@@ -1204,7 +1204,7 @@ Click OK to open the case in ServiceNow.
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                     <span>6 Agents Ready</span>
                   </div>
-                  <div className="text-gray-400">Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
+                  <div className="text-gray-400">Audio • Scam • Policy • Decision • Summarization • Case • Orchestrator</div>
                 </div>
               </div>
             </div>

@@ -218,7 +218,7 @@ class FraudDetectionOrchestrator:
             # Simple agent creation - let ADK handle authentication automatically
             agent = LlmAgent(
                 name=name,
-                model="gemini-1.5-pro",
+                model="gemini-2.0-flash",
                 description=description,
                 instruction=instruction,
                 tools=[],

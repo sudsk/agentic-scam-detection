@@ -168,14 +168,6 @@ async def root():
                     </div>
                 </div>
                 
-                <div class="architecture">
-                    <h3>🏗️ Architecture Update</h3>
-                    <p><strong>✅ NEW:</strong> FraudDetectionOrchestrator - True system coordinator</p>
-                    <p><strong>✅ RENAMED:</strong> Orchestrator Agent → Decision Agent</p>
-                    <p><strong>✅ ELIMINATED:</strong> fraud_detection_system.py (redundant)</p>
-                    <p><strong>✅ UPDATED:</strong> REST APIs now use orchestrator</p>
-                </div>
-                
                 <div class="websocket">
                     <h3>🔌 WebSocket Integration Status</h3>
                     <div class="status">
@@ -193,7 +185,7 @@ async def root():
                         <li>🎵 Audio Processing Agent</li>
                         <li>🔍 Scam Detection Agent</li>
                         <li>📚 Policy Guidance Agent</li>
-                        <li>🎯 Decision Agent (renamed from Orchestrator)</li>
+                        <li>🎯 Decision Agent</li>
                         <li>📝 Summarization Agent</li>
                         <li>📋 Case Management Agent</li>
                     </ul>

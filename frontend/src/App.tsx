@@ -794,13 +794,6 @@ Click OK to open the case in ServiceNow.
             <span>Agent: James Bond</span>
             <span>ID: JB2024</span>
             <span>Shift: 09:00-17:00</span>
-            <div className="flex items-center space-x-2 text-sm">
-              <span className="text-gray-600">ServiceNow:</span>
-              <span className="text-green-600">Ready</span>
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-            </div>
-            <ProcessingStatus />
-            <Settings className="w-4 h-4" />
           </div>
         </div>
       </header>

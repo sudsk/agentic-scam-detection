@@ -1,1682 +1,1217 @@
-# backend/orchestrator/fraud_detection_orchestrator.py - FIXED ADK VERSION
-"""
-Fixed Fraud Detection Orchestrator with proper ADK session management
-Based on Google ADK patterns and successful implementations
-"""
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  AlertCircle, 
+  CheckCircle, 
+  Upload, 
+  Mic, 
+  Shield, 
+  FileText, 
+  Users, 
+  Play, 
+  Pause, 
+  Volume2,
+  PhoneCall,
+  TrendingUp,
+  AlertTriangle,
+  Eye,
+  Brain,
+  Wifi,
+  WifiOff,
+  Phone,
+  User,
+  Clock,
+  Hash,
+  Settings,
+  Server,
+  UserCheck,
+  Headphones
+} from 'lucide-react';
 
-import asyncio
-import json
-import logging
-import time
-import warnings
-import os
-import sys
-from datetime import datetime
-from typing import Dict, Any, Optional, List, Callable
-import uuid
-from io import StringIO
+// Environment configuration
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
 
-# Suppress warnings at the top
-warnings.filterwarnings('ignore')
-os.environ['GRPC_VERBOSITY'] = 'ERROR'
-os.environ['GLOG_minloglevel'] = '2'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+// ===== TYPE DEFINITIONS =====
 
-logger = logging.getLogger(__name__)
+interface AudioSegment {
+  speaker: 'agent' | 'customer';
+  start: number;
+  duration: number;
+  text: string;
+  confidence?: number;
+  is_final?: boolean;
+  is_interim?: boolean;
+  speaker_tag?: number;
+  segment_id?: string;
+}
 
-class WarningSuppressionContext:
-    """Context manager to suppress ADK warnings"""
+interface RealAudioFile {
+  id: string;
+  filename: string;
+  title: string;
+  description: string;
+  icon: string;
+  file_path: string;
+  size_bytes: number;
+  duration: number;
+  scam_type?: string;
+}
+
+interface DetectedPattern {
+  pattern_name: string;
+  matches: string[];
+  count: number;
+  weight: number;
+  severity: 'critical' | 'high' | 'medium';
+}
+
+interface PolicyGuidance {
+  immediate_alerts: string[];
+  recommended_actions: string[];
+  key_questions: string[];
+  customer_education: string[];
+  policy_id?: string;
+  policy_title?: string;
+  policy_version?: string;
+  escalation_threshold?: number;
+  regulatory_requirements?: string[];
+}
+
+interface WebSocketMessage {
+  type: string;
+  data: any;
+}
+
+interface CustomerProfile {
+  name: string;
+  account: string;
+  status: string;
+  segment: string;
+  riskProfile: string;
+  recentActivity: {
+    lastCall: string;
+    description: string;
+    additionalInfo?: string;
+  };
+  demographics: {
+    age: number;
+    location: string;
+    relationship: string;
+  };
+  alerts: {
+    type: string;
+    date: string;
+    description: string;
+  }[];
+}
+
+// ===== CONFIGURATION DATA =====
+
+const customerProfiles: Record<string, CustomerProfile> = {
+  'romance_scam_1.wav': {
+    name: "Mrs Patricia Williams",
+    account: "****3847",
+    status: "Active",
+    segment: "Premier Banking",
+    riskProfile: "Medium",
+    recentActivity: {
+      lastCall: "3 weeks ago",
+      description: "Balance inquiry and international transfer questions",
+      additionalInfo: "Asked about sending money overseas multiple times"
+    },
+    demographics: {
+      age: 67,
+      location: "Bournemouth, UK",
+      relationship: "Widow"
+    },
+    alerts: [
+      {
+        type: "Unusual Activity",
+        date: "2 weeks ago",
+        description: "Attempted £3,000 transfer to Turkey - blocked by fraud filters"
+      }
+    ]
+  },
+  'investment_scam_live_call.wav': {
+    name: "Mr David Chen",
+    account: "****5691",
+    status: "Active", 
+    segment: "Business Banking",
+    riskProfile: "High",
+    recentActivity: {
+      lastCall: "5 days ago",
+      description: "Investment account setup inquiry",
+      additionalInfo: "Mentioned guaranteed returns opportunity"
+    },
+    demographics: {
+      age: 42,
+      location: "Manchester, UK",
+      relationship: "Married"
+    },
+    alerts: [
+      {
+        type: "Investment Warning",
+        date: "1 week ago", 
+        description: "Customer inquired about transferring £25,000 for 'guaranteed 15% monthly returns'"
+      }
+    ]
+  },
+  'impersonation_scam_live_call.wav': {
+    name: "Ms Sarah Thompson",
+    account: "****7234",
+    status: "Active",
+    segment: "Personal Banking", 
+    riskProfile: "Low",
+    recentActivity: {
+      lastCall: "1 day ago",
+      description: "Reported suspicious call claiming to be from HSBC security",
+      additionalInfo: "Customer was asked for PIN - correctly refused"
+    },
+    demographics: {
+      age: 34,
+      location: "Birmingham, UK",
+      relationship: "Single"
+    },
+    alerts: [
+      {
+        type: "Security Alert",
+        date: "Yesterday",
+        description: "Customer reported impersonation attempt - no account compromise detected"
+      }
+    ]
+  }
+};
+
+const defaultCustomerProfile: CustomerProfile = {
+  name: "Customer",
+  account: "****0000",
+  status: "Active",
+  segment: "Personal Banking", 
+  riskProfile: "Unknown",
+  recentActivity: {
+    lastCall: "N/A",
+    description: "No recent activity"
+  },
+  demographics: {
+    age: 0,
+    location: "Unknown",
+    relationship: "Unknown"
+  },
+  alerts: []
+};
+
+// ===== UTILITY FUNCTIONS =====
+
+const getSpeakerIcon = (speaker: string) => {
+  if (speaker === 'customer') {
+    return <User className="w-3 h-3 text-blue-600" />;
+  } else {
+    return <UserCheck className="w-3 h-3 text-green-600" />;
+  }
+};
+
+const getSpeakerLabel = (speaker: string) => {
+  return speaker === 'customer' ? 'Customer' : 'Agent';
+};
+
+const getSpeakerColor = (speaker: string, isInterim: boolean = false) => {
+  if (speaker === 'customer') {
+    return isInterim ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-blue-100 text-blue-800 border-blue-300';
+  } else {
+    return isInterim ? 'bg-green-50 text-green-700 border-green-200' : 'bg-green-100 text-green-800 border-green-300';
+  }
+};
+
+const getRiskColor = (riskScore: number): string => {
+  if (riskScore >= 80) return 'bg-red-100 text-red-800 border-red-300';
+  if (riskScore >= 60) return 'bg-orange-100 text-orange-800 border-orange-300';
+  if (riskScore >= 40) return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+  return 'bg-green-100 text-green-800 border-green-300';
+};
+
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+// frontend/src/App.tsx - CHUNK 2: Main Component State and Functions (Simplified)
+
+function App() {
+  // ===== CORE STATE =====
+  const [selectedAudioFile, setSelectedAudioFile] = useState<RealAudioFile | null>(null);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  
+  // ===== ANALYSIS STATE =====
+  const [transcription, setTranscription] = useState<string>('');
+  const [riskScore, setRiskScore] = useState<number>(0);
+  const [riskLevel, setRiskLevel] = useState<string>('MINIMAL');
+  const [detectedPatterns, setDetectedPatterns] = useState<Record<string, DetectedPattern>>({});
+  const [policyGuidance, setPolicyGuidance] = useState<PolicyGuidance | null>(null);
+  const [processingStage, setProcessingStage] = useState<string>('');
+  const [showingSegments, setShowingSegments] = useState<AudioSegment[]>([]);
+  const [scamType, setScamType] = useState<string>('unknown');
+  const [currentCustomer, setCurrentCustomer] = useState<CustomerProfile>(defaultCustomerProfile);
+  
+  // ===== BACKEND INTEGRATION STATE =====
+  const [audioFiles, setAudioFiles] = useState<RealAudioFile[]>([]);
+  const [isLoadingFiles, setIsLoadingFiles] = useState<boolean>(true);
+  const [sessionId, setSessionId] = useState<string>('');
+  
+  // ===== WEBSOCKET STATE =====
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [serverProcessing, setServerProcessing] = useState<boolean>(false);
+  
+  // ===== REFS =====
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ===== WEBSOCKET FUNCTIONS =====
+
+  const connectWebSocket = (): void => {
+    try {
+      const websocket = new WebSocket(`${WS_BASE_URL}/ws/fraud-detection/agent-${Date.now()}`);
+      
+      websocket.onopen = () => {
+        console.log('✅ WebSocket connected');
+        setIsConnected(true);
+        setWs(websocket);
+        
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+        }
+      };
+      
+      websocket.onmessage = (event) => {
+        try {
+          const message: WebSocketMessage = JSON.parse(event.data);
+          handleWebSocketMessage(message);
+        } catch (error) {
+          console.error('❌ Error parsing WebSocket message:', error);
+        }
+      };
+      
+      websocket.onclose = (event) => {
+        console.log('🔌 WebSocket disconnected:', event.code, event.reason);
+        setIsConnected(false);
+        setWs(null);
+        
+        if (event.code !== 1000) {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log('🔄 Attempting to reconnect WebSocket...');
+            connectWebSocket();
+          }, 3000);
+        }
+      };
+      
+      websocket.onerror = (error) => {
+        console.error('❌ WebSocket error:', error);
+      };
+      
+    } catch (error) {
+      console.error('❌ Error creating WebSocket connection:', error);
+    }
+  };
+
+  const handleWebSocketMessage = (message: WebSocketMessage): void => {
+    console.log('📨 WebSocket message received:', message);
     
-    def __init__(self):
-        self.original_stderr = sys.stderr
-        self.suppressed_stderr = StringIO()
-        self.warning_patterns = [
-            'Warning: there are non-text parts in the response',
-            'non-text parts in the response',
-            'returning concatenated text result from text parts',
-            'Check the full candidates.content.parts accessor'
+    switch (message.type) {
+      case 'processing_started':
+      case 'server_processing_started':
+        setProcessingStage('🖥️ Server processing started');
+        setServerProcessing(true);
+        break;
+        
+      case 'streaming_started':
+        setProcessingStage('🎙️ Audio streaming started');
+        break;
+        
+      case 'transcription_segment':
+        const transcriptData = message.data;
+        
+        const finalSegment: AudioSegment = {
+          speaker: transcriptData.speaker,
+          start: transcriptData.start || 0,
+          duration: transcriptData.duration || 0,
+          text: transcriptData.text,
+          confidence: transcriptData.confidence,
+          is_final: true,
+          speaker_tag: transcriptData.speaker_tag,
+          segment_id: `final-${Date.now()}-${Math.random()}`
+        };
+        
+        setShowingSegments(prev => [...prev, finalSegment]);
+        
+        if (transcriptData.speaker === 'customer') {
+          setTranscription(prev => {
+            const customerText = prev + ' ' + transcriptData.text;
+            return customerText.trim();
+          });
+        }
+        
+        setProcessingStage(`🎙️ ${transcriptData.speaker}: ${transcriptData.text.slice(0, 30)}...`);
+        break;
+        
+      case 'transcription_interim':
+        const interimData = message.data;
+        
+        const interimSegment: AudioSegment = {
+          speaker: interimData.speaker,
+          start: interimData.start || 0,
+          duration: interimData.duration || 0,
+          text: interimData.text,
+          confidence: interimData.confidence,
+          is_final: false,
+          is_interim: true,
+          speaker_tag: interimData.speaker_tag,
+          segment_id: `interim-${Date.now()}-${Math.random()}`
+        };
+        
+        setShowingSegments(prev => {
+          const withoutLastInterim = prev.filter(s => 
+            s.is_final || s.speaker !== interimData.speaker || !s.is_interim
+          );
+          return [...withoutLastInterim, interimSegment];
+        });
+        
+        setProcessingStage(`🎙️ ${interimData.speaker} speaking...`);
+        break;
+        
+      case 'fraud_analysis_started':
+        setProcessingStage('🔍 Analyzing for fraud patterns...');
+        break;
+        
+      case 'fraud_analysis_update':
+        const analysis = message.data;
+        setRiskScore(analysis.risk_score || 0);
+        setRiskLevel(analysis.risk_level || 'MINIMAL');
+        setScamType(analysis.scam_type || 'unknown');
+        setDetectedPatterns(analysis.detected_patterns || {});
+        setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
+        break;
+        
+      case 'policy_analysis_started':
+        setProcessingStage('📚 Retrieving policy guidance...');
+        break;
+        
+      case 'policy_guidance_ready':
+        setPolicyGuidance(message.data);
+        setProcessingStage('📚 Policy guidance ready');
+        break;
+        
+      case 'case_creation_started':
+        setProcessingStage('📋 Creating fraud case...');
+        break;
+        
+      case 'case_created':
+        setProcessingStage(`📋 Case created: ${message.data.case_id}`);
+        break;
+        
+      case 'processing_complete':
+        setProcessingStage('✅ Server processing complete');
+        setServerProcessing(false);
+        break;
+        
+      case 'processing_stopped':
+        setProcessingStage('🛑 Processing stopped');
+        setServerProcessing(false);
+        break;
+        
+      case 'error':
+        setProcessingStage(`❌ Error: ${message.data.error || message.data.message}`);
+        setServerProcessing(false);
+        break;
+        
+      default:
+        console.log('Unknown message type:', message.type);
+    }
+  };
+
+  // ===== AUDIO PROCESSING FUNCTIONS =====
+
+  const startServerProcessing = async (audioFile: RealAudioFile): Promise<void> => {
+    try {
+      if (!ws || !isConnected) {
+        setProcessingStage('🔌 WebSocket not connected - attempting to connect...');
+        connectWebSocket();
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        if (!ws || !isConnected) {
+          throw new Error('Could not establish WebSocket connection');
+        }
+      }
+      
+      if (selectedAudioFile?.id !== audioFile.id) {
+        setSelectedAudioFile(audioFile);
+        const customerProfile = customerProfiles[audioFile.filename] || defaultCustomerProfile;
+        setCurrentCustomer(customerProfile);
+        resetState();
+      }
+      
+      const newSessionId = `server_session_${Date.now()}`;
+      setSessionId(newSessionId);
+      setIsPlaying(true);
+      setServerProcessing(true);
+      setProcessingStage('🖥️ Starting server-side processing...');
+      
+      const message = {
+        type: 'process_audio',
+        data: {
+          filename: audioFile.filename,
+          session_id: newSessionId
+        }
+      };
+      ws.send(JSON.stringify(message));
+      
+      const audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
+      setAudioElement(audio);
+      
+      audio.addEventListener('timeupdate', () => {
+        setCurrentTime(audio.currentTime);
+      });
+      
+      audio.addEventListener('play', () => {
+        setIsPlaying(true);
+      });
+      
+      audio.addEventListener('pause', () => {
+        setIsPlaying(false);
+      });
+      
+      audio.addEventListener('ended', () => {
+        setIsPlaying(false);
+        setProcessingStage('✅ Audio playback complete - server processing finishing');
+      });
+      
+      audio.addEventListener('error', (e) => {
+        console.error('❌ Audio playback error:', e);
+        setProcessingStage('❌ Error playing audio file');
+        setIsPlaying(false);
+        stopServerProcessing();
+      });
+      
+      await audio.play();
+      
+    } catch (error) {
+      console.error('❌ Error starting server processing:', error);
+      setProcessingStage(`❌ Failed to start processing: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setIsPlaying(false);
+      setServerProcessing(false);
+    }
+  };
+
+  const stopServerProcessing = (): void => {
+    if (ws && isConnected && sessionId) {
+      const message = {
+        type: 'stop_processing',
+        data: {
+          session_id: sessionId
+        }
+      };
+      ws.send(JSON.stringify(message));
+    }
+    
+    setIsPlaying(false);
+    setServerProcessing(false);
+    setProcessingStage('🛑 Processing stopped');
+    
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.currentTime = 0;
+    }
+  };
+
+  // ===== UTILITY FUNCTIONS =====
+
+  const resetState = (): void => {
+    setCurrentTime(0);
+    setTranscription('');
+    setRiskScore(0);
+    setRiskLevel('MINIMAL');
+    setDetectedPatterns({});
+    setPolicyGuidance(null);
+    setProcessingStage('');
+    setShowingSegments([]);
+    setSessionId('');
+    setServerProcessing(false);
+  };
+
+  const loadAudioFiles = async (): Promise<void> => {
+    try {
+      setIsLoadingFiles(true);
+      const response = await fetch(`${API_BASE_URL}/api/v1/audio/sample-files`);
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        setAudioFiles(data.files);
+      } else {
+        console.error('Failed to load audio files:', data);
+      }
+    } catch (error) {
+      console.error('Error loading audio files:', error);
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  };
+
+  const createServiceNowCase = async () => {
+    try {
+      setProcessingStage('📋 Creating ServiceNow case...');
+      
+      const caseData = {
+        customer_name: currentCustomer.name,
+        customer_account: currentCustomer.account,
+        customer_phone: currentCustomer.demographics?.location || 'Unknown',
+        risk_score: riskScore,
+        scam_type: scamType,
+        session_id: sessionId,
+        confidence_score: riskScore / 100,
+        transcript_segments: showingSegments.map(segment => ({
+          speaker: segment.speaker,
+          start: segment.start,
+          text: segment.text,
+          confidence: segment.confidence
+        })),
+        detected_patterns: detectedPatterns,
+        recommended_actions: policyGuidance?.recommended_actions || [
+          "Review customer interaction",
+          "Verify transaction details",
+          "Follow standard fraud procedures"
         ]
-    
-    def __enter__(self):
-        sys.stderr = self.suppressed_stderr
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        captured = self.suppressed_stderr.getvalue()
-        sys.stderr = self.original_stderr
-        
-        # Only show lines that don't match warning patterns
-        if captured:
-            lines = captured.split('\n')
-            filtered_lines = []
-            for line in lines:
-                if line.strip() and not any(pattern in line for pattern in self.warning_patterns):
-                    filtered_lines.append(line)
-            
-            if filtered_lines:
-                print('\n'.join(filtered_lines), file=sys.stderr)
+      };
 
-class FraudDetectionOrchestrator:
-    """Fraud Detection Orchestrator with proper ADK session management"""
+      const response = await fetch(`${API_BASE_URL}/api/v1/cases/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(caseData),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.status === 'success') {
+        const caseInfo = result.data;
+        
+        setProcessingStage(`✅ ServiceNow case created: ${caseInfo.case_number}`);
+        
+        const successMessage = `
+ServiceNow Case Created Successfully!
+
+Case Number: ${caseInfo.case_number}
+Priority: ${caseInfo.priority}
+Risk Score: ${riskScore}%
+Scam Type: ${scamType.replace('_', ' ').toUpperCase()}
+
+Click OK to open the case in ServiceNow.
+        `.trim();
+        
+        if (window.confirm(successMessage)) {
+          window.open(caseInfo.case_url, '_blank');
+        }
+        
+      } else {
+        const errorMessage = result.error || 'Failed to create case';
+        setProcessingStage(`❌ Error: ${errorMessage}`);
+        alert(`Failed to create ServiceNow case: ${errorMessage}`);
+      }
+      
+    } catch (error) {
+      console.error('Error creating ServiceNow case:', error);
+      setProcessingStage(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`Error creating ServiceNow case: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // ===== COMPONENT FUNCTIONS =====
+
+  const DemoCallButton = ({ audioFile }: { audioFile: RealAudioFile }) => (
+    <button
+      onClick={() => !isPlaying ? startServerProcessing(audioFile) : null}
+      disabled={isPlaying}
+      className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+        selectedAudioFile?.id === audioFile.id 
+          ? 'bg-blue-100 text-blue-800 border-2 border-blue-300' 
+          : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-2 border-transparent'
+      } ${isPlaying ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      <span className="text-lg">{audioFile.icon}</span>
+      {!isPlaying ? (
+        <Play className="w-4 h-4" />
+      ) : selectedAudioFile?.id === audioFile.id ? (
+        <Pause className="w-4 h-4" />
+      ) : (
+        <Play className="w-4 h-4" />
+      )}
+      <span className="font-medium">{audioFile.title}</span>
+      {selectedAudioFile?.id === audioFile.id && isPlaying && (
+        <div className="flex items-center space-x-1">
+          <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
+            LIVE
+          </span>
+        </div>
+      )}
+    </button>
+  );
+
+  const ProcessingStatus = () => (
+    <div className="flex items-center space-x-2 text-xs">
+      {serverProcessing ? (
+        <div className="flex items-center space-x-1 text-blue-600">
+          <Server className="w-4 h-4 animate-pulse" />
+          <span>Server Processing</span>
+        </div>
+      ) : (
+        <div className="flex items-center space-x-1 text-gray-500">
+          <Server className="w-4 h-4" />
+          <span>Server Ready</span>
+        </div>
+      )}
+    </div>
+  );
+
+  // ===== EFFECTS =====
+
+  useEffect(() => {
+    loadAudioFiles();
+  }, []);
+
+  useEffect(() => {
+    connectWebSocket();
     
-    def __init__(self, connection_manager=None):
-        self.connection_manager = connection_manager
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // ===== RENDER =====
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {/* Simplified Header */}
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="flex justify-between items-center px-6 py-3">
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center">
+              <img src="/hsbc-uk.svg" alt="HSBC" className="h-8 w-auto" />
+            </div>
+            <span className="text-lg font-medium text-gray-900">Agent Desktop</span>
+          </div>
+          
+          <div className="flex items-center space-x-6 text-sm text-gray-600">
+            <span>Agent: James Bond</span>
+            <span>ID: JB2024</span>
+            <span>Shift: 09:00-17:00</span>
+            <div className="flex items-center space-x-2 text-sm">
+              <span className="text-gray-600">ServiceNow:</span>
+              <span className="text-green-600">Ready</span>
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            </div>
+            <ProcessingStatus />
+            <Settings className="w-4 h-4" />
+          </div>
+        </div>
+      </header>
+
+      {/* Simplified Demo Call Selection */}
+      <div className="bg-white border-b border-gray-200 px-6 py-3">
+        <div className="flex items-center space-x-4">
+          <span className="text-sm font-medium text-gray-700">Demo Calls:</span>
+          <div className="flex space-x-2">
+            {audioFiles.map((audioFile) => (
+              <DemoCallButton key={audioFile.id} audioFile={audioFile} />
+            ))}
+          </div>
+          
+          {isPlaying && selectedAudioFile && (
+            <button
+              onClick={stopServerProcessing}
+              className="ml-4 px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+            >
+              Stop Processing
+            </button>
+          )}
+          
+          <div className="flex items-center space-x-2 ml-4">
+            {isConnected ? (
+              <div className="flex items-center space-x-1 text-green-600">
+                <Wifi className="w-4 h-4" />
+                <span className="text-xs">Connected</span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-1 text-red-600">
+                <WifiOff className="w-4 h-4" />
+                <span className="text-xs">Disconnected</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="flex h-[calc(100vh-120px)]">
         
-        # Session tracking
-        self.active_sessions: Dict[str, Dict] = {}
-        self.customer_speech_buffer: Dict[str, List[str]] = {}
-        self.session_analysis_history: Dict[str, List[Dict]] = {}
-        self.accumulated_patterns: Dict[str, Dict] = {}
-        
-        # Initialize settings with fallback
-        try:
-            from ..config.settings import get_settings
-            self.settings = get_settings()
-        except ImportError:
-            logger.warning("Settings import failed, using defaults")
-            self.settings = self._get_default_settings()
-        
-        # FIXED: Initialize all attributes to prevent AttributeError
-        self.session_service = None
-        self.agents = {}
-        self.runners = {}
-        self.case_management_agent = None
-        self.types = None
-        
-        # Initialize ADK system
-        adk_success = self._initialize_adk_system()
-        
-        # Initialize customer profiles
-        self._initialize_customer_profiles()
-        
-        if adk_success:
-            logger.info("🎭 Fraud Detection Orchestrator initialized successfully with ADK")
-        else:
-            logger.warning("🎭 Fraud Detection Orchestrator initialized with fallback mode (ADK failed)")
-        
-        logger.info(f"🎭 Fraud Detection Orchestrator ready - Agents: {len(self.agents)}, Runners: {len(self.runners)}")
-    
-    def _get_default_settings(self):
-        """Fallback settings if import fails"""
-        class DefaultSettings:
-            def __init__(self):
-                self.risk_threshold_critical = 80
-                self.risk_threshold_high = 60
-                self.risk_threshold_medium = 40
-                self.risk_threshold_low = 20
-        return DefaultSettings()
-    
-    def _initialize_adk_system(self):
-        """Initialize ADK system using pre-defined agents - simplified approach"""
-        try:
-            logger.info("🔧 Starting ADK system initialization with pre-defined agents...")
-            
-            # Import ADK components
-            from google.adk.runners import Runner
-            from google.adk.sessions import InMemorySessionService
-            from google.genai import types
-            
-            logger.info("✅ ADK imports successful")
-            
-            # Check environment variables
-            project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-            location = os.getenv("GOOGLE_CLOUD_LOCATION")
-            use_vertexai = os.getenv("GOOGLE_GENAI_USE_VERTEXAI")
-            
-            logger.info(f"🔧 Environment: PROJECT={project_id}, LOCATION={location}, USE_VERTEXAI={use_vertexai}")
-            
-            # Create session service
-            try:
-                self.session_service = InMemorySessionService()
-                logger.info("✅ InMemorySessionService created")
-            except Exception as e:
-                logger.error(f"❌ Failed to create session service: {e}")
-                return False
-            
-            self.types = types
-            
-            # Import individual agents from their own folders
-            try:
-                from ..agents.scam_detection.agent import scam_detection_agent
-                from ..agents.policy_guidance.agent import policy_guidance_agent
-                from ..agents.decision.agent import decision_agent
-                from ..agents.summarization.agent import summarization_agent
-                
-                # Store agents with their keys
-                self.agents = {
-                    "scam_detection": scam_detection_agent,
-                    "policy_guidance": policy_guidance_agent,
-                    "decision": decision_agent,
-                    "summarization": summarization_agent
-                }
-                
-                logger.info(f"✅ Imported {len(self.agents)} individual agents from their own folders")
-                
-            except ImportError as e:
-                logger.error(f"❌ Failed to import individual agents: {e}")
-                logger.info("💡 Falling back to inline agent creation")
-                return self._create_inline_agents()
-            
-            # Create runners for each agent
-            self.runners = {}
-            for agent_key, agent in self.agents.items():
-                try:
-                    runner = Runner(
-                        agent=agent,
-                        app_name=f"fraud_detection_{agent_key}",
-                        session_service=self.session_service
-                    )
-                    self.runners[agent_key] = runner
-                    logger.info(f"✅ Runner created: {agent_key}")
-                except Exception as runner_error:
-                    logger.error(f"❌ Failed to create runner for {agent_key}: {runner_error}")
-                    continue
-            
-            # Case management agent initialization
-            try:
-                from ..agents.case_management.adk_agent import PureADKCaseManagementAgent
-                self.case_management_agent = PureADKCaseManagementAgent()
-                logger.info("✅ Case management agent initialized")
-            except Exception as e:
-                logger.warning(f"⚠️ Case management agent not available: {e}")
-                self.case_management_agent = None
-            
-            success = len(self.agents) > 0 and len(self.runners) > 0
-            if success:
-                logger.info(f"✅ ADK system initialized with pre-defined agents: {len(self.agents)} agents, {len(self.runners)} runners")
-                logger.info(f"✅ Available agents: {list(self.agents.keys())}")
-            else:
-                logger.error("❌ Failed to initialize with pre-defined agents")
-                
-            return success
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize ADK system: {e}")
-            import traceback
-            logger.error(f"❌ Traceback: {traceback.format_exc()}")
-            return False
-    
-    def _create_inline_agents(self):
-        """Fallback to inline agent creation if pre-defined agents fail"""
-        logger.info("🔧 Creating inline agents as fallback...")
-        
-        # Create agents with simple configuration (like original approach)
-        agent_configs = [
-            ("scam_detection", "scam_detection_agent", "Analyzes customer speech for fraud patterns and calculates risk scores", self._get_scam_detection_instruction()),
-            ("policy_guidance", "policy_guidance_agent", "Provides procedural guidance and escalation recommendations for fraud scenarios", self._get_policy_guidance_instruction()),
-            ("decision", "decision_agent", "Makes final fraud prevention decisions based on multi-agent analysis", self._get_decision_instruction()),
-            ("summarization", "summarization_agent", "Creates professional incident summaries for ServiceNow case documentation", self._get_summarization_instruction())
-        ]
-        
-        self.agents = {}
-        self.runners = {}
-        
-        for agent_key, agent_name, description, instruction in agent_configs:
-            logger.info(f"🔧 Creating inline agent: {agent_key}")
-            try:
-                agent = self._create_simple_agent(agent_name, description, instruction)
-                if agent is not None:
-                    self.agents[agent_key] = agent
-                    
-                    # Create runner for this agent
-                    try:
-                        runner = Runner(
-                            agent=agent,
-                            app_name=f"fraud_detection_{agent_key}",
-                            session_service=self.session_service
-                        )
-                        self.runners[agent_key] = runner
-                        logger.info(f"✅ Inline agent and runner created: {agent_key}")
-                    except Exception as runner_error:
-                        logger.error(f"❌ Failed to create runner for {agent_key}: {runner_error}")
-                        if agent_key in self.agents:
-                            del self.agents[agent_key]
-                        continue
+        {/* Left Sidebar - Simplified Customer Information */}
+        <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+          {/* Customer Information */}
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Customer Information</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Name:</span>
+                <span className="font-medium">{currentCustomer.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Account:</span>
+                <span className="font-medium">{currentCustomer.account}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Status:</span>
+                <span className="text-green-600 font-medium">{currentCustomer.status}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Segment:</span>
+                <span className="font-medium">{currentCustomer.segment}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Risk Profile:</span>
+                <span className={`font-medium ${
+                  currentCustomer.riskProfile === 'High' ? 'text-red-600' :
+                  currentCustomer.riskProfile === 'Medium' ? 'text-yellow-600' :
+                  'text-green-600'
+                }`}>
+                  {currentCustomer.riskProfile}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Call Controls */}
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Call Controls</h3>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Call Duration:</span>
+                <span className="font-medium">{formatTime(currentTime)}</span>
+              </div>
+              <div className="flex space-x-2">
+                <button className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-yellow-100 text-yellow-700 rounded text-sm hover:bg-yellow-200">
+                  <Volume2 className="w-4 h-4" />
+                  <span>Hold</span>
+                </button>
+                <button className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200">
+                  <Users className="w-4 h-4" />
+                  <span>Transfer</span>
+                </button>
+              </div>
+              <div className="flex space-x-2 mt-2">
+                <button className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200">
+                  <PhoneCall className="w-4 h-4" />
+                  <span>Mute</span>
+                </button>
+                <button className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200">
+                  <Phone className="w-4 h-4" />
+                  <span>Hang Up</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Actions</h3>
+            <div className="space-y-2">
+              <button className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded">
+                <User className="w-4 h-4" />
+                <span>Verify Identity</span>
+              </button>
+              
+              {/* ServiceNow Case Creation Button */}
+              <button 
+                onClick={createServiceNowCase}
+                disabled={riskScore < 40}
+                className={`w-full flex items-center space-x-2 px-3 py-2 text-left text-sm rounded ${
+                  riskScore < 40 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                <span>Create ServiceNow Case</span>
+                {riskScore >= 80 && (
+                  <span className="ml-auto text-xs bg-red-100 text-red-700 px-2 py-1 rounded">
+                    Auto
+                  </span>
+                )}
+              </button>
+              
+              {/* High Risk Auto-Escalation */}
+              {riskScore >= 80 && (
+                <button 
+                  onClick={createServiceNowCase}
+                  className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>ESCALATE to Fraud Team</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Recent Activity */}
+          <div className="p-4 flex-1">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Recent Activity</h3>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Last Call:</span>
+                <span>{currentCustomer.recentActivity.lastCall}</span>
+              </div>
+              <div className="text-gray-600">{currentCustomer.recentActivity.description}</div>
+              
+              {currentCustomer.recentActivity.additionalInfo && (
+                <div className="text-blue-600 bg-blue-50 p-2 rounded text-xs mt-2">
+                  <strong>Note:</strong> {currentCustomer.recentActivity.additionalInfo}
+                </div>
+              )}
+              
+              {/* Customer-specific alerts */}
+              {currentCustomer.alerts.length > 0 && currentCustomer.alerts.map((alert, index) => (
+                <div key={index} className="mt-4 p-2 bg-orange-50 border border-orange-200 rounded">
+                  <div className="flex justify-between">
+                    <span className="text-orange-800 font-medium">{alert.type}:</span>
+                    <span className="text-orange-600">{alert.date}</span>
+                  </div>
+                  <div className="text-orange-700 text-xs mt-1">{alert.description}</div>
+                </div>
+              ))}
+              
+              {/* Risk-based dynamic alert */}
+              {riskScore > 60 && (
+                <div className="mt-4 p-2 bg-red-50 border border-red-200 rounded">
+                  <div className="flex justify-between">
+                    <span className="text-red-800 font-medium">Live Fraud Alert:</span>
+                    <span className="text-red-600">Now</span>
+                  </div>
+                  <div className="text-red-700 text-xs mt-1">
+                    {riskScore >= 80 ? 'HIGH RISK - Immediate intervention required' :
+                     'MEDIUM RISK - Enhanced monitoring active'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        {/* Center - Live Transcription */}
+        <div className="flex-1 bg-white border-r border-gray-200">
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">Live Transcription - </h3>
+            <h2 className="text-lg font-semibold text-gray-900">for demo only</h2>
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+              <span className="text-sm text-red-600 font-medium">Processing</span>
+            </div>
+          </div>
+          
+          <div className="p-4 h-full overflow-y-auto">
+            {showingSegments.length === 0 ? (
+              <div className="flex items-center justify-center h-64 text-gray-500">
+                <div className="text-center">
+                  <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p>Select a demo call to see live transcription</p>
+                  {processingStage && (
+                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                      <p className="text-blue-700 text-sm">{processingStage}</p>
+                      {processingStage.includes('ServiceNow case created') && (
+                        <button 
+                          onClick={() => setProcessingStage('')}
+                          className="mt-1 text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>  
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {showingSegments.map((segment, index) => {
+                  const isInterim = !segment.is_final;
+                  
+                  return (
+                    <div key={segment.segment_id || `${segment.speaker}-${index}-${isInterim ? 'interim' : 'final'}`} 
+                         className={`animate-in slide-in-from-bottom duration-500 ${isInterim ? 'opacity-70' : ''}`}>
+                      
+                      {/* Speaker Label */}
+                      <div className="flex items-start space-x-3">
+                        <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium border ${
+                          getSpeakerColor(segment.speaker, isInterim)
+                        }`}>
+                          {getSpeakerIcon(segment.speaker)}
+                          <span>{getSpeakerLabel(segment.speaker)}</span>
+                        </div>
                         
-                else:
-                    logger.error(f"❌ Failed to create inline agent: {agent_key}")
-                    
-            except Exception as e:
-                logger.error(f"❌ Error creating inline agent {agent_key}: {e}")
-                continue
-        
-        success = len(self.agents) > 0
-        if success:
-            logger.info(f"✅ Fallback inline agents created: {len(self.agents)} agents")
-        else:
-            logger.error("❌ Failed to create any agents - system will use complete fallback mode")
-            
-        return success
-    
-    def _create_simple_agent(self, name: str, description: str, instruction: str):
-        """Create ADK agent with simple configuration - following the same pattern as TradeSage"""
-        try:
-            from google.adk.agents import LlmAgent
-            
-            # Simple agent creation - let ADK handle authentication automatically
-            agent = LlmAgent(
-                name=name,
-                model="gemini-1.5-pro",
-                description=description,
-                instruction=instruction,
-                tools=[],
-            )
-            
-            logger.info(f"✅ Created simple ADK agent: {name}")
-            return agent
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to create agent {name}: {e}")
-            if "Missing key inputs argument" in str(e):
-                logger.error("💡 Authentication issue - check your environment variables:")
-                logger.error("💡   GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_GENAI_USE_VERTEXAI")
-                logger.error("💡   Or run: gcloud auth application-default login")
-            return None
-    
-    def _get_scam_detection_instruction(self) -> str:
-        return """
-You are the Scam Detection Agent for HSBC Fraud Prevention System. Analyze customer speech for fraud indicators.
-
-CRITICAL: Output STRUCTURED analysis in this EXACT format:
-
-Risk Score: [0-100]%
-Risk Level: [MINIMAL/LOW/MEDIUM/HIGH/CRITICAL]
-Scam Type: [romance_scam/investment_scam/impersonation_scam/authority_scam/unknown]
-Detected Patterns: [list of specific patterns found]
-Key Evidence: [exact phrases that triggered alerts]
-Confidence: [0-100]%
-Recommended Action: [IMMEDIATE_ESCALATION/ENHANCED_MONITORING/VERIFY_CUSTOMER_INTENT/CONTINUE_NORMAL_PROCESSING]
-
-FRAUD PATTERNS TO DETECT:
-- Romance Scams: Online relationships, never met, emergency money requests, overseas partners
-- Investment Scams: Guaranteed returns, pressure to invest immediately, unregulated schemes  
-- Impersonation Scams: Fake bank/authority calls, requests for PINs/passwords
-- Authority Scams: Police/court threats, immediate payment demands
-- Urgency Pressure: "Today only", "immediate action required", artificial deadlines
-
-RISK SCORING:
-- 80-100%: CRITICAL (romance emergency, fake police, guaranteed returns)
-- 60-79%: HIGH (investment pressure, impersonation attempts)
-- 40-59%: MEDIUM (suspicious urgency, unusual requests)
-- 20-39%: LOW (minor red flags)
-- 0-19%: MINIMAL (normal conversation)
-
-Analyze the customer speech and provide IMMEDIATE fraud assessment to protect the customer.
-Focus on SPECIFIC patterns and provide CONCRETE evidence from the text.
-"""
-    
-    def _get_policy_guidance_instruction(self) -> str:
-        return """
-You are the Policy Guidance Agent for HSBC Fraud Prevention. Provide SPECIFIC procedural guidance for detected fraud scenarios.
-
-CRITICAL: Output STRUCTURED guidance in this EXACT format:
-
-Policy ID: FP-[TYPE]-[NUMBER]
-Policy Title: [Specific policy name]
-Immediate Alerts: [Urgent warnings for the agent]
-Recommended Actions: [Step-by-step procedures to follow]
-Key Questions: [Exact questions to ask the customer]
-Customer Education: [What to explain to the customer]
-Escalation Threshold: [Risk score % when to escalate]
-
-SCAM-SPECIFIC POLICIES:
-
-ROMANCE SCAMS (Risk 60%+):
-Policy ID: FP-ROMANCE-001
-- Immediate Alerts: "STOP TRANSFER - Romance scam indicators detected"
-- Recommended Actions: Verify relationship timeline, Ask about meeting in person, Check for emotional manipulation
-- Key Questions: "How long have you known this person?", "Have you met them in person?", "Are they asking you to keep this secret?"
-- Customer Education: Romance scammers create fake emergencies, Never send money to someone you haven't met, Real relationships don't require secrecy
-
-INVESTMENT SCAMS (Risk 60%+):
-Policy ID: FP-INVESTMENT-001  
-- Immediate Alerts: "HIGH RISK - Investment fraud detected"
-- Recommended Actions: Question guaranteed returns, Verify regulatory status, Explain cooling-off period
-- Key Questions: "What regulatory body oversees this investment?", "Why is this opportunity time-sensitive?"
-- Customer Education: No legitimate investment guarantees returns, High returns always mean high risk, Take time to research
-
-IMPERSONATION SCAMS (Risk 70%+):
-Policy ID: FP-IMPERSON-001
-- Immediate Alerts: "SECURITY BREACH - Impersonation attempt"
-- Recommended Actions: Verify caller identity independently, Never provide credentials over phone, Document attempt
-- Key Questions: "What department do you claim to be from?", "What is your employee ID?"
-- Customer Education: HSBC will never ask for PINs by phone, Always hang up and call official numbers
-
-AUTHORITY SCAMS (Risk 80%+):  
-Policy ID: FP-AUTHORITY-001
-- Immediate Alerts: "CRITICAL - Authority impersonation detected"
-- Recommended Actions: Stop all payments, Verify authority independently, Contact legal compliance
-- Key Questions: "What is your badge number?", "Which court issued this order?"
-- Customer Education: Real authorities don't demand immediate payment, Legal processes have proper documentation
-
-Provide IMMEDIATE, ACTIONABLE policy guidance to protect customers and ensure compliance.
-Agent needs SPECIFIC steps to follow RIGHT NOW.
-"""
-    
-    def _get_decision_instruction(self) -> str:
-        return """
-You are the Decision Agent for HSBC Fraud Prevention. Make FINAL fraud prevention decisions based on multi-agent analysis.
-
-CRITICAL: Output IMMEDIATE, ACTIONABLE decisions in this EXACT format:
-
-DECISION: [BLOCK_AND_ESCALATE/VERIFY_AND_MONITOR/MONITOR_AND_EDUCATE/CONTINUE_NORMAL]
-REASONING: [Why this decision was made based on risk score and patterns]
-PRIORITY: [CRITICAL/HIGH/MEDIUM/LOW]
-IMMEDIATE_ACTIONS: [Specific steps agent must take immediately]
-CASE_CREATION_REQUIRED: [YES/NO]
-ESCALATION_PATH: [Which team to contact]
-CUSTOMER_IMPACT: [How this affects the customer experience]
-
-DECISION MATRIX:
-
-BLOCK_AND_ESCALATE (Risk 80%+):
-- REASONING: Critical fraud indicators detected requiring immediate intervention
-- PRIORITY: CRITICAL
-- IMMEDIATE_ACTIONS: Stop all transactions, Contact fraud team immediately, Secure customer account, Document evidence
-- CASE_CREATION_REQUIRED: YES
-- ESCALATION_PATH: Financial Crime Team (immediate contact)
-- CUSTOMER_IMPACT: Transaction blocked, enhanced verification required
-
-VERIFY_AND_MONITOR (Risk 60-79%):
-- REASONING: High risk patterns require enhanced verification and monitoring
-- PRIORITY: HIGH  
-- IMMEDIATE_ACTIONS: Enhanced identity verification, Additional security questions, Monitor account activity, Educational warnings
-- CASE_CREATION_REQUIRED: YES
-- ESCALATION_PATH: Fraud Prevention Team (within 1 hour)
-- CUSTOMER_IMPACT: Additional verification steps, transaction may be delayed
-
-MONITOR_AND_EDUCATE (Risk 40-59%):
-- REASONING: Moderate risk indicators require customer education and monitoring
-- PRIORITY: MEDIUM
-- IMMEDIATE_ACTIONS: Customer education about fraud risks, Document interaction, Flag account for monitoring, Standard processing
-- CASE_CREATION_REQUIRED: NO (unless escalates)
-- ESCALATION_PATH: Customer Protection Team (standard timeline)
-- CUSTOMER_IMPACT: Educational information provided, normal service continues
-
-CONTINUE_NORMAL (Risk <40%):
-- REASONING: Low risk assessment allows normal processing with standard precautions
-- PRIORITY: LOW
-- IMMEDIATE_ACTIONS: Standard processing, Basic fraud awareness, Document interaction
-- CASE_CREATION_REQUIRED: NO
-- ESCALATION_PATH: Standard Customer Service
-- CUSTOMER_IMPACT: No impact, normal service
-
-Make the FINAL DECISION immediately. Customer and agent are waiting for clear direction.
-Banking requires decisive fraud prevention action to protect customers.
-Base decision on risk score, detected patterns, and customer vulnerability.
-"""
-    
-    def _get_summarization_instruction(self) -> str:
-        return """
-You are the Summarization Agent for HSBC Fraud Prevention. Create PROFESSIONAL incident summaries for ServiceNow case documentation.
-
-CRITICAL: Output a COMPLETE, READY-TO-USE incident summary in this EXACT format:
-
-EXECUTIVE SUMMARY
-[2-3 sentences with risk level and key findings]
-
-CUSTOMER REQUEST ANALYSIS  
-[What customer wanted, red flags identified]
-
-FRAUD INDICATORS DETECTED
-[Specific patterns with evidence quotes]
-
-CUSTOMER BEHAVIOR ASSESSMENT
-[Vulnerability analysis, decision-making state]
-
-RECOMMENDED ACTIONS
-[Immediate steps, follow-up requirements]
-
-INCIDENT CLASSIFICATION
-[Severity, financial risk, escalation needs]
-
-FORMAT REQUIREMENTS:
-- Professional ServiceNow documentation style
-- Include specific quotes from customer speech
-- Reference detected fraud patterns with evidence
-- Provide actionable recommendations for case management
-- Include risk scores and confidence levels
-- Use clear, concise language suitable for fraud investigators
-
-Create COMPLETE incident summaries immediately. Banking compliance requires detailed, professional documentation for fraud cases.
-"""
-    
-    def _initialize_customer_profiles(self):
-        """Initialize customer profiles"""
-        self.customer_profiles = {
-            'romance_scam_1.wav': {
-                'name': 'Mrs Patricia Williams',
-                'account': '****3847',
-                'phone': '+44 1202 555123'
-            },
-            'investment_scam_live_call.wav': {
-                'name': 'Mr David Chen', 
-                'account': '****5691',
-                'phone': '+44 161 555456'
-            },
-            'impersonation_scam_live_call.wav': {
-                'name': 'Ms Sarah Thompson',
-                'account': '****7234', 
-                'phone': '+44 121 555789'
-            }
-        }
-
-    # ===== MAIN ORCHESTRATION METHODS =====
-    
-    async def orchestrate_audio_processing(
-        self, 
-        filename: str, 
-        session_id: Optional[str] = None,
-        callback: Optional[Callable] = None
-    ) -> Dict[str, Any]:
-        """Main audio processing orchestration"""
-        session_id = session_id or f"orchestrator_session_{uuid.uuid4().hex[:8]}"
-        
-        try:
-            logger.info(f"🎭 Orchestrator starting: {filename}")
-            
-            # Initialize session
-            await self._initialize_session(session_id, filename, callback)
-            
-            # Create callback
-            audio_callback = self._create_audio_callback(session_id, callback)
-            
-            # Start audio processing
-            try:
-                from ..agents.audio_processor.agent import audio_processor_agent
-                result = await audio_processor_agent.start_realtime_processing(
-                    session_id=session_id,
-                    audio_filename=filename,
-                    websocket_callback=audio_callback
-                )
-            except ImportError as e:
-                logger.error(f"Audio processor import failed: {e}")
-                return {'success': False, 'error': 'Audio processor not available'}
-            
-            if 'error' in result:
-                await self._cleanup_session(session_id)
-                return {'success': False, 'error': result['error']}
-            
-            return {
-                'success': True,
-                'session_id': session_id,
-                'orchestrator': 'FraudDetectionOrchestrator',
-                'agents_available': len(self.agents) > 0,
-                'adk_session_service': self.session_service is not None,
-                'audio_duration': result.get('audio_duration', 0)
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Orchestrator error: {e}")
-            await self._cleanup_session(session_id)
-            return {'success': False, 'error': str(e)}
-    
-    async def orchestrate_text_analysis(
-        self,
-        customer_text: str,
-        session_id: Optional[str] = None,
-        context: Optional[Dict] = None,
-        callback: Optional[Callable] = None
-    ) -> Dict[str, Any]:
-        """Text analysis orchestration with proper ADK execution"""
-        session_id = session_id or f"text_analysis_{uuid.uuid4().hex[:8]}"
-        
-        try:
-            logger.info(f"🎭 Text analysis: {session_id}")
-            
-            # Initialize session
-            await self._initialize_text_session(session_id, customer_text, context, callback)
-            
-            # FIXED: Run the ADK agent pipeline properly
-            result = await self._run_adk_agent_pipeline(session_id, customer_text, callback)
-            
-            return {
-                'success': True,
-                'session_id': session_id,
-                'orchestrator': 'FraudDetectionOrchestrator',
-                'analysis_result': result,
-                'agents_involved': self._get_agents_involved(result.get('risk_score', 0)),
-                'adk_execution': True
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Text analysis error: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    # ===== FIXED ADK AGENT EXECUTION PATTERN =====
-    
-    async def _run_adk_agent_pipeline(self, session_id: str, customer_text: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
-        """Run ADK agent pipeline with proper session management and UI updates"""
-        try:
-            logger.info(f"🎭 Running ADK agent pipeline: {session_id}")
-            
-            session_data = self.active_sessions[session_id]
-            
-            # STEP 1: Scam Detection using proper ADK execution
-            logger.info(f"🔍 Step 1: Running scam detection for session {session_id}")
-            scam_analysis_raw = await self._run_adk_agent("scam_detection", {
-                "customer_text": customer_text,
-                "session_id": session_id
-            })
-            
-            # Parse and send UI update
-            parsed_analysis = await self._parse_and_accumulate_patterns(session_id, scam_analysis_raw)
-            risk_score = parsed_analysis.get('risk_score', 0)
-            
-            # FIXED: Send fraud analysis update to UI
-            if callback:
-                await callback({
-                    'type': 'fraud_analysis_update',
-                    'data': {
-                        'session_id': session_id,
-                        'risk_score': risk_score,
-                        'risk_level': parsed_analysis.get('risk_level', 'MINIMAL'),
-                        'scam_type': parsed_analysis.get('scam_type', 'unknown'),
-                        'detected_patterns': self.accumulated_patterns.get(session_id, {}),
-                        'confidence': parsed_analysis.get('confidence', 0.0),
-                        'explanation': parsed_analysis.get('explanation', ''),
-                        'timestamp': datetime.now().isoformat()
-                    }
-                })
-            
-            # STEP 2: Policy Guidance (if medium+ risk)
-            if risk_score >= 40:
-                logger.info(f"📚 Step 2: Running policy guidance for session {session_id}")
-                if callback:
-                    await callback({
-                        'type': 'policy_analysis_started',
-                        'data': {
-                            'session_id': session_id,
-                            'risk_score': risk_score,
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    })
+                        {isInterim && (
+                          <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded animate-pulse">
+                            typing...
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Text Display */}
+                      <div className={`mt-2 ml-3 p-3 rounded-lg border-l-4 ${
+                        isInterim 
+                          ? 'bg-yellow-50 border-yellow-400' 
+                          : 'bg-gray-50 border-blue-400'
+                      }`}>
+                        <p className={`text-sm text-gray-800 ${isInterim ? 'italic' : ''}`}>
+                          {segment.text}
+                          {isInterim && <span className="animate-pulse ml-1">|</span>}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
                 
-                policy_result = await self._run_adk_agent("policy_guidance", {
-                    "scam_analysis": parsed_analysis,
-                    "session_id": session_id
-                })
-                session_data['policy_guidance'] = self._parse_policy_response(policy_result)
-                
-                # FIXED: Send policy guidance to UI
-                if callback:
-                    await callback({
-                        'type': 'policy_guidance_ready',
-                        'data': {
-                            'session_id': session_id,
-                            'policy_guidance': session_data['policy_guidance'],
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    })
-            
-            # STEP 3: Decision Agent (if high risk)
-            if risk_score >= 60:
-                logger.info(f"🎯 Step 3: Running decision agent for session {session_id}")
-                decision_result = await self._run_adk_agent("decision", {
-                    "scam_analysis": parsed_analysis,
-                    "policy_guidance": session_data.get('policy_guidance', {}),
-                    "session_id": session_id
-                })
-                session_data['decision_result'] = self._parse_decision_response(decision_result, risk_score)
-                
-                # FIXED: Send decision update to UI
-                if callback:
-                    await callback({
-                        'type': 'decision_made',
-                        'data': {
-                            'session_id': session_id,
-                            'decision': session_data['decision_result'].get('decision', 'CONTINUE_NORMAL'),
-                            'priority': session_data['decision_result'].get('priority', 'LOW'),
-                            'reasoning': session_data['decision_result'].get('reasoning', ''),
-                            'immediate_actions': session_data['decision_result'].get('immediate_actions', []),
-                            'case_creation_required': session_data['decision_result'].get('case_creation_required', False),
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    })
-            
-            # STEP 4: Case Management (if required)
-            if risk_score >= 50 and self.case_management_agent:
-                logger.info(f"📋 Step 4: Running case management for session {session_id}")
-                if callback:
-                    await callback({
-                        'type': 'case_creation_started',
-                        'data': {
-                            'session_id': session_id,
-                            'risk_score': risk_score,
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    })
-                
-                await self._run_case_management(session_id, parsed_analysis, callback)
-            
-            logger.info(f"✅ ADK pipeline completed: {risk_score}% risk")
-            
-            # FIXED: Send final completion message
-            if callback:
-                await callback({
-                    'type': 'analysis_complete',
-                    'data': {
-                        'session_id': session_id,
-                        'final_risk_score': risk_score,
-                        'total_steps_completed': 4 if risk_score >= 50 else 3 if risk_score >= 60 else 2 if risk_score >= 40 else 1,
-                        'agents_involved': self._get_agents_involved(risk_score),
-                        'timestamp': datetime.now().isoformat()
-                    }
-                })
-            
-            return {
-                'risk_score': risk_score,
-                'scam_analysis': parsed_analysis,
-                'policy_guidance': session_data.get('policy_guidance'),
-                'decision_result': session_data.get('decision_result'),
-                'case_info': session_data.get('case_info'),
-                'orchestration_complete': True,
-                'adk_execution': True
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ ADK pipeline error: {e}")
-            return {'error': str(e), 'adk_execution': False}
-    
-    async def _run_adk_agent(self, agent_name: str, input_data: Dict[str, Any]) -> str:
-        """FIXED: Run ADK agent with proper session management and validation"""
-        try:
-            # FIXED: Validate agent and runner exist
-            if agent_name not in self.agents:
-                logger.error(f"❌ Agent {agent_name} not found in self.agents")
-                return self._fallback_agent_response(agent_name, input_data)
-                
-            if agent_name not in self.runners:
-                logger.error(f"❌ Runner {agent_name} not found in self.runners")
-                return self._fallback_agent_response(agent_name, input_data)
-            
-            agent = self.agents[agent_name]
-            runner = self.runners[agent_name]
-            
-            # FIXED: Validate agent is not None
-            if agent is None:
-                logger.error(f"❌ Agent {agent_name} is None")
-                return self._fallback_agent_response(agent_name, input_data)
-            
-            # FIXED: Create proper ADK session (like TradeSage)
-            app_name = f"fraud_detection_{agent_name}"
-            user_id = "fraud_detection_user"
-            session_adk_id = f"session_{agent_name}_{id(input_data)}"
-            
-            # FIXED: Create session using session service
-            try:
-                session = await self.session_service.create_session(
-                    app_name=app_name,
-                    user_id=user_id,
-                    session_id=session_adk_id
-                )
-                logger.debug(f"✅ Created ADK session: {session_adk_id}")
-            except Exception as e:
-                logger.error(f"❌ Failed to create ADK session: {e}")
-                return self._fallback_agent_response(agent_name, input_data)
-            
-            # Format input for agent
-            user_message = self._format_agent_input(agent_name, input_data)
-            
-            # FIXED: Create proper message (like TradeSage)
-            message = self.types.Content(
-                role='user',
-                parts=[self.types.Part(text=user_message)]
-            )
-            
-            # FIXED: Use warning suppression and proper event handling (like TradeSage)
-            with WarningSuppressionContext():
-                # Collect ALL events and parts properly
-                text_responses = []
-                function_calls = []
-                function_responses = []
-                tool_results = {}
-                errors = []
-                
-                # FIXED: Process all events and handle ALL part types to avoid warnings
-                async for event in runner.run_async(
-                    user_id=user_id,
-                    session_id=session_adk_id,
-                    new_message=message
-                ):
-                    # Handle different event types - process ALL parts to avoid warnings
-                    if hasattr(event, 'content') and event.content:
-                        if hasattr(event.content, 'parts') and event.content.parts:
-                            for part in event.content.parts:
-                                # Handle ALL part types to avoid warnings
-                                
-                                # Handle text parts
-                                if hasattr(part, 'text') and part.text:
-                                    text_responses.append(part.text)
-                                
-                                # Handle function calls (prevents warning about non-text parts)
-                                elif hasattr(part, 'function_call') and part.function_call:
-                                    function_call = {
-                                        "name": part.function_call.name,
-                                        "args": dict(part.function_call.args) if part.function_call.args else {}
-                                    }
-                                    function_calls.append(function_call)
-                                
-                                # Handle function responses (prevents warning about non-text parts)
-                                elif hasattr(part, 'function_response') and part.function_response:
-                                    function_response = {
-                                        "name": part.function_response.name,
-                                        "response": part.function_response.response
-                                    }
-                                    function_responses.append(function_response)
-                                    
-                                    # Store tool results for easy access
-                                    tool_results[part.function_response.name] = part.function_response.response
-                                
-                                # Handle any other part types to prevent warnings
-                                else:
-                                    # This catches any other part types and processes them silently
-                                    pass
-                    
-                    # Handle errors
-                    if hasattr(event, 'error') and event.error:
-                        errors.append(str(event.error))
-                
-                # Combine all response parts properly
-                final_text = " ".join(text_responses) if text_responses else ""
-                
-                # If we have function calls but no text response, create summary
-                if function_calls and not final_text:
-                    final_text = f"Completed {len(function_calls)} tool calls successfully."
-                
-                if errors:
-                    logger.warning(f"⚠️ ADK agent {agent_name} reported {len(errors)} errors")
-                    for error in errors:
-                        logger.warning(f"   Error: {error}")
-                
-                if final_text:
-                    logger.info(f"✅ ADK agent {agent_name} completed successfully")
-                    return final_text
-                else:
-                    logger.warning(f"⚠️ ADK agent {agent_name} returned empty response, using fallback")
-                    return self._fallback_agent_response(agent_name, input_data)
-                
-        except Exception as e:
-            logger.error(f"❌ ADK agent {agent_name} error: {e}")
-            import traceback
-            logger.error(f"❌ Traceback: {traceback.format_exc()}")
-            return self._fallback_agent_response(agent_name, input_data)
-    
-    def _format_agent_input(self, agent_name: str, input_data: Dict[str, Any]) -> str:
-        """Format input for ADK agent"""
-        if agent_name == "scam_detection":
-            customer_text = input_data.get('customer_text', '')
-            session_id = input_data.get('session_id', '')
-            
-            return f"""
-FRAUD ANALYSIS REQUEST:
-CUSTOMER SPEECH: "{customer_text}"
-SESSION: {session_id}
+                {serverProcessing && (
+                  <div className="flex items-center space-x-2 text-gray-500 ml-3">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    <span className="text-sm">Server processing audio...</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
 
-Please provide structured fraud analysis with risk score, scam type, detected patterns, and recommended action.
-"""
-        
-        elif agent_name == "policy_guidance":
-            scam_analysis = input_data.get('scam_analysis', {})
-            
-            return f"""
-POLICY GUIDANCE REQUEST:
-SCAM ANALYSIS: {json.dumps(scam_analysis, indent=2)}
+        {/* Right Sidebar - Restored AI Agent Assist */}
+        <div className="w-96 bg-white flex flex-col">
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">AI Agent Assist</h3>
+            <div className="flex items-center space-x-2">
+              {isConnected ? (
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              ) : (
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+              )}
+              <span className="text-sm text-gray-600">Analysis</span>
+            </div>
+          </div>
 
-Please provide structured policy guidance with immediate alerts, recommended actions, and key questions.
-"""
-        
-        elif agent_name == "decision":
-            scam_analysis = input_data.get('scam_analysis', {})
-            policy_guidance = input_data.get('policy_guidance', {})
-            
-            return f"""
-DECISION REQUEST:
-SCAM ANALYSIS: {json.dumps(scam_analysis, indent=2)}
-POLICY GUIDANCE: {json.dumps(policy_guidance, indent=2)}
+          {/* Risk Score Display */}
+          <div className="p-4 border-b border-gray-200">
+            <div className="text-center">
+              <div className="relative mx-auto w-24 h-24 mb-3">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 24 24">
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    fill="none"
+                    stroke="#e5e7eb"
+                    strokeWidth="2"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    fill="none"
+                    stroke={riskScore >= 80 ? '#dc2626' : riskScore >= 60 ? '#ea580c' : riskScore >= 40 ? '#ca8a04' : '#16a34a'}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeDasharray={`${(riskScore / 100) * 62.83} 62.83`}
+                    className="transition-all duration-500"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-xl font-bold text-gray-900">{riskScore}%</div>
+                    <div className="text-xs text-gray-600">Risk</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                riskScore >= 80 ? 'bg-red-100 text-red-800' :
+                riskScore >= 60 ? 'bg-orange-100 text-orange-800' :
+                riskScore >= 40 ? 'bg-yellow-100 text-yellow-800' :
+                'bg-green-100 text-green-800'
+              }`}>
+                {riskScore >= 80 ? 'CRITICAL RISK' :
+                 riskScore >= 60 ? 'HIGH RISK' :
+                 riskScore >= 40 ? 'MEDIUM RISK' : 'LOW RISK'}
+              </div>
+            </div>
+          </div>
 
-Please provide final decision with reasoning, priority, and immediate actions.
-"""
-        
-        return str(input_data)
-    
-    # ===== FALLBACK METHODS =====
-    
-    def _fallback_agent_response(self, agent_name: str, input_data: Dict[str, Any]) -> str:
-        """Fallback response when ADK agent fails"""
-        if agent_name == "scam_detection":
-            return self._fallback_scam_detection(input_data.get('customer_text', ''))
-        elif agent_name == "policy_guidance":
-            return "Policy ID: FP-FALLBACK-001\nPolicy Title: Standard Processing\nImmediate Alerts: None\nRecommended Actions: Follow standard procedures"
-        elif agent_name == "decision":
-            return "DECISION: CONTINUE_NORMAL\nREASONING: Fallback processing\nPRIORITY: LOW\nIMMEDIATE_ACTIONS: Standard processing"
-        else:
-            return f"Fallback response for {agent_name}"
-    
-    def _fallback_scam_detection(self, customer_text: str) -> str:
-        """Fallback scam detection using pattern matching"""
-        risk_score = 0
-        detected_patterns = []
-        scam_type = "unknown"
-        
-        text_lower = customer_text.lower()
-        
-        # Romance scam patterns
-        if any(word in text_lower for word in ['boyfriend', 'girlfriend', 'online', 'emergency', 'money']):
-            risk_score += 30
-            detected_patterns.append('romance_exploitation')
-            scam_type = "romance_scam"
-        
-        # Investment scam patterns
-        if any(word in text_lower for word in ['investment', 'guaranteed', 'returns', 'profit']):
-            risk_score += 35
-            detected_patterns.append('investment_fraud')
-            scam_type = "investment_scam"
-        
-        # Urgency patterns
-        if any(word in text_lower for word in ['urgent', 'immediately', 'today', 'now']):
-            risk_score += 20
-            detected_patterns.append('urgency_pressure')
-        
-        risk_score = min(risk_score, 100)
-        
-        if risk_score >= 80:
-            risk_level = "CRITICAL"
-            action = "IMMEDIATE_ESCALATION"
-        elif risk_score >= 60:
-            risk_level = "HIGH"
-            action = "ENHANCED_MONITORING"
-        elif risk_score >= 40:
-            risk_level = "MEDIUM"
-            action = "VERIFY_CUSTOMER_INTENT"
-        else:
-            risk_level = "LOW"
-            action = "CONTINUE_NORMAL_PROCESSING"
-        
-        return f"""
-Risk Score: {risk_score}%
-Risk Level: {risk_level}
-Scam Type: {scam_type}
-Detected Patterns: {detected_patterns}
-Key Evidence: {customer_text[:100]}...
-Confidence: 75%
-Recommended Action: {action}
-"""
-    
-    # ===== PARSING METHODS (same as before) =====
-    
-    async def _parse_and_accumulate_patterns(self, session_id: str, analysis_result: str) -> Dict[str, Any]:
-        """Parse analysis and accumulate patterns"""
-        try:
-            parsed = self._parse_agent_result('scam_detection', analysis_result)
-            
-            # Extract patterns
-            current_patterns = []
-            if 'detected_patterns' in parsed:
-                if isinstance(parsed['detected_patterns'], list):
-                    current_patterns = parsed['detected_patterns']
-                elif isinstance(parsed['detected_patterns'], str):
-                    current_patterns = [p.strip() for p in parsed['detected_patterns'].split(',')]
-            
-            # Accumulate patterns
-            session_patterns = self.accumulated_patterns.get(session_id, {})
-            
-            for pattern_name in current_patterns:
-                if pattern_name and pattern_name != 'unknown':
-                    if pattern_name in session_patterns:
-                        session_patterns[pattern_name]['count'] += 1
-                    else:
-                        session_patterns[pattern_name] = {
-                            'pattern_name': pattern_name,
-                            'count': 1,
-                            'weight': 25,
-                            'severity': 'medium',
-                            'confidence': 0.7,
-                            'matches': [pattern_name]
-                        }
-            
-            self.accumulated_patterns[session_id] = session_patterns
-            self.session_analysis_history[session_id].append(parsed)
-            
-            return parsed
-            
-        except Exception as e:
-            logger.error(f"❌ Pattern parsing error: {e}")
-            return {'risk_score': 0.0, 'error': str(e)}
-    
-    def _parse_agent_result(self, agent_name: str, result_text: str) -> Dict:
-        """Parse agent result text"""
-        try:
-            parsed = {}
-            lines = result_text.split('\n')
-            
-            for line in lines:
-                line = line.strip()
-                if ':' in line and not line.startswith('-'):
-                    key, value = line.split(':', 1)
-                    key = key.strip().lower().replace(' ', '_')
-                    value = value.strip()
-                    
-                    # Handle specific fields
-                    if 'risk_score' in key:
-                        import re
-                        match = re.search(r'(\d+(?:\.\d+)?)%?', value)
-                        if match:
-                            parsed['risk_score'] = float(match.group(1))
-                    elif 'confidence' in key:
-                        match = re.search(r'(\d+(?:\.\d+)?)%?', value)
-                        if match:
-                            parsed['confidence'] = float(match.group(1)) / 100
-                    elif 'detected_patterns' in key:
-                        if '[' in value and ']' in value:
-                            pattern_text = value.strip('[]')
-                            patterns = [p.strip().strip("'\"") for p in pattern_text.split(',')]
-                            parsed['detected_patterns'] = [p for p in patterns if p and p != 'unknown']
-                        else:
-                            parsed['detected_patterns'] = [value] if value and value != 'unknown' else []
-                    else:
-                        parsed[key] = value
-            
-            return parsed
-            
-        except Exception as e:
-            logger.error(f"❌ Error parsing {agent_name} result: {e}")
-            return {'error': str(e), 'raw_text': result_text}
-    
-    def _parse_policy_response(self, response_text: str) -> Dict:
-        """Parse policy guidance response with proper formatting for UI"""
-        try:
-            parsed = {}
-            lines = response_text.split('\n')
-            
-            # Initialize arrays for UI
-            immediate_alerts = []
-            recommended_actions = []
-            key_questions = []
-            customer_education = []
-            
-            current_section = None
-            
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                    
-                # Check for section headers
-                if 'immediate alerts:' in line.lower():
-                    current_section = 'immediate_alerts'
-                    # Extract content after colon
-                    content = line.split(':', 1)[1].strip() if ':' in line else ''
-                    if content and content != 'None':
-                        immediate_alerts.append(content.strip('"'))
-                elif 'recommended actions:' in line.lower():
-                    current_section = 'recommended_actions'
-                    content = line.split(':', 1)[1].strip() if ':' in line else ''
-                    if content and content != 'None':
-                        recommended_actions.append(content.strip('"'))
-                elif 'key questions:' in line.lower():
-                    current_section = 'key_questions'
-                    content = line.split(':', 1)[1].strip() if ':' in line else ''
-                    if content and content != 'None':
-                        key_questions.append(content.strip('"'))
-                elif 'customer education:' in line.lower():
-                    current_section = 'customer_education'
-                    content = line.split(':', 1)[1].strip() if ':' in line else ''
-                    if content and content != 'None':
-                        customer_education.append(content.strip('"'))
-                elif ':' in line and not line.startswith('-'):
-                    # Handle other fields
-                    key, value = line.split(':', 1)
-                    key = key.strip().lower().replace(' ', '_')
-                    value = value.strip()
-                    parsed[key] = value
-                    current_section = None
-                elif line.startswith('-') or line.startswith('•') and current_section:
-                    # Add to current section
-                    content = line.lstrip('-•').strip()
-                    if content:
-                        if current_section == 'immediate_alerts':
-                            immediate_alerts.append(content.strip('"'))
-                        elif current_section == 'recommended_actions':
-                            recommended_actions.append(content.strip('"'))
-                        elif current_section == 'key_questions':
-                            key_questions.append(content.strip('"'))
-                        elif current_section == 'customer_education':
-                            customer_education.append(content.strip('"'))
-                elif current_section and line:
-                    # Add line content to current section
-                    if line.startswith('"') and line.endswith('"'):
-                        line = line.strip('"')
-                    if current_section == 'immediate_alerts':
-                        immediate_alerts.append(line)
-                    elif current_section == 'recommended_actions':
-                        recommended_actions.append(line)
-                    elif current_section == 'key_questions':
-                        key_questions.append(line)
-                    elif current_section == 'customer_education':
-                        customer_education.append(line)
-            
-            # Ensure required fields exist with defaults for UI
-            parsed.setdefault('policy_id', 'FP-AUTO-001')
-            parsed.setdefault('policy_title', 'Automated Policy Guidance')
-            parsed['immediate_alerts'] = immediate_alerts or ["Review customer request carefully"]
-            parsed['recommended_actions'] = recommended_actions or ["Follow standard fraud prevention procedures"]
-            parsed['key_questions'] = key_questions or ["Can you verify your identity?", "Is this request unusual for you?"]
-            parsed['customer_education'] = customer_education or ["Be aware of common fraud tactics", "Take time to verify requests"]
-            parsed.setdefault('escalation_threshold', 60)
-            
-            return parsed
-            
-        except Exception as e:
-            logger.error(f"❌ Error parsing policy response: {e}")
-            # Return safe defaults for UI
-            return {
-                'policy_id': 'FP-ERROR-001',
-                'policy_title': 'Error in Policy Retrieval',
-                'immediate_alerts': ["Policy system error - use manual procedures"],
-                'recommended_actions': ["Follow standard fraud prevention procedures", "Escalate to supervisor if needed"],
-                'key_questions': ["Can you verify your identity?", "Is this request unusual for you?"],
-                'customer_education': ["Be cautious with unusual requests", "Verify before proceeding"],
-                'escalation_threshold': 60,
-                'error': str(e)
-            }
-    
-    def _parse_decision_response(self, response_text: str, risk_score: float) -> Dict:
-        """Parse decision response"""
-        try:
-            parsed = {}
-            lines = response_text.split('\n')
-            
-            for line in lines:
-                line = line.strip()
-                if ':' in line and not line.startswith('-'):
-                    key, value = line.split(':', 1)
-                    key = key.strip().lower().replace(' ', '_')
-                    value = value.strip()
-                    parsed[key] = value
-            
-            # Extract decision from text if not parsed
-            decision_text = response_text.upper()
-            if 'BLOCK_AND_ESCALATE' in decision_text:
-                decision = 'BLOCK_AND_ESCALATE'
-                priority = 'CRITICAL'
-            elif 'VERIFY_AND_MONITOR' in decision_text:
-                decision = 'VERIFY_AND_MONITOR'
-                priority = 'HIGH'
-            elif 'MONITOR_AND_EDUCATE' in decision_text:
-                decision = 'MONITOR_AND_EDUCATE'
-                priority = 'MEDIUM'
-            else:
-                decision = 'CONTINUE_NORMAL'
-                priority = 'LOW'
-            
-            return {
-                'decision': parsed.get('decision', decision),
-                'reasoning': parsed.get('reasoning', f'Risk score {risk_score}% analysis'),
-                'priority': parsed.get('priority', priority),
-                'immediate_actions': parsed.get('immediate_actions', f'{decision} protocol').split(','),
-                'case_creation_required': risk_score >= 50,
-                'escalation_path': parsed.get('escalation_path', 'Fraud Prevention Team'),
-                'customer_impact': parsed.get('customer_impact', 'Standard processing')
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Error parsing decision response: {e}")
-            return {}
-    
-    # ===== SESSION AND UTILITY METHODS =====
-    
-    async def _initialize_session(self, session_id: str, filename: str, callback: Optional[Callable]):
-        """Initialize session"""
-        self.active_sessions[session_id] = {
-            'session_id': session_id,
-            'filename': filename,
-            'start_time': datetime.now(),
-            'status': 'processing',
-            'callback': callback,
-            'customer_profile': self._get_customer_profile(filename)
-        }
-        
-        self.customer_speech_buffer[session_id] = []
-        self.session_analysis_history[session_id] = []
-        self.accumulated_patterns[session_id] = {}
-    
-    async def _initialize_text_session(self, session_id: str, text: str, context: Optional[Dict], callback: Optional[Callable]):
-        """Initialize text session"""
-        self.active_sessions[session_id] = {
-            'session_id': session_id,
-            'input_text': text,
-            'start_time': datetime.now(),
-            'status': 'analyzing',
-            'context': context or {},
-            'callback': callback,
-            'processing_type': 'text_only'
-        }
-        
-        self.session_analysis_history[session_id] = []
-        self.accumulated_patterns[session_id] = {}
-    
-    def _create_audio_callback(self, session_id: str, external_callback: Optional[Callable]) -> Callable:
-        """Create audio callback"""
-        async def orchestrator_callback(message_data: Dict) -> None:
-            try:
-                if external_callback:
-                    await external_callback(message_data)
-                await self._handle_audio_message(session_id, message_data)
-            except Exception as e:
-                logger.error(f"❌ Callback error: {e}")
-        return orchestrator_callback
-    
-    async def _handle_audio_message(self, session_id: str, message_data: Dict):
-        """Handle audio messages"""
-        message_type = message_data.get('type')
-        data = message_data.get('data', {})
-        
-        if message_type == 'transcription_segment':
-            speaker = data.get('speaker')
-            text = data.get('text', '')
-            
-            if speaker == 'customer' and text.strip():
-                await self._process_customer_speech(session_id, text, data)
-    
-    async def _process_customer_speech(self, session_id: str, customer_text: str, segment_data: Dict):
-        """Process customer speech and send analysis updates to UI"""
-        try:
-            if session_id not in self.customer_speech_buffer:
-                self.customer_speech_buffer[session_id] = []
-            
-            self.customer_speech_buffer[session_id].append({
-                'text': customer_text,
-                'timestamp': segment_data.get('start', 0),
-                'confidence': segment_data.get('confidence', 0.0)
-            })
-            
-            # Trigger analysis for meaningful speech
-            accumulated_speech = " ".join([
-                segment['text'] for segment in self.customer_speech_buffer[session_id]
-            ])
-            
-            if len(accumulated_speech.strip()) >= 15:
-                # Get callback for this session
-                session_data = self.active_sessions.get(session_id, {})
-                callback = session_data.get('callback')
-                
-                # Send analysis started message
-                if callback:
-                    await callback({
-                        'type': 'fraud_analysis_started',
-                        'data': {
-                            'session_id': session_id,
-                            'customer_text': customer_text,
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    })
-                
-                # Run analysis pipeline
-                analysis_result = await self._run_adk_agent_pipeline(session_id, accumulated_speech, callback)
-                
-                # Send analysis update to UI
-                if callback and analysis_result:
-                    scam_analysis = analysis_result.get('scam_analysis', {})
-                    risk_score = scam_analysis.get('risk_score', 0)
-                    
-                    await callback({
-                        'type': 'fraud_analysis_update',
-                        'data': {
-                            'session_id': session_id,
-                            'risk_score': risk_score,
-                            'risk_level': scam_analysis.get('risk_level', 'MINIMAL'),
-                            'scam_type': scam_analysis.get('scam_type', 'unknown'),
-                            'detected_patterns': self.accumulated_patterns.get(session_id, {}),
-                            'confidence': scam_analysis.get('confidence', 0.0),
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    })
-                    
-                    # Send policy guidance if available
-                    policy_guidance = analysis_result.get('policy_guidance')
-                    if policy_guidance:
-                        await callback({
-                            'type': 'policy_guidance_ready',
-                            'data': {
-                                'session_id': session_id,
-                                'policy_guidance': policy_guidance,
-                                'timestamp': datetime.now().isoformat()
-                            }
-                        })
-                
-        except Exception as e:
-            logger.error(f"❌ Error processing customer speech: {e}")
-    
-    async def _run_case_management(self, session_id: str, analysis: Dict, callback: Optional[Callable]):
-        """Run case management with proper UI updates"""
-        try:
-            if not self.case_management_agent:
-                logger.warning("Case management agent not available")
-                return
-            
-            session_data = self.active_sessions[session_id]
-            
-            incident_data = {
-                'customer_name': session_data.get('customer_profile', {}).get('name', 'Unknown'),
-                'customer_account': session_data.get('customer_profile', {}).get('account', 'Unknown'),
-                'customer_phone': session_data.get('customer_profile', {}).get('phone', 'Unknown'),
-                'risk_score': analysis.get('risk_score', 0),
-                'scam_type': analysis.get('scam_type', 'unknown'),
-                'session_id': session_id,
-                'confidence_score': analysis.get('confidence', 0.0),
-                'detected_patterns': self.accumulated_patterns.get(session_id, {}),
-                'auto_created': True,
-                'creation_method': 'auto_creation'
-            }
-            
-            case_result = await self.case_management_agent.create_fraud_incident(
-                incident_data=incident_data,
-                context={'session_id': session_id}
-            )
-            
-            session_data['case_info'] = case_result
-            
-            # FIXED: Send case creation update to UI
-            if callback:
-                await callback({
-                    'type': 'case_created',
-                    'data': {
-                        'session_id': session_id,
-                        'case_number': case_result.get('incident_number', 'Unknown'),
-                        'case_url': case_result.get('incident_url', ''),
-                        'success': case_result.get('success', False),
-                        'case_id': case_result.get('incident_sys_id', ''),
-                        'priority': case_result.get('priority', 'Medium'),
-                        'risk_score': analysis.get('risk_score', 0),
-                        'timestamp': datetime.now().isoformat()
-                    }
-                })
-            
-        except Exception as e:
-            logger.error(f"❌ Case management error: {e}")
-            # Send error to UI
-            if callback:
-                await callback({
-                    'type': 'case_creation_error',
-                    'data': {
-                        'session_id': session_id,
-                        'error': str(e),
-                        'timestamp': datetime.now().isoformat()
-                    }
-                })
-    
-    def _get_customer_profile(self, filename: str) -> Dict:
-        """Get customer profile for filename"""
-        for key, profile in self.customer_profiles.items():
-            if key in filename:
-                return profile
-        
-        return {
-            'name': 'Unknown Customer',
-            'account': '****0000',
-            'phone': 'Unknown'
-        }
-    
-    def _get_agents_involved(self, risk_score: float) -> List[str]:
-        """Get list of agents involved based on risk score"""
-        agents = ["scam_detection"]
-        
-        if risk_score >= 40:
-            agents.append("policy_guidance")
-        
-        if risk_score >= 60:
-            agents.append("decision")
-        
-        if risk_score >= 50:
-            agents.append("case_management")
-        
-        return agents
-    
-    async def _cleanup_session(self, session_id: str):
-        """Clean up session data"""
-        try:
-            if session_id in self.active_sessions:
-                del self.active_sessions[session_id]
-            if session_id in self.customer_speech_buffer:
-                del self.customer_speech_buffer[session_id]
-            if session_id in self.session_analysis_history:
-                del self.session_analysis_history[session_id]
-            if session_id in self.accumulated_patterns:
-                del self.accumulated_patterns[session_id]
-        except Exception as e:
-            logger.error(f"❌ Cleanup error: {e}")
-    
-    # ===== STATUS AND MONITORING =====
-    
-    def get_orchestrator_status(self) -> Dict[str, Any]:
-        """Get orchestrator status with safe attribute access"""
-        try:
-            from ..utils import get_current_timestamp
-        except ImportError:
-            def get_current_timestamp():
-                return datetime.now().isoformat()
-        
-        # FIXED: Safe attribute access with defaults
-        agents = getattr(self, 'agents', {})
-        runners = getattr(self, 'runners', {})
-        session_service = getattr(self, 'session_service', None)
-        case_management_agent = getattr(self, 'case_management_agent', None)
-        
-        agents_managed = list(agents.keys())
-        if case_management_agent is not None:
-            agents_managed.append('case_management')
-        
-        return {
-            'orchestrator_type': 'FraudDetectionOrchestrator',
-            'system_status': 'operational' if session_service else 'degraded',
-            'active_sessions': len(getattr(self, 'active_sessions', {})),
-            'agents_available': len(agents) > 0,
-            'adk_session_service': session_service is not None,
-            'adk_runners': len(runners),
-            'agents_managed': agents_managed,
-            'capabilities': [
-                'ADK Agent execution with proper session management',
-                'Multi-agent orchestration',
-                'Session state management', 
-                'Pipeline coordination',
-                'Audio and text processing',
-                'Real-time and batch analysis',
-                'WebSocket and REST API support',
-                'Robust fallback mechanisms',
-                'Proper warning suppression'
-            ],
-            'statistics': {
-                'total_sessions': len(getattr(self, 'active_sessions', {})),
-                'total_analyses': sum(len(history) for history in getattr(self, 'session_analysis_history', {}).values()),
-                'total_patterns': sum(len(patterns) for patterns in getattr(self, 'accumulated_patterns', {}).values())
-            },
-            'adk_info': {
-                'session_service_active': session_service is not None,
-                'agents_initialized': len(agents),
-                'runners_created': len(runners),
-                'warning_suppression': True,
-                'case_management_available': case_management_agent is not None
-            },
-            'timestamp': get_current_timestamp()
-        }
-    
-    def get_session_data(self, session_id: str) -> Optional[Dict]:
-        """Get complete session data"""
-        if session_id not in self.active_sessions:
-            return None
-        
-        return {
-            'session_info': self.active_sessions[session_id],
-            'speech_buffer': self.customer_speech_buffer.get(session_id, []),
-            'analysis_history': self.session_analysis_history.get(session_id, []),
-            'accumulated_patterns': self.accumulated_patterns.get(session_id, {}),
-            'adk_execution': True
-        }
+          {/* Live Alerts */}
+          {(riskScore >= 40 || Object.keys(detectedPatterns).length > 0) && (
+            <div className="p-4 border-b border-gray-200">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                Live Alerts
+              </h4>
+              
+              {riskScore >= 80 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="w-4 h-4 text-red-600" />
+                    <span className="text-sm font-medium text-red-800">
+                      {scamType === 'romance_scam' ? 'ROMANCE SCAM DETECTED' :
+                       scamType === 'investment_scam' ? 'INVESTMENT SCAM DETECTED' :
+                       scamType === 'impersonation_scam' ? 'IMPERSONATION SCAM DETECTED' :
+                       'FRAUD DETECTED'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-red-700 mt-1">
+                    Analysis: {Object.keys(detectedPatterns).join(', ') || 'Multiple fraud indicators detected'}
+                  </p>
+                </div>
+              )}
+              
+              {riskScore >= 60 && riskScore < 80 && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
+                  <div className="flex items-center space-x-2">
+                    <AlertCircle className="w-4 h-4 text-orange-600" />
+                    <span className="text-sm font-medium text-orange-800">
+                      {scamType === 'romance_scam' ? 'EMOTIONAL MANIPULATION' :
+                       scamType === 'investment_scam' ? 'URGENCY PRESSURE' :
+                       'SUSPICIOUS ACTIVITY'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-orange-700 mt-1">
+                    Server detected: {Object.keys(detectedPatterns).slice(0, 2).join(', ')} patterns  
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
-# ===== WEBSOCKET COMPATIBILITY LAYER =====
+          {/* Recommended Actions */}
+          {policyGuidance && policyGuidance.recommended_actions.length > 0 && (
+            <div className="p-4 border-b border-gray-200">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                Recommendations
+              </h4>
+              
+              <div className="space-y-2">
+                {policyGuidance.recommended_actions.slice(0, 4).map((action: string, index: number) => (
+                  <div key={index} className="flex items-start space-x-3 p-2 bg-blue-50 rounded-lg">
+                    <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
+                      {index + 1}
+                    </span>
+                    <span className="text-xs text-blue-900">{action}</span>
+                  </div>
+                ))}
+                
+                {riskScore >= 80 && (
+                  <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-medium text-red-800">1. ALERT: STOP TRANSACTION</span>
+                    </div>
+                    <p className="text-xs text-red-700 mt-1">Detection alert - Do not process any transfers</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
-class FraudDetectionWebSocketHandler:
-    """WebSocket Handler that delegates to the fixed ADK orchestrator"""
-    
-    def __init__(self, connection_manager):
-        self.connection_manager = connection_manager
-        self.orchestrator = FraudDetectionOrchestrator(connection_manager)
-        logger.info("🔌 WebSocket Handler initialized with fixed ADK orchestrator")
-    
-    async def handle_message(self, websocket, client_id: str, message: Dict[str, Any]) -> None:
-        """Handle WebSocket messages"""
-        message_type = message.get('type')
-        data = message.get('data', {})
-        
-        try:
-            if message_type == 'process_audio':
-                await self.handle_audio_processing(websocket, client_id, data)
-            elif message_type == 'start_realtime_session':
-                await self.handle_audio_processing(websocket, client_id, data)
-            elif message_type == 'stop_processing':
-                await self.handle_stop_processing(websocket, client_id, data)
-            elif message_type == 'get_status':
-                await self.handle_status_request(websocket, client_id)
-            elif message_type == 'get_session_analysis':
-                await self.handle_session_analysis_request(websocket, client_id, data)
-            elif message_type == 'create_manual_case':
-                await self.handle_manual_case_creation(websocket, client_id, data)
-            elif message_type == 'ping':
-                await self.send_message(websocket, client_id, {
-                    'type': 'pong',
-                    'data': {'timestamp': datetime.now().isoformat()}
-                })
-            else:
-                await self.send_error(websocket, client_id, f"Unknown message type: {message_type}")
-                
-        except Exception as e:
-            logger.error(f"❌ WebSocket handler error: {e}")
-            await self.send_error(websocket, client_id, f"Message processing error: {str(e)}")
-    
-    async def handle_audio_processing(self, websocket, client_id: str, data: Dict) -> None:
-        """Handle audio processing with ADK orchestrator"""
-        filename = data.get('filename')
-        session_id = data.get('session_id')
-        
-        if not filename:
-            await self.send_error(websocket, client_id, "Missing filename parameter")
-            return
-        
-        try:
-            # Create WebSocket callback
-            async def websocket_callback(message_data: Dict) -> None:
-                await self.send_message(websocket, client_id, message_data)
-            
-            # Delegate to fixed ADK orchestrator
-            result = await self.orchestrator.orchestrate_audio_processing(
-                filename=filename,
-                session_id=session_id,
-                callback=websocket_callback
-            )
-            
-            if not result.get('success'):
-                await self.send_error(websocket, client_id, result.get('error', 'Processing failed'))
-                return
-            
-            # Send confirmation with ADK info
-            await self.send_message(websocket, client_id, {
-                'type': 'processing_started',
-                'data': {
-                    'session_id': result['session_id'],
-                    'filename': filename,
-                    'orchestrator': 'FraudDetectionOrchestrator',
-                    'handler': 'WebSocketHandler',
-                    'pipeline_mode': 'adk_multi_agent',
-                    'adk_session_service': result.get('adk_session_service', False),
-                    'agents_available': result.get('agents_available', False),
-                    'timestamp': datetime.now().isoformat()
-                }
-            })
-            
-        except Exception as e:
-            logger.error(f"❌ WebSocket audio processing error: {e}")
-            await self.send_error(websocket, client_id, f"Failed to start processing: {str(e)}")
-    
-    async def handle_stop_processing(self, websocket, client_id: str, data: Dict) -> None:
-        """Handle stop processing request"""
-        session_id = data.get('session_id')
-        if not session_id:
-            await self.send_error(websocket, client_id, "Missing session_id")
-            return
-        
-        try:
-            # Stop audio processing
-            try:
-                from ..agents.audio_processor.agent import audio_processor_agent
-                await audio_processor_agent.stop_streaming(session_id)
-            except ImportError:
-                logger.warning("Audio processor not available for stop")
-            
-            # Clean up in orchestrator
-            await self.orchestrator._cleanup_session(session_id)
-            
-            await self.send_message(websocket, client_id, {
-                'type': 'processing_stopped',
-                'data': {
-                    'session_id': session_id,
-                    'status': 'stopped',
-                    'orchestrator': 'FraudDetectionOrchestrator',
-                    'adk_cleanup': True,
-                    'timestamp': datetime.now().isoformat()
-                }
-            })
-            
-        except Exception as e:
-            logger.error(f"❌ Error stopping processing: {e}")
-            await self.send_error(websocket, client_id, f"Failed to stop: {str(e)}")
-    
-    async def handle_status_request(self, websocket, client_id: str):
-        """Handle status request"""
-        try:
-            status = self.orchestrator.get_orchestrator_status()
-            status['websocket_handler'] = 'WebSocketHandler'
-            status['connection_manager'] = True
-            
-            await self.send_message(websocket, client_id, {
-                'type': 'status_response',
-                'data': status
-            })
-            
-        except Exception as e:
-            logger.error(f"❌ Error handling status request: {e}")
-            await self.send_error(websocket, client_id, f"Status request failed: {str(e)}")
-    
-    async def handle_session_analysis_request(self, websocket, client_id: str, data: Dict):
-        """Handle session analysis request"""
-        session_id = data.get('session_id')
-        if not session_id:
-            await self.send_error(websocket, client_id, "Invalid session ID")
-            return
-        
-        try:
-            session_data = self.orchestrator.get_session_data(session_id)
-            if not session_data:
-                await self.send_error(websocket, client_id, "Session not found")
-                return
-            
-            await self.send_message(websocket, client_id, {
-                'type': 'session_analysis_response',
-                'data': {
-                    'session_id': session_id,
-                    'orchestrator': 'FraudDetectionOrchestrator',
-                    **session_data
-                }
-            })
-            
-        except Exception as e:
-            logger.error(f"❌ Error handling session analysis request: {e}")
-            await self.send_error(websocket, client_id, f"Failed to get session analysis: {str(e)}")
-    
-    async def handle_manual_case_creation(self, websocket, client_id: str, data: Dict):
-        """Handle manual case creation"""
-        session_id = data.get('session_id')
-        if not session_id:
-            await self.send_error(websocket, client_id, "Invalid session ID")
-            return
-        
-        try:
-            session_data = self.orchestrator.get_session_data(session_id)
-            if not session_data:
-                await self.send_error(websocket, client_id, "Session not found")
-                return
-            
-            # Get latest analysis
-            analysis_history = session_data.get('analysis_history', [])
-            latest_analysis = analysis_history[-1] if analysis_history else {}
-            
-            # Create case via orchestrator's case management agent
-            if self.orchestrator.case_management_agent:
-                case_data = {
-                    'customer_name': session_data['session_info'].get('customer_profile', {}).get('name', 'Unknown'),
-                    'customer_account': session_data['session_info'].get('customer_profile', {}).get('account', 'Unknown'),
-                    'risk_score': latest_analysis.get('risk_score', 0),
-                    'scam_type': latest_analysis.get('scam_type', 'unknown'),
-                    'session_id': session_id,
-                    'auto_created': False,
-                    'creation_method': 'manual_via_websocket'
-                }
-                
-                case_result = await self.orchestrator.case_management_agent.create_fraud_incident(
-                    incident_data=case_data,
-                    context={'session_id': session_id, 'creation_type': 'manual'}
-                )
-                
-                if case_result.get('success'):
-                    await self.send_message(websocket, client_id, {
-                        'type': 'manual_case_created',
-                        'data': {
-                            'session_id': session_id,
-                            'case_number': case_result.get('incident_number'),
-                            'case_url': case_result.get('incident_url'),
-                            'orchestrator': 'FraudDetectionOrchestrator',
-                            'adk_execution': True,
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    })
-                else:
-                    await self.send_error(websocket, client_id, f"Failed to create case: {case_result.get('error')}")
-            else:
-                await self.send_error(websocket, client_id, "Case management agent not available")
-            
-        except Exception as e:
-            logger.error(f"❌ Error creating manual case: {e}")
-            await self.send_error(websocket, client_id, f"Failed to create case: {str(e)}")
-    
-    def cleanup_client_sessions(self, client_id: str) -> None:
-        """Clean up sessions for disconnected client"""
-        sessions_to_cleanup = []
-        for session_id, session in self.orchestrator.active_sessions.items():
-            if session.get('client_id') == client_id:
-                sessions_to_cleanup.append(session_id)
-        
-        for session_id in sessions_to_cleanup:
-            asyncio.create_task(self.orchestrator._cleanup_session(session_id))
-        
-        if sessions_to_cleanup:
-            logger.info(f"🧹 WebSocket handler cleaned up {len(sessions_to_cleanup)} sessions for {client_id}")
-    
-    def get_active_sessions_count(self) -> int:
-        """Get count of active sessions"""
-        return len(self.orchestrator.active_sessions)
-    
-    def get_comprehensive_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive statistics"""
-        orchestrator_status = self.orchestrator.get_orchestrator_status()
-        return {
-            **orchestrator_status['statistics'],
-            'websocket_handler': 'WebSocketHandler',
-            'orchestrator_delegation': 'FraudDetectionOrchestrator',
-            'adk_execution': True
-        }
-    
-    # ===== WEBSOCKET COMMUNICATION METHODS =====
-    
-    async def send_message(self, websocket, client_id: str, message: Dict) -> bool:
-        """Send message to WebSocket client"""
-        try:
-            await websocket.send_text(json.dumps(message))
-            return True
-        except Exception as e:
-            logger.error(f"❌ Failed to send message to {client_id}: {e}")
-            return False
-    
-    async def send_error(self, websocket, client_id: str, error_message: str) -> None:
-        """Send error message to WebSocket client"""
-        await self.send_message(websocket, client_id, {
-            'type': 'error',
-            'data': {
-                'status': 'error',
-                'error': error_message,
-                'code': 'WEBSOCKET_ERROR',
-                'timestamp': datetime.now().isoformat()
-            }
-        })
+          {/* Policy Guidance */}
+          {policyGuidance && policyGuidance.policy_id && (
+            <div className="p-4 border-b border-gray-200">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <FileText className="w-4 h-4 text-blue-500 mr-2" />
+                Policy Guidance
+              </h4>
+              
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="text-xs font-medium text-blue-800 mb-2">
+                  {policyGuidance.policy_title} ({policyGuidance.policy_id})
+                </div>
+                {policyGuidance.policy_version && (
+                  <div className="text-xs text-blue-600 mb-2">Version: {policyGuidance.policy_version}</div>
+                )}
+                {policyGuidance.customer_education && policyGuidance.customer_education.length > 0 ? (
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    {policyGuidance.customer_education.slice(0, 4).map((point: string, index: number) => (
+                      <li key={index}>• {point}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-blue-700">Policy guidance loading...</p>
+                )}
+              </div>
+            </div>
+          )}
 
-# Export the fixed classes
-__all__ = ['FraudDetectionOrchestrator', 'FraudDetectionWebSocketHandler']
+          {/* Key Questions */}
+          {policyGuidance && policyGuidance.key_questions.length > 0 && (
+            <div className="p-4 border-b border-gray-200">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <Eye className="w-4 h-4 text-purple-500 mr-2" />
+                Key Questions
+              </h4>
+              
+              <div className="space-y-2">
+                {policyGuidance.key_questions.slice(0, 3).map((question: string, index: number) => (
+                  <div key={index} className="p-2 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors cursor-pointer">
+                    <p className="text-xs text-green-900 font-medium">"{question}"</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Customer Education */}
+          {policyGuidance && policyGuidance.customer_education.length > 0 && (
+            <div className="p-4 flex-1">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <Users className="w-4 h-4 text-green-500 mr-2" />
+                Customer Education
+              </h4>
+              
+              <div className="space-y-2">
+                {policyGuidance.customer_education.slice(0, 3).map((point: string, index: number) => (
+                  <div key={index} className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-xs text-yellow-900">"{point}"</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Default State */}
+          {riskScore === 0 && Object.keys(detectedPatterns).length === 0 && !policyGuidance && (
+            <div className="flex-1 flex items-center justify-center p-4">
+              <div className="text-center text-gray-500">
+                <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h4 className="text-sm font-medium text-gray-900 mb-2">AI Processing</h4>
+                <p className="text-xs text-gray-600">
+                  Start a demo call to see fraud detection
+                </p>
+                <div className="mt-4 space-y-2 text-xs">
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span>6 Agents Ready</span>
+                  </div>
+                  <div className="text-gray-400">Audio • Scam • Policy • Decision • Summarization • Case • Orchestrator</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;        

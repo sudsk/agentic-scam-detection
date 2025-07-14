@@ -107,29 +107,25 @@ class FraudDetectionOrchestrator:
         return DefaultSettings()
     
     def _initialize_adk_system(self):
-        """Initialize ADK system with proper session management - simplified like TradeSage"""
+        """Initialize ADK system using pre-defined agents - simplified approach"""
         try:
-            logger.info("🔧 Starting ADK system initialization...")
+            logger.info("🔧 Starting ADK system initialization with pre-defined agents...")
             
             # Import ADK components
-            from google.adk.agents import LlmAgent
             from google.adk.runners import Runner
             from google.adk.sessions import InMemorySessionService
             from google.genai import types
             
             logger.info("✅ ADK imports successful")
             
-            # Check environment variables (like TradeSage approach)
+            # Check environment variables
             project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
             location = os.getenv("GOOGLE_CLOUD_LOCATION")
             use_vertexai = os.getenv("GOOGLE_GENAI_USE_VERTEXAI")
             
             logger.info(f"🔧 Environment: PROJECT={project_id}, LOCATION={location}, USE_VERTEXAI={use_vertexai}")
             
-            if not project_id:
-                logger.warning("⚠️ GOOGLE_CLOUD_PROJECT not set - ADK will try default authentication")
-            
-            # Create session service (exactly like TradeSage)
+            # Create session service
             try:
                 self.session_service = InMemorySessionService()
                 logger.info("✅ InMemorySessionService created")
@@ -139,68 +135,58 @@ class FraudDetectionOrchestrator:
             
             self.types = types
             
-            # Create agents with simple configuration (like TradeSage)
-            agent_configs = [
-                ("scam_detection", "scam_detection_agent", "Analyzes customer speech for fraud patterns and calculates risk scores", self._get_scam_detection_instruction()),
-                ("policy_guidance", "policy_guidance_agent", "Provides procedural guidance and escalation recommendations for fraud scenarios", self._get_policy_guidance_instruction()),
-                ("decision", "decision_agent", "Makes final fraud prevention decisions based on multi-agent analysis", self._get_decision_instruction()),
-                ("summarization", "summarization_agent", "Creates professional incident summaries for ServiceNow case documentation", self._get_summarization_instruction())
-            ]
+            # Import individual agents from their own folders
+            try:
+                from ..agents.scam_detection.agent import scam_detection_agent
+                from ..agents.policy_guidance.agent import policy_guidance_agent
+                from ..agents.decision.agent import decision_agent
+                from ..agents.summarization.agent import summarization_agent
+                
+                # Store agents with their keys
+                self.agents = {
+                    "scam_detection": scam_detection_agent,
+                    "policy_guidance": policy_guidance_agent,
+                    "decision": decision_agent,
+                    "summarization": summarization_agent
+                }
+                
+                logger.info(f"✅ Imported {len(self.agents)} individual agents from their own folders")
+                
+            except ImportError as e:
+                logger.error(f"❌ Failed to import individual agents: {e}")
+                logger.info("💡 Falling back to inline agent creation")
+                return self._create_inline_agents()
             
-            self.agents = {}
+            # Create runners for each agent
             self.runners = {}
-            
-            logger.info(f"🔧 Creating {len(agent_configs)} agents...")
-            
-            for agent_key, agent_name, description, instruction in agent_configs:
-                logger.info(f"🔧 Creating agent: {agent_key}")
+            for agent_key, agent in self.agents.items():
                 try:
-                    agent = self._create_simple_agent(agent_name, description, instruction)
-                    if agent is not None:
-                        self.agents[agent_key] = agent
-                        logger.info(f"✅ Agent created: {agent_key}")
-                        
-                        # Create runner for this agent (exactly like TradeSage)
-                        try:
-                            runner = Runner(
-                                agent=agent,
-                                app_name=f"fraud_detection_{agent_key}",
-                                session_service=self.session_service
-                            )
-                            self.runners[agent_key] = runner
-                            logger.info(f"✅ Runner created: {agent_key}")
-                        except Exception as runner_error:
-                            logger.error(f"❌ Failed to create runner for {agent_key}: {runner_error}")
-                            # Remove the agent if we can't create a runner
-                            if agent_key in self.agents:
-                                del self.agents[agent_key]
-                            continue
-                            
-                    else:
-                        logger.error(f"❌ Failed to create agent: {agent_key}")
-                        
-                except Exception as e:
-                    logger.error(f"❌ Error creating agent {agent_key}: {e}")
+                    runner = Runner(
+                        agent=agent,
+                        app_name=f"fraud_detection_{agent_key}",
+                        session_service=self.session_service
+                    )
+                    self.runners[agent_key] = runner
+                    logger.info(f"✅ Runner created: {agent_key}")
+                except Exception as runner_error:
+                    logger.error(f"❌ Failed to create runner for {agent_key}: {runner_error}")
                     continue
             
             # Case management agent initialization
             try:
-                from ..agents.case_management.adk_agent import PureADKCaseManagementAgent
+                from ..agents.case_management.agent import PureADKCaseManagementAgent
                 self.case_management_agent = PureADKCaseManagementAgent()
                 logger.info("✅ Case management agent initialized")
-            except ImportError as e:
+            except Exception as e:
                 logger.warning(f"⚠️ Case management agent not available: {e}")
                 self.case_management_agent = None
-            except Exception as e:
-                logger.error(f"❌ Error initializing case management agent: {e}")
-                self.case_management_agent = None
             
-            success = len(self.agents) > 0
+            success = len(self.agents) > 0 and len(self.runners) > 0
             if success:
-                logger.info(f"✅ ADK system initialized successfully: {len(self.agents)} agents, {len(self.runners)} runners")
+                logger.info(f"✅ ADK system initialized with pre-defined agents: {len(self.agents)} agents, {len(self.runners)} runners")
                 logger.info(f"✅ Available agents: {list(self.agents.keys())}")
             else:
-                logger.error("❌ No agents were successfully created - system will use fallback mode")
+                logger.error("❌ Failed to initialize with pre-defined agents")
                 
             return success
             
@@ -210,6 +196,58 @@ class FraudDetectionOrchestrator:
             logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return False
     
+    def _create_inline_agents(self):
+        """Fallback to inline agent creation if pre-defined agents fail"""
+        logger.info("🔧 Creating inline agents as fallback...")
+        
+        # Create agents with simple configuration (like original approach)
+        agent_configs = [
+            ("scam_detection", "scam_detection_agent", "Analyzes customer speech for fraud patterns and calculates risk scores", self._get_scam_detection_instruction()),
+            ("policy_guidance", "policy_guidance_agent", "Provides procedural guidance and escalation recommendations for fraud scenarios", self._get_policy_guidance_instruction()),
+            ("decision", "decision_agent", "Makes final fraud prevention decisions based on multi-agent analysis", self._get_decision_instruction()),
+            ("summarization", "summarization_agent", "Creates professional incident summaries for ServiceNow case documentation", self._get_summarization_instruction())
+        ]
+        
+        self.agents = {}
+        self.runners = {}
+        
+        for agent_key, agent_name, description, instruction in agent_configs:
+            logger.info(f"🔧 Creating inline agent: {agent_key}")
+            try:
+                agent = self._create_simple_agent(agent_name, description, instruction)
+                if agent is not None:
+                    self.agents[agent_key] = agent
+                    
+                    # Create runner for this agent
+                    try:
+                        runner = Runner(
+                            agent=agent,
+                            app_name=f"fraud_detection_{agent_key}",
+                            session_service=self.session_service
+                        )
+                        self.runners[agent_key] = runner
+                        logger.info(f"✅ Inline agent and runner created: {agent_key}")
+                    except Exception as runner_error:
+                        logger.error(f"❌ Failed to create runner for {agent_key}: {runner_error}")
+                        if agent_key in self.agents:
+                            del self.agents[agent_key]
+                        continue
+                        
+                else:
+                    logger.error(f"❌ Failed to create inline agent: {agent_key}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error creating inline agent {agent_key}: {e}")
+                continue
+        
+        success = len(self.agents) > 0
+        if success:
+            logger.info(f"✅ Fallback inline agents created: {len(self.agents)} agents")
+        else:
+            logger.error("❌ Failed to create any agents - system will use complete fallback mode")
+            
+        return success
+    
     def _create_simple_agent(self, name: str, description: str, instruction: str):
         """Create ADK agent with simple configuration - following the same pattern as TradeSage"""
         try:
@@ -218,7 +256,7 @@ class FraudDetectionOrchestrator:
             # Simple agent creation - let ADK handle authentication automatically
             agent = LlmAgent(
                 name=name,
-                model="gemini-2.0-flash",
+                model="gemini-1.5-pro",
                 description=description,
                 instruction=instruction,
                 tools=[],
@@ -993,7 +1031,7 @@ Recommended Action: {action}
                 await self._process_customer_speech(session_id, text, data)
     
     async def _process_customer_speech(self, session_id: str, customer_text: str, segment_data: Dict):
-        """Process customer speech"""
+        """Process customer speech and send analysis updates to UI"""
         try:
             if session_id not in self.customer_speech_buffer:
                 self.customer_speech_buffer[session_id] = []
@@ -1004,13 +1042,59 @@ Recommended Action: {action}
                 'confidence': segment_data.get('confidence', 0.0)
             })
             
-            # Trigger analysis
+            # Trigger analysis for meaningful speech
             accumulated_speech = " ".join([
                 segment['text'] for segment in self.customer_speech_buffer[session_id]
             ])
             
             if len(accumulated_speech.strip()) >= 15:
-                await self._run_adk_agent_pipeline(session_id, accumulated_speech)
+                # Get callback for this session
+                session_data = self.active_sessions.get(session_id, {})
+                callback = session_data.get('callback')
+                
+                # Send analysis started message
+                if callback:
+                    await callback({
+                        'type': 'fraud_analysis_started',
+                        'data': {
+                            'session_id': session_id,
+                            'customer_text': customer_text,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    })
+                
+                # Run analysis pipeline
+                analysis_result = await self._run_adk_agent_pipeline(session_id, accumulated_speech, callback)
+                
+                # Send analysis update to UI
+                if callback and analysis_result:
+                    scam_analysis = analysis_result.get('scam_analysis', {})
+                    risk_score = scam_analysis.get('risk_score', 0)
+                    
+                    await callback({
+                        'type': 'fraud_analysis_update',
+                        'data': {
+                            'session_id': session_id,
+                            'risk_score': risk_score,
+                            'risk_level': scam_analysis.get('risk_level', 'MINIMAL'),
+                            'scam_type': scam_analysis.get('scam_type', 'unknown'),
+                            'detected_patterns': self.accumulated_patterns.get(session_id, {}),
+                            'confidence': scam_analysis.get('confidence', 0.0),
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    })
+                    
+                    # Send policy guidance if available
+                    policy_guidance = analysis_result.get('policy_guidance')
+                    if policy_guidance:
+                        await callback({
+                            'type': 'policy_guidance_ready',
+                            'data': {
+                                'session_id': session_id,
+                                'policy_guidance': policy_guidance,
+                                'timestamp': datetime.now().isoformat()
+                            }
+                        })
                 
         except Exception as e:
             logger.error(f"❌ Error processing customer speech: {e}")

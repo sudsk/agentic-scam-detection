@@ -2,8 +2,8 @@
 
 AGENT_CONFIGS = {
     "scam_detection_agent": {
-        "name": "HSBC Scam Detection Agent",
-        "model": "gemini-1.5-flash",  # Fast model for real-time fraud detection
+        "name": "scam_detection_agent",
+        "model": "gemini-2.0-flash",  # Fast model for real-time fraud detection
         "description": "Analyzes customer speech for fraud patterns and calculates risk scores",
         "temperature": 0.2,  # Low temperature for consistent fraud detection
         "max_tokens": 1500,
@@ -11,8 +11,8 @@ AGENT_CONFIGS = {
     },
     
     "policy_guidance_agent": {
-        "name": "HSBC Policy Guidance Agent", 
-        "model": "gemini-1.5-pro",  # Pro model for complex policy reasoning
+        "name": "policy_guidance_agent", 
+        "model": "gemini-2.0-flash",  # Pro model for complex policy reasoning
         "description": "Provides procedural guidance and escalation recommendations for fraud scenarios",
         "temperature": 0.3,  # Low temperature for consistent policy guidance
         "max_tokens": 2000,
@@ -20,8 +20,8 @@ AGENT_CONFIGS = {
     },
     
     "summarization_agent": {
-        "name": "HSBC Summarization Agent",
-        "model": "gemini-1.5-flash",  # Fast model for summary generation
+        "name": "summarization_agent",
+        "model": "gemini-2.0-flashh",  # Fast model for summary generation
         "description": "Creates professional incident summaries for ServiceNow case documentation",
         "temperature": 0.3,  # Balanced for structured yet readable summaries
         "max_tokens": 2500,
@@ -29,10 +29,19 @@ AGENT_CONFIGS = {
     },
     
     "orchestrator_agent": {
-        "name": "HSBC Fraud Prevention Orchestrator",
-        "model": "gemini-1.5-pro",  # Pro model for complex decision-making
+        "name": "orchestrator_agent",
+        "model": "gemini-2.0-flash",  # Pro model for complex decision-making
         "description": "Coordinates multi-agent analysis and makes final fraud prevention decisions",
         "temperature": 0.1,  # Very low temperature for consistent decision-making
+        "max_tokens": 1000,
+        "tools_enabled": True
+    },
+    
+    "decision_agent": {
+        "name": "decision_agent",  # Add this for the renamed decision agent
+        "model": "gemini-2.0-flash",
+        "description": "Makes final fraud prevention decisions based on multi-agent analysis",
+        "temperature": 0.1,
         "max_tokens": 1000,
         "tools_enabled": True
     }
@@ -127,12 +136,12 @@ ESCALATION_PATHS = {
 
 # Model performance settings
 MODEL_PERFORMANCE = {
-    "gemini-1.5-flash": {
+    "gemini-2.0-flash": {
         "latency": "low",           # <2 seconds
         "cost": "low",              # Cost-effective for high-volume
         "use_cases": ["real_time_detection", "quick_summaries"]
     },
-    "gemini-1.5-pro": {
+    "gemini-2.0-flash": {
         "latency": "medium",        # 2-5 seconds  
         "cost": "medium",           # Higher cost but better reasoning
         "use_cases": ["complex_analysis", "policy_reasoning", "decision_making"]

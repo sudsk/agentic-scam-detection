@@ -997,7 +997,7 @@ Click OK to open the case in ServiceNow.
         <div className="flex-1 bg-white border-r border-gray-200">
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">Live Transcription - </h3>
-            <h2 className="text-sm font-medium text-gray-900">for demo only</h2>
+            <span className="text-sm font-medium text-gray-900">for demo only</span>
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
               <span className="text-sm text-red-600 font-medium">Processing</span>

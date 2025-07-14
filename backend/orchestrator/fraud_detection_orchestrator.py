@@ -1,6 +1,6 @@
-# backend/orchestrator/fraud_detection_orchestrator.py - CORRECTED TRADESAGE PATTERN
+# backend/orchestrator/fraud_detection_orchestrator.py 
 """
-Corrected Fraud Detection Orchestrator using the exact TradeSage pattern
+Corrected Fraud Detection Orchestrator 
 """
 
 import asyncio
@@ -323,7 +323,7 @@ Create complete incident summaries for compliance documentation.
     
     # ===== AGENT EXECUTION PATTERN =====
     
-    async def _run_agent_pipeline_tradesage(self, session_id: str, customer_text: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
+    async def _run_agent_pipeline(self, session_id: str, customer_text: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
         """Run agent pipelin"""
         try:
             logger.info(f"🎭 Running agent pipeline: {session_id}")

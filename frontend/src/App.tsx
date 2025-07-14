@@ -202,6 +202,44 @@ const defaultCustomerProfile: CustomerProfile = {
 
 // ===== UTILITY FUNCTIONS =====
 
+// Safe helper function to check arrays
+const safeArray = (arr: any): any[] => {
+  if (Array.isArray(arr)) return arr;
+  if (typeof arr === 'string') return [arr];
+  return [];
+};
+
+// Safe helper to get array length
+const safeLength = (arr: any): number => {
+  return safeArray(arr).length;
+};
+
+// ===== ADD THE DEBUG COMPONENT HERE (right before return) =====
+const DebugPolicyData = () => {
+  if (!policyGuidance) return null;
+  
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: '10px',
+      right: '10px',
+      background: 'rgba(0,0,0,0.8)',
+      color: 'white',
+      padding: '10px',
+      fontSize: '10px',
+      maxWidth: '300px',
+      borderRadius: '4px',
+      zIndex: 9999
+    }}>
+      <div>🐛 Policy Debug:</div>
+      <div>policy_id: {policyGuidance.policy_id || 'undefined'}</div>
+      <div>recommended_actions: {typeof policyGuidance.recommended_actions} ({Array.isArray(policyGuidance.recommended_actions) ? policyGuidance.recommended_actions.length : 'not array'})</div>
+      <div>key_questions: {typeof policyGuidance.key_questions} ({Array.isArray(policyGuidance.key_questions) ? policyGuidance.key_questions.length : 'not array'})</div>
+      <div>customer_education: {typeof policyGuidance.customer_education} ({Array.isArray(policyGuidance.customer_education) ? policyGuidance.customer_education.length : 'not array'})</div>
+    </div>
+  );
+};
+
 const getSpeakerIcon = (speaker: string) => {
   if (speaker === 'customer') {
     return <User className="w-3 h-3 text-blue-600" />;
@@ -814,6 +852,9 @@ Click OK to open the case in ServiceNow.
         </div>
       </div>
 
+      {/* ADD THE DEBUG COMPONENT HERE - INSIDE THE MAIN DIV */}
+      <DebugPolicyData />
+      
       {/* Main Content Grid */}
       <div className="flex h-[calc(100vh-120px)]">
         
@@ -1154,7 +1195,7 @@ Click OK to open the case in ServiceNow.
           )}
 
           {/* Recommended Actions */}
-          {policyGuidance && policyGuidance.recommended_actions.length > 0 && (
+          {policyGuidance && safeLength(policyGuidance.recommended_actions) > 0 && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
@@ -1162,7 +1203,7 @@ Click OK to open the case in ServiceNow.
               </h4>
               
               <div className="space-y-2">
-                {policyGuidance.recommended_actions.slice(0, 4).map((action: string, index: number) => (
+                {safeArray(policyGuidance.recommended_actions).slice(0, 4).map((action: string, index: number) => (
                   <div key={index} className="flex items-start space-x-3 p-2 bg-blue-50 rounded-lg">
                     <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
                       {index + 1}
@@ -1198,9 +1239,9 @@ Click OK to open the case in ServiceNow.
                 {policyGuidance.policy_version && (
                   <div className="text-xs text-blue-600 mb-2">Version: {policyGuidance.policy_version}</div>
                 )}
-                {policyGuidance.customer_education && policyGuidance.customer_education.length > 0 ? (
+                {safeLength(policyGuidance.customer_education) > 0 ? (
                   <ul className="text-xs text-blue-700 space-y-1">
-                    {policyGuidance.customer_education.slice(0, 4).map((point: string, index: number) => (
+                    {safeArray(policyGuidance.customer_education).slice(0, 4).map((point: string, index: number) => (
                       <li key={index}>• {point}</li>
                     ))}
                   </ul>
@@ -1212,7 +1253,7 @@ Click OK to open the case in ServiceNow.
           )}
 
           {/* Key Questions */}
-          {policyGuidance && policyGuidance.key_questions.length > 0 && (
+          {policyGuidance && safeLength(policyGuidance.key_questions) > 0 && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <Eye className="w-4 h-4 text-purple-500 mr-2" />
@@ -1220,7 +1261,7 @@ Click OK to open the case in ServiceNow.
               </h4>
               
               <div className="space-y-2">
-                {policyGuidance.key_questions.slice(0, 3).map((question: string, index: number) => (
+                {safeArray(policyGuidance.key_questions).slice(0, 3).map((question: string, index: number) => (
                   <div key={index} className="p-2 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors cursor-pointer">
                     <p className="text-xs text-green-900 font-medium">"{question}"</p>
                   </div>
@@ -1230,7 +1271,7 @@ Click OK to open the case in ServiceNow.
           )}
 
           {/* Customer Education */}
-          {policyGuidance && policyGuidance.customer_education.length > 0 && (
+          {policyGuidance && safeLength(policyGuidance.customer_education) > 0 && (
             <div className="p-4 flex-1">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
                 <Users className="w-4 h-4 text-green-500 mr-2" />
@@ -1238,7 +1279,7 @@ Click OK to open the case in ServiceNow.
               </h4>
               
               <div className="space-y-2">
-                {policyGuidance.customer_education.slice(0, 3).map((point: string, index: number) => (
+                {safeArray(policyGuidance.customer_education).slice(0, 3).map((point: string, index: number) => (
                   <div key={index} className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <p className="text-xs text-yellow-900">"{point}"</p>
                   </div>

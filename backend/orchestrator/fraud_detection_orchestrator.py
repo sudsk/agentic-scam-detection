@@ -107,46 +107,59 @@ class FraudDetectionOrchestrator:
             from google.adk.runners import Runner
             from google.adk.sessions import InMemorySessionService
             from google.genai import types
+            import vertexai
+            
+            # FIXED: Initialize Vertex AI first
+            project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+            location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+            
+            if not project_id:
+                logger.error("❌ GOOGLE_CLOUD_PROJECT environment variable not set")
+                logger.info("💡 Please set: export GOOGLE_CLOUD_PROJECT='your-project-id'")
+                return False
+            
+            try:
+                vertexai.init(project=project_id, location=location)
+                logger.info(f"✅ Vertex AI initialized: project={project_id}, location={location}")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize Vertex AI: {e}")
+                return False
             
             # FIXED: Create session service (like TradeSage)
             self.session_service = InMemorySessionService()
             self.types = types
             
-            # FIXED: Create agents with proper ADK pattern
-            self.agents = {
-                "scam_detection": self._create_adk_agent(
-                    "scam_detection_agent",
-                    "Analyzes customer speech for fraud patterns and calculates risk scores",
-                    self._get_scam_detection_instruction()
-                ),
-                "policy_guidance": self._create_adk_agent(
-                    "policy_guidance_agent", 
-                    "Provides procedural guidance and escalation recommendations for fraud scenarios",
-                    self._get_policy_guidance_instruction()
-                ),
-                "decision": self._create_adk_agent(
-                    "decision_agent",
-                    "Makes final fraud prevention decisions based on multi-agent analysis", 
-                    self._get_decision_instruction()
-                ),
-                "summarization": self._create_adk_agent(
-                    "summarization_agent",
-                    "Creates professional incident summaries for ServiceNow case documentation",
-                    self._get_summarization_instruction()
-                )
-            }
+            # FIXED: Create agents with better error handling
+            agent_configs = [
+                ("scam_detection", "scam_detection_agent", "Analyzes customer speech for fraud patterns and calculates risk scores", self._get_scam_detection_instruction()),
+                ("policy_guidance", "policy_guidance_agent", "Provides procedural guidance and escalation recommendations for fraud scenarios", self._get_policy_guidance_instruction()),
+                ("decision", "decision_agent", "Makes final fraud prevention decisions based on multi-agent analysis", self._get_decision_instruction()),
+                ("summarization", "summarization_agent", "Creates professional incident summaries for ServiceNow case documentation", self._get_summarization_instruction())
+            ]
             
-            # FIXED: Create runners for each agent (like TradeSage)
-            for agent_name, agent in self.agents.items():
+            self.agents = {}
+            self.runners = {}
+            
+            for agent_key, agent_name, description, instruction in agent_configs:
                 try:
-                    runner = Runner(
-                        agent=agent,
-                        app_name=f"fraud_detection_{agent_name}",
-                        session_service=self.session_service
-                    )
-                    self.runners[agent_name] = runner
+                    agent = self._create_adk_agent(agent_name, description, instruction)
+                    if agent is not None:
+                        self.agents[agent_key] = agent
+                        
+                        # Create runner for this agent
+                        runner = Runner(
+                            agent=agent,
+                            app_name=f"fraud_detection_{agent_key}",
+                            session_service=self.session_service
+                        )
+                        self.runners[agent_key] = runner
+                        logger.info(f"✅ Created agent and runner: {agent_key}")
+                    else:
+                        logger.error(f"❌ Failed to create agent: {agent_key}")
+                        
                 except Exception as e:
-                    logger.error(f"❌ Failed to create runner for {agent_name}: {e}")
+                    logger.error(f"❌ Error creating agent {agent_key}: {e}")
+                    continue
             
             # Case management agent
             try:
@@ -155,8 +168,13 @@ class FraudDetectionOrchestrator:
             except ImportError:
                 self.case_management_agent = None
             
-            logger.info(f"✅ ADK system initialized: {len(self.agents)} agents, {len(self.runners)} runners")
-            return True
+            success = len(self.agents) > 0
+            if success:
+                logger.info(f"✅ ADK system initialized: {len(self.agents)} agents, {len(self.runners)} runners")
+            else:
+                logger.error("❌ No agents were successfully created")
+                
+            return success
             
         except Exception as e:
             logger.error(f"❌ Failed to initialize ADK system: {e}")
@@ -166,39 +184,24 @@ class FraudDetectionOrchestrator:
         """Create ADK agent with proper Vertex AI configuration"""
         try:
             from google.adk.agents import LlmAgent
-            import vertexai
             
-            # FIXED: Initialize Vertex AI with project and location
-            project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-            location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-            
-            if not project_id:
-                logger.error("❌ GOOGLE_CLOUD_PROJECT environment variable not set")
-                return None
-            
-            # Initialize Vertex AI
-            try:
-                vertexai.init(project=project_id, location=location)
-                logger.info(f"✅ Vertex AI initialized: project={project_id}, location={location}")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize Vertex AI: {e}")
-                return None
-            
-            # FIXED: Create LlmAgent with Vertex AI configuration
+            # FIXED: Create LlmAgent with minimal required parameters
             agent = LlmAgent(
                 name=name,
-                model="gemini-1.5-pro",  # Use stable model for Vertex AI
+                model="gemini-1.5-pro",  # Use stable model
                 description=description,
                 instruction=instruction,
-                output_key="analysis_result",
-                tools=[],  # No tools for now - pure text analysis
-                # Vertex AI configuration will be picked up automatically after vertexai.init()
+                # Remove output_key as it might be causing issues
+                tools=[],  # No tools for now
             )
             
+            logger.info(f"✅ Created ADK agent: {name}")
             return agent
             
         except Exception as e:
             logger.error(f"❌ Failed to create ADK agent {name}: {e}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return None
     
     def _get_scam_detection_instruction(self) -> str:
@@ -527,13 +530,24 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
             return {'error': str(e), 'adk_execution': False}
     
     async def _run_adk_agent(self, agent_name: str, input_data: Dict[str, Any]) -> str:
-        """FIXED: Run ADK agent with proper session management"""
+        """FIXED: Run ADK agent with proper session management and validation"""
         try:
-            if agent_name not in self.agents or agent_name not in self.runners:
+            # FIXED: Validate agent and runner exist
+            if agent_name not in self.agents:
+                logger.error(f"❌ Agent {agent_name} not found in self.agents")
+                return self._fallback_agent_response(agent_name, input_data)
+                
+            if agent_name not in self.runners:
+                logger.error(f"❌ Runner {agent_name} not found in self.runners")
                 return self._fallback_agent_response(agent_name, input_data)
             
             agent = self.agents[agent_name]
             runner = self.runners[agent_name]
+            
+            # FIXED: Validate agent is not None
+            if agent is None:
+                logger.error(f"❌ Agent {agent_name} is None")
+                return self._fallback_agent_response(agent_name, input_data)
             
             # FIXED: Create proper ADK session (like TradeSage)
             app_name = f"fraud_detection_{agent_name}"
@@ -547,6 +561,7 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
                     user_id=user_id,
                     session_id=session_adk_id
                 )
+                logger.debug(f"✅ Created ADK session: {session_adk_id}")
             except Exception as e:
                 logger.error(f"❌ Failed to create ADK session: {e}")
                 return self._fallback_agent_response(agent_name, input_data)
@@ -622,12 +637,20 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
                 
                 if errors:
                     logger.warning(f"⚠️ ADK agent {agent_name} reported {len(errors)} errors")
+                    for error in errors:
+                        logger.warning(f"   Error: {error}")
                 
-                logger.info(f"✅ ADK agent {agent_name} completed successfully")
-                return final_text or self._fallback_agent_response(agent_name, input_data)
+                if final_text:
+                    logger.info(f"✅ ADK agent {agent_name} completed successfully")
+                    return final_text
+                else:
+                    logger.warning(f"⚠️ ADK agent {agent_name} returned empty response, using fallback")
+                    return self._fallback_agent_response(agent_name, input_data)
                 
         except Exception as e:
             logger.error(f"❌ ADK agent {agent_name} error: {e}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return self._fallback_agent_response(agent_name, input_data)
     
     def _format_agent_input(self, agent_name: str, input_data: Dict[str, Any]) -> str:

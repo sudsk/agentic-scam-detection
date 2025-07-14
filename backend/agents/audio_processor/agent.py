@@ -623,8 +623,8 @@ class AudioProcessorAgent(BaseAgent):
                     for result in response.results:
                         if result.alternatives:
                             transcript = result.alternatives[0].transcript.strip()
-                            if transcript:
-                                self._debug_google_response(response, transcript)
+                            #if transcript:
+                            #    self._debug_google_response(response, transcript)
                 
                 processed = await self._process_native_stereo_response(
                     session_id, response, speaker_tracker, websocket_callback, last_final_text
@@ -672,7 +672,7 @@ class AudioProcessorAgent(BaseAgent):
                 # Method 1: Direct channel_tag attribute
                 if hasattr(result, 'channel_tag') and result.channel_tag is not None:
                     channel_tag = result.channel_tag
-                    logger.info(f"🔍 Found result.channel_tag: {channel_tag}")
+                    #logger.info(f"🔍 Found result.channel_tag: {channel_tag}")
                 
                 # Method 2: Extract from words (alternative approach)
                 elif hasattr(alternative, 'words') and alternative.words:
@@ -689,11 +689,11 @@ class AudioProcessorAgent(BaseAgent):
                 # Method 3: Check if result has channel attribute
                 elif hasattr(result, 'channel') and result.channel is not None:
                     channel_tag = result.channel
-                    logger.info(f"🔍 Found result.channel: {channel_tag}")
+                    #logger.info(f"🔍 Found result.channel: {channel_tag}")
                 
                 # Log what we found
                 if channel_tag is not None:
-                    logger.info(f"🎯 Channel detected: {channel_tag} for text: '{transcript[:30]}...'")
+                    #logger.info(f"🎯 Channel detected: {channel_tag} for text: '{transcript[:30]}...'")
                 else:
                     logger.warning(f"🎯 No channel info for text: '{transcript[:30]}...'")
                 

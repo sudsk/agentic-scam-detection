@@ -1,6 +1,7 @@
-# backend/agents/case_management/adk_agent.py - PURE ADK IMPLEMENTATION
+# backend/agents/case_management/adk_agent.py - FIXED VERSION
+
 """
-Pure Google ADK Case Management Agent
+Pure Google ADK Case Management Agent - FIXED
 No fallback code - only ADK implementation for ServiceNow incident management
 """
 
@@ -8,9 +9,8 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional
 from google.adk.agents import Agent
-from ...config.adk_config import AGENT_CONFIGS
-from ...services.servicenow_service import ServiceNowService
-from ...config.settings import get_settings
+from backend.services.servicenow_service import ServiceNowService
+from backend.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -58,49 +58,6 @@ CRITICAL REQUIREMENTS:
    - CATEGORY: customer_protection
    - ASSIGNMENT: Customer Service Team
 
-3. INCIDENT DESCRIPTION FORMAT:
-   === AUTOMATED FRAUD DETECTION ALERT ===
-   
-   EXECUTIVE SUMMARY:
-   [Risk level and key findings in 2-3 sentences]
-   
-   CUSTOMER INFORMATION:
-   • Name: [Customer name]
-   • Account: [Account number]
-   • Phone: [Contact number]
-   • Demographics: [Age, location, relationship status]
-   
-   FRAUD ANALYSIS:
-   • Risk Score: [Percentage]
-   • Scam Type: [Type detected]
-   • Confidence: [Analysis confidence]
-   • Patterns Detected: [Number and types]
-   
-   EVIDENCE SUMMARY:
-   [Key quotes and behavioral observations]
-   
-   ADK AGENT DECISIONS:
-   [Summary of agent recommendations]
-   
-   IMMEDIATE ACTIONS REQUIRED:
-   [Specific steps to take]
-   
-   Generated: [Timestamp]
-   System: HSBC ADK Fraud Detection System
-
-4. REGULATORY COMPLIANCE:
-   - SAR filing requirements for confirmed fraud (>80% risk)
-   - Evidence preservation procedures
-   - Customer notification obligations
-   - Audit trail maintenance
-   - Data protection compliance (GDPR)
-
-5. FOLLOW-UP REQUIREMENTS:
-   - CRITICAL: Contact customer within 15 minutes
-   - HIGH: Enhanced verification within 1 hour
-   - MEDIUM: Customer education within 24 hours
-   - LOW: Standard documentation procedures
-
 Create COMPLETE, SERVICENOW-READY incident tickets that meet banking compliance standards.
 """
 
@@ -108,35 +65,21 @@ class PureADKCaseManagementAgent:
     """Pure Google ADK implementation for case management and ServiceNow integration"""
     
     def __init__(self):
-        self.config = AGENT_CONFIGS.get("case_management_agent", {
-            "name": "HSBC Case Management Agent",
-            "model": "gemini-1.5-pro",
-            "description": "Creates and manages fraud investigation cases in ServiceNow",
-            "temperature": 0.2,
-            "max_tokens": 2000
-        })
-        self.agent = None
-        self.settings = get_settings()
-        self._initialize_adk_agent()
-        
-        # ServiceNow integration
-        self._initialize_servicenow_service()
-        
-        logger.info("📋 Pure ADK Case Management Agent initialized")
-    
-    def _initialize_adk_agent(self):
-        """Initialize the Google ADK agent"""
+        # FIXED: Use proper config without forbidden parameters
         try:
             self.agent = Agent(
-                name=self.config["name"],
-                model=self.config["model"],
-                description=self.config["description"],
+                name="case_management_agent",  # FIXED: Valid identifier name
+                model="gemini-1.5-pro",  # FIXED: No temperature/max_tokens
+                description="Creates and manages fraud investigation cases in ServiceNow",
                 instruction=CASE_MANAGEMENT_INSTRUCTION,
                 tools=[],  # No additional tools needed - pure ADK processing
-                temperature=self.config["temperature"],
-                max_tokens=self.config["max_tokens"]
             )
-            logger.info("✅ Google ADK Case Management Agent created successfully")
+            self.settings = get_settings()
+            
+            # ServiceNow integration
+            self._initialize_servicenow_service()
+            
+            logger.info("📋 Pure ADK Case Management Agent initialized")
             
         except Exception as e:
             logger.error(f"❌ Failed to initialize ADK case management agent: {e}")
@@ -232,8 +175,6 @@ CONTEXT INFORMATION:
                 prompt += f"- Creation Type: {context['creation_type']}\n"
             if context.get('agent_decision'):
                 prompt += f"- Orchestrator Decision: {context['agent_decision']}\n"
-            if context.get('processing_timeline'):
-                prompt += f"- Processing Steps: {len(context.get('processing_timeline', []))}\n"
         else:
             prompt += "- Standard incident creation\n"
         
@@ -245,12 +186,6 @@ INCIDENT CREATION REQUIREMENTS:
 4. Include comprehensive description with all relevant details
 5. Ensure regulatory compliance considerations are documented
 6. Provide clear follow-up action requirements
-
-SERVICENOW COMPLIANCE:
-- Use standard ServiceNow field formats
-- Ensure incident meets HSBC documentation standards
-- Include audit trail information
-- Support regulatory reporting requirements
 
 Create the complete incident structure now.
 """
@@ -290,12 +225,6 @@ Create the complete incident structure now.
             formatted += f"Recommended Actions: {len(actions)} actions\n"
             for i, action in enumerate(actions[:5], 1):
                 formatted += f"  {i}. {action}\n"
-        
-        # Additional Context
-        if incident_data.get('creation_method'):
-            formatted += f"Creation Method: {incident_data['creation_method']}\n"
-        if incident_data.get('session_id'):
-            formatted += f"Session ID: {incident_data['session_id']}\n"
         
         return formatted
     
@@ -411,8 +340,6 @@ Create the complete incident structure now.
                 servicenow_data['u_scam_type'] = original_data['scam_type']
             if original_data.get('session_id'):
                 servicenow_data['u_session_id'] = original_data['session_id']
-            if original_data.get('confidence_score'):
-                servicenow_data['u_confidence'] = original_data['confidence_score']
             
             # Create incident via ServiceNow service
             result = await self.servicenow_service.create_incident(servicenow_data)
@@ -454,54 +381,6 @@ Create the complete incident structure now.
                 'error': str(e),
                 'mock': True
             }
-    
-    async def update_incident(self, incident_sys_id: str, update_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Update existing ServiceNow incident"""
-        try:
-            if not self.servicenow_service:
-                return {
-                    'success': False,
-                    'error': 'ServiceNow service not available'
-                }
-            
-            result = await self.servicenow_service.update_incident(incident_sys_id, update_data)
-            return result
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to update incident: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-        finally:
-            if self.servicenow_service:
-                await self.servicenow_service.close_session()
-    
-    async def get_incident(self, incident_number: str) -> Dict[str, Any]:
-        """Retrieve ServiceNow incident details"""
-        try:
-            if not self.servicenow_service:
-                return {
-                    'success': False,
-                    'error': 'ServiceNow service not available'
-                }
-            
-            result = await self.servicenow_service.get_incident(incident_number)
-            return result
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to get incident: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-        finally:
-            if self.servicenow_service:
-                await self.servicenow_service.close_session()
-    
-    def parse_result(self, adk_result: str) -> Dict[str, Any]:
-        """Parse ADK agent result (public interface)"""
-        return self._parse_incident_result(adk_result)
 
 
 def create_case_management_agent() -> PureADKCaseManagementAgent:

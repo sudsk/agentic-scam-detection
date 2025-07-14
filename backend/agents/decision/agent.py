@@ -6,7 +6,7 @@ Decision Agent - Makes final fraud prevention decisions
 from google.adk.agents import LlmAgent
 from . import prompt
 
-MODEL = "gemini-1.5-pro"
+MODEL = "gemini-2.5-flash"
 
 decision_agent = LlmAgent(
     name="decision_agent",

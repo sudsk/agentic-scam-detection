@@ -10,6 +10,5 @@ from .fraud_detection_handler import FraudDetectionWebSocketHandler
 
 __all__ = [
     'ConnectionManager',
-    'WebSocketConnection', 
-    'FraudDetectionWebSocketHandler'
+    'WebSocketConnection'
 ]

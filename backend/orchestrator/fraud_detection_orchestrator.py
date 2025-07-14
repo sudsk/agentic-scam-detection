@@ -174,7 +174,7 @@ class FraudDetectionOrchestrator:
             
             # Case management agent initialization
             try:
-                from ..agents.case_management.agent import PureADKCaseManagementAgent
+                from ..agents.case_management.adk_agent import PureADKCaseManagementAgent
                 self.case_management_agent = PureADKCaseManagementAgent()
                 logger.info("✅ Case management agent initialized")
             except Exception as e:
@@ -546,43 +546,123 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
     # ===== FIXED ADK AGENT EXECUTION PATTERN =====
     
     async def _run_adk_agent_pipeline(self, session_id: str, customer_text: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
-        """Run ADK agent pipeline with proper session management"""
+        """Run ADK agent pipeline with proper session management and UI updates"""
         try:
             logger.info(f"🎭 Running ADK agent pipeline: {session_id}")
             
             session_data = self.active_sessions[session_id]
             
             # STEP 1: Scam Detection using proper ADK execution
-            scam_analysis = await self._run_adk_agent("scam_detection", {
+            logger.info(f"🔍 Step 1: Running scam detection for session {session_id}")
+            scam_analysis_raw = await self._run_adk_agent("scam_detection", {
                 "customer_text": customer_text,
                 "session_id": session_id
             })
             
-            parsed_analysis = await self._parse_and_accumulate_patterns(session_id, scam_analysis)
+            # Parse and send UI update
+            parsed_analysis = await self._parse_and_accumulate_patterns(session_id, scam_analysis_raw)
             risk_score = parsed_analysis.get('risk_score', 0)
+            
+            # FIXED: Send fraud analysis update to UI
+            if callback:
+                await callback({
+                    'type': 'fraud_analysis_update',
+                    'data': {
+                        'session_id': session_id,
+                        'risk_score': risk_score,
+                        'risk_level': parsed_analysis.get('risk_level', 'MINIMAL'),
+                        'scam_type': parsed_analysis.get('scam_type', 'unknown'),
+                        'detected_patterns': self.accumulated_patterns.get(session_id, {}),
+                        'confidence': parsed_analysis.get('confidence', 0.0),
+                        'explanation': parsed_analysis.get('explanation', ''),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                })
             
             # STEP 2: Policy Guidance (if medium+ risk)
             if risk_score >= 40:
+                logger.info(f"📚 Step 2: Running policy guidance for session {session_id}")
+                if callback:
+                    await callback({
+                        'type': 'policy_analysis_started',
+                        'data': {
+                            'session_id': session_id,
+                            'risk_score': risk_score,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    })
+                
                 policy_result = await self._run_adk_agent("policy_guidance", {
                     "scam_analysis": parsed_analysis,
                     "session_id": session_id
                 })
                 session_data['policy_guidance'] = self._parse_policy_response(policy_result)
+                
+                # FIXED: Send policy guidance to UI
+                if callback:
+                    await callback({
+                        'type': 'policy_guidance_ready',
+                        'data': {
+                            'session_id': session_id,
+                            'policy_guidance': session_data['policy_guidance'],
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    })
             
             # STEP 3: Decision Agent (if high risk)
             if risk_score >= 60:
+                logger.info(f"🎯 Step 3: Running decision agent for session {session_id}")
                 decision_result = await self._run_adk_agent("decision", {
                     "scam_analysis": parsed_analysis,
                     "policy_guidance": session_data.get('policy_guidance', {}),
                     "session_id": session_id
                 })
                 session_data['decision_result'] = self._parse_decision_response(decision_result, risk_score)
+                
+                # FIXED: Send decision update to UI
+                if callback:
+                    await callback({
+                        'type': 'decision_made',
+                        'data': {
+                            'session_id': session_id,
+                            'decision': session_data['decision_result'].get('decision', 'CONTINUE_NORMAL'),
+                            'priority': session_data['decision_result'].get('priority', 'LOW'),
+                            'reasoning': session_data['decision_result'].get('reasoning', ''),
+                            'immediate_actions': session_data['decision_result'].get('immediate_actions', []),
+                            'case_creation_required': session_data['decision_result'].get('case_creation_required', False),
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    })
             
             # STEP 4: Case Management (if required)
             if risk_score >= 50 and self.case_management_agent:
+                logger.info(f"📋 Step 4: Running case management for session {session_id}")
+                if callback:
+                    await callback({
+                        'type': 'case_creation_started',
+                        'data': {
+                            'session_id': session_id,
+                            'risk_score': risk_score,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    })
+                
                 await self._run_case_management(session_id, parsed_analysis, callback)
             
             logger.info(f"✅ ADK pipeline completed: {risk_score}% risk")
+            
+            # FIXED: Send final completion message
+            if callback:
+                await callback({
+                    'type': 'analysis_complete',
+                    'data': {
+                        'session_id': session_id,
+                        'final_risk_score': risk_score,
+                        'total_steps_completed': 4 if risk_score >= 50 else 3 if risk_score >= 60 else 2 if risk_score >= 40 else 1,
+                        'agents_involved': self._get_agents_involved(risk_score),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                })
             
             return {
                 'risk_score': risk_score,
@@ -1100,7 +1180,7 @@ Recommended Action: {action}
             logger.error(f"❌ Error processing customer speech: {e}")
     
     async def _run_case_management(self, session_id: str, analysis: Dict, callback: Optional[Callable]):
-        """Run case management"""
+        """Run case management with proper UI updates"""
         try:
             if not self.case_management_agent:
                 logger.warning("Case management agent not available")
@@ -1128,18 +1208,34 @@ Recommended Action: {action}
             
             session_data['case_info'] = case_result
             
+            # FIXED: Send case creation update to UI
             if callback:
                 await callback({
-                    'type': 'case_management_complete',
+                    'type': 'case_created',
                     'data': {
                         'session_id': session_id,
-                        'case_result': case_result,
-                        'orchestrator': 'FraudDetectionOrchestrator'
+                        'case_number': case_result.get('incident_number', 'Unknown'),
+                        'case_url': case_result.get('incident_url', ''),
+                        'success': case_result.get('success', False),
+                        'case_id': case_result.get('incident_sys_id', ''),
+                        'priority': case_result.get('priority', 'Medium'),
+                        'risk_score': analysis.get('risk_score', 0),
+                        'timestamp': datetime.now().isoformat()
                     }
                 })
             
         except Exception as e:
             logger.error(f"❌ Case management error: {e}")
+            # Send error to UI
+            if callback:
+                await callback({
+                    'type': 'case_creation_error',
+                    'data': {
+                        'session_id': session_id,
+                        'error': str(e),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                })
     
     def _get_customer_profile(self, filename: str) -> Dict:
         """Get customer profile for filename"""

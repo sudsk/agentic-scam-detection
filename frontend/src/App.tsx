@@ -1,4 +1,4 @@
-// frontend/src/App.tsx - CHUNK 1: Imports, Types, and Configuration
+// frontend/src/App.tsx - CHUNK 1: Imports, Types, and Configuration (Simplified)
 
 import React, { useState, useEffect, useRef } from 'react';
 import { 
@@ -26,13 +26,7 @@ import {
   Settings,
   Server,
   UserCheck,
-  Headphones,
-  Bot,
-  Zap,
-  BookOpen,
-  ExternalLink,
-  Activity,
-  Sparkles
+  Headphones
 } from 'lucide-react';
 
 // Environment configuration
@@ -74,15 +68,15 @@ interface DetectedPattern {
 }
 
 interface PolicyGuidance {
-  policy_id: string;
-  policy_title: string;
-  policy_version: string;
   immediate_alerts: string[];
   recommended_actions: string[];
   key_questions: string[];
   customer_education: string[];
-  escalation_threshold: number;
-  rag_powered?: boolean;
+  policy_id?: string;
+  policy_title?: string;
+  policy_version?: string;
+  escalation_threshold?: number;
+  regulatory_requirements?: string[];
 }
 
 interface WebSocketMessage {
@@ -111,25 +105,6 @@ interface CustomerProfile {
     date: string;
     description: string;
   }[];
-}
-
-interface ADKProcessingState {
-  scamAnalysisActive: boolean;
-  policyAnalysisActive: boolean;
-  summarizationActive: boolean;
-  orchestratorActive: boolean;
-  currentAgent: string;
-  processingSteps: string[];
-}
-
-interface OrchestratorDecision {
-  decision: string;
-  reasoning: string;
-  priority: string;
-  immediate_actions: string[];
-  case_creation_required: boolean;
-  escalation_path: string;
-  customer_impact: string;
 }
 
 // ===== CONFIGURATION DATA =====
@@ -262,19 +237,7 @@ const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-const getScamTypeIcon = (scamType: string) => {
-  switch (scamType) {
-    case 'romance_scam': return '💕';
-    case 'investment_scam': return '💰';
-    case 'impersonation_scam': return '🎭';
-    case 'authority_scam': return '👮';
-    default: return '❓';
-  }
-};
-
-// frontend/src/App.tsx - CHUNK 2: Main Component State and WebSocket Functions
-
-// ===== MAIN COMPONENT =====
+// frontend/src/App.tsx - CHUNK 2: Main Component State and Functions (Simplified)
 
 function App() {
   // ===== CORE STATE =====
@@ -293,7 +256,6 @@ function App() {
   const [showingSegments, setShowingSegments] = useState<AudioSegment[]>([]);
   const [scamType, setScamType] = useState<string>('unknown');
   const [currentCustomer, setCurrentCustomer] = useState<CustomerProfile>(defaultCustomerProfile);
-  const [orchestratorDecision, setOrchestratorDecision] = useState<OrchestratorDecision | null>(null);
   
   // ===== BACKEND INTEGRATION STATE =====
   const [audioFiles, setAudioFiles] = useState<RealAudioFile[]>([]);
@@ -304,19 +266,6 @@ function App() {
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [serverProcessing, setServerProcessing] = useState<boolean>(false);
-  
-  // ===== ADK STATE =====
-  const [adkProcessing, setAdkProcessing] = useState<ADKProcessingState>({
-    scamAnalysisActive: false,
-    policyAnalysisActive: false,
-    summarizationActive: false,
-    orchestratorActive: false,
-    currentAgent: '',
-    processingSteps: []
-  });
-  const [autoIncidentCreated, setAutoIncidentCreated] = useState<string | null>(null);
-  const [accumulatedPatterns, setAccumulatedPatterns] = useState<Record<string, DetectedPattern>>({});
-  const [analysisHistory, setAnalysisHistory] = useState<any[]>([]);
   
   // ===== REFS =====
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -373,251 +322,115 @@ function App() {
     
     switch (message.type) {
       case 'processing_started':
-        setProcessingStage('🖥️ ADK Server processing started');
+      case 'server_processing_started':
+        setProcessingStage('🖥️ Server processing started');
         setServerProcessing(true);
-        resetADKState();
         break;
         
       case 'streaming_started':
         setProcessingStage('🎙️ Audio streaming started');
         break;
         
-      // ===== TRANSCRIPTION HANDLING =====
       case 'transcription_segment':
-        handleTranscriptionSegment(message.data);
+        const transcriptData = message.data;
+        
+        const finalSegment: AudioSegment = {
+          speaker: transcriptData.speaker,
+          start: transcriptData.start || 0,
+          duration: transcriptData.duration || 0,
+          text: transcriptData.text,
+          confidence: transcriptData.confidence,
+          is_final: true,
+          speaker_tag: transcriptData.speaker_tag,
+          segment_id: `final-${Date.now()}-${Math.random()}`
+        };
+        
+        setShowingSegments(prev => [...prev, finalSegment]);
+        
+        if (transcriptData.speaker === 'customer') {
+          setTranscription(prev => {
+            const customerText = prev + ' ' + transcriptData.text;
+            return customerText.trim();
+          });
+        }
+        
+        setProcessingStage(`🎙️ ${transcriptData.speaker}: ${transcriptData.text.slice(0, 30)}...`);
         break;
         
       case 'transcription_interim':
-        handleInterimTranscription(message.data);
+        const interimData = message.data;
+        
+        const interimSegment: AudioSegment = {
+          speaker: interimData.speaker,
+          start: interimData.start || 0,
+          duration: interimData.duration || 0,
+          text: interimData.text,
+          confidence: interimData.confidence,
+          is_final: false,
+          is_interim: true,
+          speaker_tag: interimData.speaker_tag,
+          segment_id: `interim-${Date.now()}-${Math.random()}`
+        };
+        
+        setShowingSegments(prev => {
+          const withoutLastInterim = prev.filter(s => 
+            s.is_final || s.speaker !== interimData.speaker || !s.is_interim
+          );
+          return [...withoutLastInterim, interimSegment];
+        });
+        
+        setProcessingStage(`🎙️ ${interimData.speaker} speaking...`);
         break;
         
-      // ===== ADK AGENT MESSAGES =====
-      case 'adk_scam_analysis_started':
-        setAdkProcessing(prev => ({
-          ...prev,
-          scamAnalysisActive: true,
-          currentAgent: 'ADK Scam Detection Agent',
-          processingSteps: [...prev.processingSteps, '🤖 ADK Scam Detection started']
-        }));
-        setProcessingStage('🤖 ADK Scam Detection analyzing...');
+      case 'fraud_analysis_started':
+        setProcessingStage('🔍 Analyzing for fraud patterns...');
         break;
         
       case 'fraud_analysis_update':
-        handleFraudAnalysisUpdate(message.data);
+        const analysis = message.data;
+        setRiskScore(analysis.risk_score || 0);
+        setRiskLevel(analysis.risk_level || 'MINIMAL');
+        setScamType(analysis.scam_type || 'unknown');
+        setDetectedPatterns(analysis.detected_patterns || {});
+        setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
         break;
         
-      case 'rag_policy_analysis_started':
-        setAdkProcessing(prev => ({
-          ...prev,
-          policyAnalysisActive: true,
-          currentAgent: 'RAG Policy System',
-          processingSteps: [...prev.processingSteps, '📚 RAG Policy retrieval started']
-        }));
-        setProcessingStage('📚 RAG Policy System analyzing...');
+      case 'policy_analysis_started':
+        setProcessingStage('📚 Retrieving policy guidance...');
         break;
         
       case 'policy_guidance_ready':
-        handlePolicyGuidanceReady(message.data);
+        setPolicyGuidance(message.data);
+        setProcessingStage('📚 Policy guidance ready');
         break;
         
-      case 'adk_orchestrator_started':
-        setAdkProcessing(prev => ({
-          ...prev,
-          orchestratorActive: true,
-          currentAgent: 'ADK Orchestrator Agent',
-          processingSteps: [...prev.processingSteps, '🎭 ADK Orchestrator deciding']
-        }));
-        setProcessingStage('🎭 ADK Orchestrator making decision...');
+      case 'case_creation_started':
+        setProcessingStage('📋 Creating fraud case...');
         break;
         
-      case 'adk_orchestrator_decision':
-        handleOrchestratorDecision(message.data);
-        break;
-        
-      case 'adk_summarization_started':
-        setAdkProcessing(prev => ({
-          ...prev,
-          summarizationActive: true,
-          currentAgent: 'ADK Summarization Agent',
-          processingSteps: [...prev.processingSteps, '📝 ADK Summarization started']
-        }));
-        setProcessingStage('📝 ADK creating incident summary...');
-        break;
-        
-      case 'adk_summarization_complete':
-        setAdkProcessing(prev => ({
-          ...prev,
-          summarizationActive: false,
-          processingSteps: [...prev.processingSteps, '✅ ADK Summary complete']
-        }));
-        setProcessingStage('✅ ADK incident summary ready');
-        break;
-        
-      case 'auto_incident_creation_started':
-        setProcessingStage('📋 ADK auto-creating incident...');
-        break;
-        
-      case 'auto_incident_created':
-        handleAutoIncidentCreated(message.data);
+      case 'case_created':
+        setProcessingStage(`📋 Case created: ${message.data.case_id}`);
         break;
         
       case 'processing_complete':
-        setProcessingStage('✅ ADK processing complete');
+        setProcessingStage('✅ Server processing complete');
         setServerProcessing(false);
-        setAdkProcessing(prev => ({
-          ...prev,
-          scamAnalysisActive: false,
-          policyAnalysisActive: false,
-          orchestratorActive: false,
-          processingSteps: [...prev.processingSteps, '🏁 Processing complete']
-        }));
         break;
         
       case 'processing_stopped':
         setProcessingStage('🛑 Processing stopped');
         setServerProcessing(false);
-        resetADKState();
         break;
         
       case 'error':
         setProcessingStage(`❌ Error: ${message.data.error || message.data.message}`);
         setServerProcessing(false);
-        resetADKState();
         break;
         
       default:
         console.log('Unknown message type:', message.type);
     }
   };
-
-  // ===== MESSAGE HANDLERS =====
-
-  const handleTranscriptionSegment = (data: any) => {
-    const finalSegment: AudioSegment = {
-      speaker: data.speaker,
-      start: data.start || 0,
-      duration: data.duration || 0,
-      text: data.text,
-      confidence: data.confidence,
-      is_final: true,
-      speaker_tag: data.speaker_tag,
-      segment_id: `final-${Date.now()}-${Math.random()}`
-    };
-    
-    setShowingSegments(prev => [...prev, finalSegment]);
-    
-    if (data.speaker === 'customer') {
-      setTranscription(prev => {
-        const customerText = prev + ' ' + data.text;
-        return customerText.trim();
-      });
-    }
-    
-    setProcessingStage(`🎙️ ${data.speaker}: ${data.text.slice(0, 30)}...`);
-  };
-
-  const handleInterimTranscription = (data: any) => {
-    const interimSegment: AudioSegment = {
-      speaker: data.speaker,
-      start: data.start || 0,
-      duration: data.duration || 0,
-      text: data.text,
-      confidence: data.confidence,
-      is_final: false,
-      is_interim: true,
-      speaker_tag: data.speaker_tag,
-      segment_id: `interim-${Date.now()}-${Math.random()}`
-    };
-    
-    setShowingSegments(prev => {
-      const withoutLastInterim = prev.filter(s => 
-        s.is_final || s.speaker !== data.speaker || !s.is_interim
-      );
-      return [...withoutLastInterim, interimSegment];
-    });
-    
-    setProcessingStage(`🎙️ ${data.speaker} speaking...`);
-  };
-
-  const handleFraudAnalysisUpdate = (data: any) => {
-    setRiskScore(data.risk_score || 0);
-    setRiskLevel(data.risk_level || 'MINIMAL');
-    setScamType(data.scam_type || 'unknown');
-    
-    const patterns = data.detected_patterns || {};
-    setDetectedPatterns(patterns);
-    setAccumulatedPatterns(patterns);
-    
-    setAnalysisHistory(prev => [...prev, {
-      timestamp: data.timestamp,
-      risk_score: data.risk_score,
-      patterns: patterns,
-      analysis_number: data.analysis_number,
-      adk_powered: data.adk_powered
-    }]);
-    
-    setAdkProcessing(prev => ({
-      ...prev,
-      scamAnalysisActive: false,
-      processingSteps: [...prev.processingSteps, `✅ ADK Analysis: ${data.risk_score}% risk`]
-    }));
-    
-    setProcessingStage(`🤖 ADK Risk: ${data.risk_score}% (${data.pattern_count || 0} patterns)`);
-  };
-
-  const handlePolicyGuidanceReady = (data: any) => {
-    setPolicyGuidance({
-      policy_id: data.policy_id,
-      policy_title: data.policy_title,
-      policy_version: data.policy_version,
-      immediate_alerts: data.immediate_alerts || [],
-      recommended_actions: data.recommended_actions || [],
-      key_questions: data.key_questions || [],
-      customer_education: data.customer_education || [],
-      escalation_threshold: data.escalation_threshold,
-      rag_powered: data.rag_powered
-    });
-    
-    setAdkProcessing(prev => ({
-      ...prev,
-      policyAnalysisActive: false,
-      processingSteps: [...prev.processingSteps, '✅ RAG Policy guidance ready']
-    }));
-    
-    setProcessingStage('📚 RAG Policy guidance ready');
-  };
-
-  const handleOrchestratorDecision = (data: any) => {
-    setOrchestratorDecision(data.decision);
-    setAdkProcessing(prev => ({
-      ...prev,
-      orchestratorActive: false,
-      processingSteps: [...prev.processingSteps, `✅ ADK Decision: ${data.decision?.decision || 'Complete'}`]
-    }));
-    setProcessingStage(`🎭 ADK Decision: ${data.decision?.decision || 'Complete'}`);
-  };
-
-  const handleAutoIncidentCreated = (data: any) => {
-    setAutoIncidentCreated(data.incident_number);
-    setProcessingStage(`✅ ADK Auto-incident: ${data.incident_number}`);
-    
-    setAdkProcessing(prev => ({
-      ...prev,
-      processingSteps: [...prev.processingSteps, `📋 Auto-incident: ${data.incident_number}`]
-    }));
-    
-    if (window.confirm(
-      `ADK Auto-Incident Created!\n\n` +
-      `Incident: ${data.incident_number}\n` +
-      `Risk Score: ${data.risk_score}%\n` +
-      `Method: ADK Agents\n\n` +
-      `Open in ServiceNow?`
-    )) {
-      window.open(data.incident_url, '_blank');
-    }
-  };
-
-// frontend/src/App.tsx - CHUNK 3: Audio Processing and Utility Functions
 
   // ===== AUDIO PROCESSING FUNCTIONS =====
 
@@ -640,13 +453,12 @@ function App() {
         resetState();
       }
       
-      const newSessionId = `adk_session_${Date.now()}`;
+      const newSessionId = `server_session_${Date.now()}`;
       setSessionId(newSessionId);
       setIsPlaying(true);
       setServerProcessing(true);
-      setProcessingStage('🖥️ Starting ADK server processing...');
+      setProcessingStage('🖥️ Starting server-side processing...');
       
-      // Send WebSocket message
       const message = {
         type: 'process_audio',
         data: {
@@ -656,76 +468,41 @@ function App() {
       };
       ws.send(JSON.stringify(message));
       
-      // Start audio playback with enhanced loading
-      await startAudioPlayback(audioFile);
+      const audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
+      setAudioElement(audio);
+      
+      audio.addEventListener('timeupdate', () => {
+        setCurrentTime(audio.currentTime);
+      });
+      
+      audio.addEventListener('play', () => {
+        setIsPlaying(true);
+      });
+      
+      audio.addEventListener('pause', () => {
+        setIsPlaying(false);
+      });
+      
+      audio.addEventListener('ended', () => {
+        setIsPlaying(false);
+        setProcessingStage('✅ Audio playback complete - server processing finishing');
+      });
+      
+      audio.addEventListener('error', (e) => {
+        console.error('❌ Audio playback error:', e);
+        setProcessingStage('❌ Error playing audio file');
+        setIsPlaying(false);
+        stopServerProcessing();
+      });
+      
+      await audio.play();
       
     } catch (error) {
-      console.error('❌ Error starting ADK processing:', error);
-      setProcessingStage(`❌ Failed to start ADK processing: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('❌ Error starting server processing:', error);
+      setProcessingStage(`❌ Failed to start processing: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsPlaying(false);
       setServerProcessing(false);
-      resetADKState();
     }
-  };
-
-  const startAudioPlayback = async (audioFile: RealAudioFile): Promise<void> => {
-    const audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
-    setAudioElement(audio);
-    
-    // Enhanced audio event listeners
-    audio.addEventListener('timeupdate', () => {
-      setCurrentTime(audio.currentTime);
-    });
-    
-    audio.addEventListener('play', () => {
-      setIsPlaying(true);
-    });
-    
-    audio.addEventListener('pause', () => {
-      setIsPlaying(false);
-    });
-    
-    audio.addEventListener('ended', () => {
-      setIsPlaying(false);
-      setProcessingStage('✅ Audio complete - ADK processing finishing');
-    });
-    
-    audio.addEventListener('error', (e) => {
-      console.error('❌ Audio playback error:', e);
-      setProcessingStage('❌ Error playing audio file');
-      setIsPlaying(false);
-      stopServerProcessing();
-    });
-    
-    // Enhanced audio loading with pre-loading
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Audio load timeout')), 5000);
-      
-      audio.addEventListener('canplaythrough', () => {
-        clearTimeout(timeout);
-        resolve(true);
-      }, { once: true });
-      
-      audio.addEventListener('error', () => {
-        clearTimeout(timeout);
-        reject(new Error('Audio load failed'));
-      }, { once: true });
-      
-      audio.load();
-    });
-    
-    // Start playback with sync delay
-    setTimeout(async () => {
-      try {
-        await audio.play();
-        setIsPlaying(true);
-        setProcessingStage('🎵 Audio + ADK processing active');
-      } catch (error) {
-        console.error('❌ Audio play failed:', error);
-        setProcessingStage('❌ Failed to start audio playback');
-        stopServerProcessing();
-      }
-    }, 100);
   };
 
   const stopServerProcessing = (): void => {
@@ -741,8 +518,7 @@ function App() {
     
     setIsPlaying(false);
     setServerProcessing(false);
-    setProcessingStage('🛑 ADK processing stopped');
-    resetADKState();
+    setProcessingStage('🛑 Processing stopped');
     
     if (audioElement) {
       audioElement.pause();
@@ -758,27 +534,11 @@ function App() {
     setRiskScore(0);
     setRiskLevel('MINIMAL');
     setDetectedPatterns({});
-    setAccumulatedPatterns({});
-    setAnalysisHistory([]);
     setPolicyGuidance(null);
-    setOrchestratorDecision(null);
     setProcessingStage('');
     setShowingSegments([]);
     setSessionId('');
     setServerProcessing(false);
-    setAutoIncidentCreated(null);
-    resetADKState();
-  };
-
-  const resetADKState = (): void => {
-    setAdkProcessing({
-      scamAnalysisActive: false,
-      policyAnalysisActive: false,
-      summarizationActive: false,
-      orchestratorActive: false,
-      currentAgent: '',
-      processingSteps: []
-    });
   };
 
   const loadAudioFiles = async (): Promise<void> => {
@@ -817,13 +577,12 @@ function App() {
           text: segment.text,
           confidence: segment.confidence
         })),
-        detected_patterns: accumulatedPatterns,
+        detected_patterns: detectedPatterns,
         recommended_actions: policyGuidance?.recommended_actions || [
           "Review customer interaction",
-          "Verify transaction details", 
+          "Verify transaction details",
           "Follow standard fraud procedures"
-        ],
-        adk_powered: true
+        ]
       };
 
       const response = await fetch(`${API_BASE_URL}/api/v1/cases/create`, {
@@ -838,6 +597,7 @@ function App() {
 
       if (response.ok && result.status === 'success') {
         const caseInfo = result.data;
+        
         setProcessingStage(`✅ ServiceNow case created: ${caseInfo.case_number}`);
         
         const successMessage = `
@@ -847,7 +607,6 @@ Case Number: ${caseInfo.case_number}
 Priority: ${caseInfo.priority}
 Risk Score: ${riskScore}%
 Scam Type: ${scamType.replace('_', ' ').toUpperCase()}
-Method: ADK Enhanced
 
 Click OK to open the case in ServiceNow.
         `.trim();
@@ -865,7 +624,7 @@ Click OK to open the case in ServiceNow.
     } catch (error) {
       console.error('Error creating ServiceNow case:', error);
       setProcessingStage(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      alert(`Error creating case: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`Error creating ServiceNow case: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -893,27 +652,24 @@ Click OK to open the case in ServiceNow.
       {selectedAudioFile?.id === audioFile.id && isPlaying && (
         <div className="flex items-center space-x-1">
           <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
-            ADK LIVE
+            LIVE
           </span>
         </div>
       )}
     </button>
   );
 
-  const ADKProcessingIndicator = () => (
+  const ProcessingStatus = () => (
     <div className="flex items-center space-x-2 text-xs">
       {serverProcessing ? (
-        <div className="flex items-center space-x-1 text-purple-600">
-          <Bot className="w-4 h-4 animate-pulse" />
-          <span>ADK Processing</span>
-          {adkProcessing.currentAgent && (
-            <span className="text-purple-500">({adkProcessing.currentAgent})</span>
-          )}
+        <div className="flex items-center space-x-1 text-blue-600">
+          <Server className="w-4 h-4 animate-pulse" />
+          <span>Server Processing</span>
         </div>
       ) : (
         <div className="flex items-center space-x-1 text-gray-500">
-          <Bot className="w-4 h-4" />
-          <span>ADK Ready</span>
+          <Server className="w-4 h-4" />
+          <span>Server Ready</span>
         </div>
       )}
     </div>
@@ -938,13 +694,13 @@ Click OK to open the case in ServiceNow.
     };
   }, []);
 
-// frontend/src/App.tsx - CHUNK 4: Complete JSX UI Layout
+// frontend/src/App.tsx - CHUNK 3: Header and Left Sidebar JSX (Simplified)
 
   // ===== RENDER =====
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Enhanced Header */}
+      {/* Simplified Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="flex justify-between items-center px-6 py-3">
           <div className="flex items-center space-x-4">
@@ -952,10 +708,6 @@ Click OK to open the case in ServiceNow.
               <img src="/hsbc-uk.svg" alt="HSBC" className="h-8 w-auto" />
             </div>
             <span className="text-lg font-medium text-gray-900">Agent Desktop</span>
-            <div className="flex items-center space-x-1 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
-              <Bot className="w-3 h-3" />
-              <span>ADK Enhanced</span>
-            </div>
           </div>
           
           <div className="flex items-center space-x-6 text-sm text-gray-600">
@@ -967,57 +719,43 @@ Click OK to open the case in ServiceNow.
               <span className="text-green-600">Ready</span>
               <div className="w-2 h-2 bg-green-500 rounded-full"></div>
             </div>
-            <ADKProcessingIndicator />
+            <ProcessingStatus />
             <Settings className="w-4 h-4" />
           </div>
         </div>
       </header>
 
-      {/* Enhanced Demo Call Selection */}
+      {/* Simplified Demo Call Selection */}
       <div className="bg-white border-b border-gray-200 px-6 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <span className="text-sm font-medium text-gray-700">ADK Demo Calls:</span>
-            <div className="flex space-x-2">
-              {audioFiles.map((audioFile) => (
-                <DemoCallButton key={audioFile.id} audioFile={audioFile} />
-              ))}
-            </div>
-            
-            {isPlaying && selectedAudioFile && (
-              <button
-                onClick={stopServerProcessing}
-                className="ml-4 px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 flex items-center space-x-1"
-              >
-                <AlertTriangle className="w-4 h-4" />
-                <span>Stop ADK Processing</span>
-              </button>
-            )}
+        <div className="flex items-center space-x-4">
+          <span className="text-sm font-medium text-gray-700">Demo Calls:</span>
+          <div className="flex space-x-2">
+            {audioFiles.map((audioFile) => (
+              <DemoCallButton key={audioFile.id} audioFile={audioFile} />
+            ))}
           </div>
           
-          <div className="flex items-center space-x-4">
-            {/* ADK Processing Steps */}
-            {adkProcessing.processingSteps.length > 0 && (
-              <div className="flex items-center space-x-2 text-xs">
-                <span className="text-purple-600">ADK Steps:</span>
-                <span className="text-purple-500">{adkProcessing.processingSteps.length}</span>
+          {isPlaying && selectedAudioFile && (
+            <button
+              onClick={stopServerProcessing}
+              className="ml-4 px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+            >
+              Stop Processing
+            </button>
+          )}
+          
+          <div className="flex items-center space-x-2 ml-4">
+            {isConnected ? (
+              <div className="flex items-center space-x-1 text-green-600">
+                <Wifi className="w-4 h-4" />
+                <span className="text-xs">Connected</span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-1 text-red-600">
+                <WifiOff className="w-4 h-4" />
+                <span className="text-xs">Disconnected</span>
               </div>
             )}
-            
-            {/* Connection Status */}
-            <div className="flex items-center space-x-2">
-              {isConnected ? (
-                <div className="flex items-center space-x-1 text-green-600">
-                  <Wifi className="w-4 h-4" />
-                  <span className="text-xs">Connected</span>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-1 text-red-600">
-                  <WifiOff className="w-4 h-4" />
-                  <span className="text-xs">Disconnected</span>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </div>
@@ -1025,14 +763,11 @@ Click OK to open the case in ServiceNow.
       {/* Main Content Grid */}
       <div className="flex h-[calc(100vh-120px)]">
         
-        {/* Left Sidebar - Enhanced Customer Information */}
+        {/* Left Sidebar - Simplified Customer Information */}
         <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
           {/* Customer Information */}
           <div className="p-4 border-b border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-              <User className="w-4 h-4 mr-2" />
-              Customer Information
-            </h3>
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Customer Information</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600">Name:</span>
@@ -1063,23 +798,14 @@ Click OK to open the case in ServiceNow.
             </div>
           </div>
 
-          {/* Enhanced Call Controls */}
+          {/* Call Controls */}
           <div className="p-4 border-b border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-              <PhoneCall className="w-4 h-4 mr-2" />
-              Call Controls
-            </h3>
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Call Controls</h3>
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Call Duration:</span>
                 <span className="font-medium">{formatTime(currentTime)}</span>
               </div>
-              {selectedAudioFile && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Audio File:</span>
-                  <span className="font-medium text-xs">{selectedAudioFile.filename}</span>
-                </div>
-              )}
               <div className="flex space-x-2">
                 <button className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-yellow-100 text-yellow-700 rounded text-sm hover:bg-yellow-200">
                   <Volume2 className="w-4 h-4" />
@@ -1103,19 +829,16 @@ Click OK to open the case in ServiceNow.
             </div>
           </div>
 
-          {/* Enhanced Quick Actions */}
+          {/* Quick Actions */}
           <div className="p-4 border-b border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-              <Zap className="w-4 h-4 mr-2" />
-              Quick Actions
-            </h3>
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Actions</h3>
             <div className="space-y-2">
               <button className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded">
                 <User className="w-4 h-4" />
                 <span>Verify Identity</span>
               </button>
               
-              {/* Enhanced ServiceNow Case Creation */}
+              {/* ServiceNow Case Creation Button */}
               <button 
                 onClick={createServiceNowCase}
                 disabled={riskScore < 40}
@@ -1127,31 +850,14 @@ Click OK to open the case in ServiceNow.
               >
                 <FileText className="w-4 h-4" />
                 <span>Create ServiceNow Case</span>
-                {riskScore >= 50 && (
-                  <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                    Manual
+                {riskScore >= 80 && (
+                  <span className="ml-auto text-xs bg-red-100 text-red-700 px-2 py-1 rounded">
+                    Auto
                   </span>
                 )}
               </button>
               
-              {/* Auto-Created Incident Display */}
-              {autoIncidentCreated && (
-                <div className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm bg-green-50 text-green-700 rounded">
-                  <CheckCircle className="w-4 h-4" />
-                  <span>ADK Auto-Incident: {autoIncidentCreated}</span>
-                  <button 
-                    onClick={() => {
-                      const url = `https://dev303197.service-now.com/incident/${autoIncidentCreated}`;
-                      window.open(url, '_blank');
-                    }}
-                    className="ml-auto text-xs text-green-600 hover:text-green-800 flex items-center"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
-              
-              {/* Critical Risk Auto-Escalation */}
+              {/* High Risk Auto-Escalation */}
               {riskScore >= 80 && (
                 <button 
                   onClick={createServiceNowCase}
@@ -1159,35 +865,10 @@ Click OK to open the case in ServiceNow.
                 >
                   <AlertTriangle className="w-4 h-4" />
                   <span>ESCALATE to Fraud Team</span>
-                  <span className="ml-auto text-xs bg-red-200 text-red-800 px-2 py-1 rounded">
-                    URGENT
-                  </span>
                 </button>
               )}
             </div>
           </div>
-
-          {/* ADK Processing Status */}
-          {adkProcessing.processingSteps.length > 0 && (
-            <div className="p-4 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                <Bot className="w-4 h-4 mr-2 text-purple-600" />
-                ADK Processing Steps
-              </h3>
-              <div className="space-y-1 max-h-32 overflow-y-auto">
-                {adkProcessing.processingSteps.slice(-5).map((step, index) => (
-                  <div key={index} className="text-xs p-2 bg-purple-50 rounded text-purple-700">
-                    {step}
-                  </div>
-                ))}
-              </div>
-              {adkProcessing.currentAgent && (
-                <div className="mt-2 text-xs text-purple-600 font-medium">
-                  Active: {adkProcessing.currentAgent}
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Recent Activity */}
           <div className="p-4 flex-1">
@@ -1216,19 +897,16 @@ Click OK to open the case in ServiceNow.
                 </div>
               ))}
               
-              {/* ADK Live Fraud Alert */}
+              {/* Risk-based dynamic alert */}
               {riskScore > 60 && (
                 <div className="mt-4 p-2 bg-red-50 border border-red-200 rounded">
                   <div className="flex justify-between">
-                    <span className="text-red-800 font-medium flex items-center">
-                      <Bot className="w-3 h-3 mr-1" />
-                      ADK Fraud Alert:
-                    </span>
-                    <span className="text-red-600">Live</span>
+                    <span className="text-red-800 font-medium">Live Fraud Alert:</span>
+                    <span className="text-red-600">Now</span>
                   </div>
                   <div className="text-red-700 text-xs mt-1">
-                    {riskScore >= 80 ? 'CRITICAL RISK - ADK immediate intervention required' :
-                     'HIGH RISK - ADK enhanced monitoring active'}
+                    {riskScore >= 80 ? 'HIGH RISK - Immediate intervention required' :
+                     'MEDIUM RISK - Enhanced monitoring active'}
                   </div>
                 </div>
               )}
@@ -1236,65 +914,37 @@ Click OK to open the case in ServiceNow.
           </div>
         </div>
 
-        {/* Center - Enhanced Live Transcription */}
+// frontend/src/App.tsx - CHUNK 4: Center and Right Sidebar JSX (Simplified)
+
+        {/* Center - Live Transcription */}
         <div className="flex-1 bg-white border-r border-gray-200">
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-              <Headphones className="w-5 h-5 mr-2" />
-              Live Transcription
-              {serverProcessing && (
-                <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                  ADK Processing
-                </span>
-              )}
-            </h3>
-            <div className="flex items-center space-x-4">
-              {/* Analysis Progress */}
-              {analysisHistory.length > 0 && (
-                <div className="text-xs text-gray-600">
-                  ADK Analyses: {analysisHistory.length}
-                </div>
-              )}
-              
-              {/* Processing Status */}
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                <span className="text-sm text-red-600 font-medium">
-                  {serverProcessing ? 'ADK Processing' : 'Ready'}
-                </span>
-              </div>
+            <h3 className="text-lg font-semibold text-gray-900">Live Transcription</h3>
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+              <span className="text-sm text-red-600 font-medium">Processing</span>
             </div>
           </div>
-
+          
           <div className="p-4 h-full overflow-y-auto">
             {showingSegments.length === 0 ? (
               <div className="flex items-center justify-center h-64 text-gray-500">
                 <div className="text-center">
-                  <Bot className="w-12 h-12 text-purple-400 mx-auto mb-4" />
-                  <p className="text-lg font-medium text-gray-700">ADK Enhanced Processing</p>
-                  <p className="text-sm text-gray-500 mt-1">Select a demo call to see live transcription with Google ADK agents</p>
+                  <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p>Select a demo call to see live transcription</p>
                   {processingStage && (
-                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-blue-700 text-sm font-medium">{processingStage}</p>
+                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                      <p className="text-blue-700 text-sm">{processingStage}</p>
                       {processingStage.includes('ServiceNow case created') && (
                         <button 
                           onClick={() => setProcessingStage('')}
-                          className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
+                          className="mt-1 text-xs text-blue-600 hover:text-blue-800"
                         >
                           Clear
                         </button>
                       )}
                     </div>  
                   )}
-                  
-                  {/* ADK System Status */}
-                  <div className="mt-4 text-xs text-gray-400">
-                    <div className="flex items-center justify-center space-x-2 mb-2">
-                      <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                      <span>4 ADK Agents Ready</span>
-                    </div>
-                    <div>Scam Detection • RAG Policy • Summarization • Orchestrator</div>
-                  </div>
                 </div>
               </div>
             ) : (
@@ -1306,18 +956,13 @@ Click OK to open the case in ServiceNow.
                     <div key={segment.segment_id || `${segment.speaker}-${index}-${isInterim ? 'interim' : 'final'}`} 
                          className={`animate-in slide-in-from-bottom duration-500 ${isInterim ? 'opacity-70' : ''}`}>
                       
-                      {/* Enhanced Speaker Label */}
+                      {/* Speaker Label */}
                       <div className="flex items-start space-x-3">
                         <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium border ${
                           getSpeakerColor(segment.speaker, isInterim)
                         }`}>
                           {getSpeakerIcon(segment.speaker)}
                           <span>{getSpeakerLabel(segment.speaker)}</span>
-                          {segment.confidence && (
-                            <span className="text-xs opacity-75">
-                              {Math.round(segment.confidence * 100)}%
-                            </span>
-                          )}
                         </div>
                         
                         {isInterim && (
@@ -1325,382 +970,254 @@ Click OK to open the case in ServiceNow.
                             typing...
                           </span>
                         )}
-                        
-                        {/* ADK Processing Indicator */}
-                        {segment.speaker === 'customer' && !isInterim && adkProcessing.scamAnalysisActive && (
-                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded flex items-center">
-                            <Bot className="w-3 h-3 mr-1" />
-                            ADK analyzing...
-                          </span>
-                        )}
                       </div>
                       
-                      {/* Enhanced Text Display */}
+                      {/* Text Display */}
                       <div className={`mt-2 ml-3 p-3 rounded-lg border-l-4 ${
                         isInterim 
                           ? 'bg-yellow-50 border-yellow-400' 
-                          : segment.speaker === 'customer'
-                          ? 'bg-blue-50 border-blue-400'
-                          : 'bg-green-50 border-green-400'
+                          : 'bg-gray-50 border-blue-400'
                       }`}>
-                        <p className="text-sm text-gray-800">{segment.text}</p>
-                        <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
-                          <span>{formatTime(segment.start)}</span>
-                          {segment.confidence && (
-                            <span>Confidence: {Math.round(segment.confidence * 100)}%</span>
-                          )}
-                        </div>
+                        <p className={`text-sm text-gray-800 ${isInterim ? 'italic' : ''}`}>
+                          {segment.text}
+                          {isInterim && <span className="animate-pulse ml-1">|</span>}
+                        </p>
                       </div>
                     </div>
                   );
                 })}
+                
+                {serverProcessing && (
+                  <div className="flex items-center space-x-2 text-gray-500 ml-3">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    <span className="text-sm">Server processing audio...</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Sidebar - Enhanced Analysis Results */}
-        <div className="w-96 bg-white overflow-y-auto">
-          {/* Enhanced Risk Assessment */}
-          <div className="p-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <Shield className="w-5 h-5 mr-2" />
-              Risk Assessment
-              {riskScore > 0 && (
-                <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                  ADK
-                </span>
+        {/* Right Sidebar - Restored AI Agent Assist */}
+        <div className="w-96 bg-white flex flex-col">
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">AI Agent Assist</h3>
+            <div className="flex items-center space-x-2">
+              {isConnected ? (
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              ) : (
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
               )}
-            </h3>
-            
-            <div className="space-y-4">
-              {/* Risk Score Display */}
-              <div className="text-center">
-                <div className={`inline-flex items-center px-4 py-2 rounded-lg text-lg font-bold border-2 ${getRiskColor(riskScore)}`}>
-                  <TrendingUp className="w-5 h-5 mr-2" />
-                  {riskScore.toFixed(1)}% Risk
+              <span className="text-sm text-gray-600">Analysis</span>
+            </div>
+          </div>
+
+          {/* Risk Score Display */}
+          <div className="p-4 border-b border-gray-200">
+            <div className="text-center">
+              <div className="relative mx-auto w-24 h-24 mb-3">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 24 24">
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    fill="none"
+                    stroke="#e5e7eb"
+                    strokeWidth="2"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    fill="none"
+                    stroke={riskScore >= 80 ? '#dc2626' : riskScore >= 60 ? '#ea580c' : riskScore >= 40 ? '#ca8a04' : '#16a34a'}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeDasharray={`${(riskScore / 100) * 62.83} 62.83`}
+                    className="transition-all duration-500"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-xl font-bold text-gray-900">{riskScore}%</div>
+                    <div className="text-xs text-gray-600">Risk</div>
+                  </div>
                 </div>
-                <p className="text-sm text-gray-600 mt-2">Risk Level: {riskLevel}</p>
-                
-                {/* Scam Type Display */}
-                {scamType !== 'unknown' && (
-                  <div className="mt-2 flex items-center justify-center space-x-2">
-                    <span className="text-lg">{getScamTypeIcon(scamType)}</span>
-                    <span className="text-sm font-medium text-gray-700">
-                      {scamType.replace('_', ' ').toUpperCase()}
+              </div>
+              
+              <div className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                riskScore >= 80 ? 'bg-red-100 text-red-800' :
+                riskScore >= 60 ? 'bg-orange-100 text-orange-800' :
+                riskScore >= 40 ? 'bg-yellow-100 text-yellow-800' :
+                'bg-green-100 text-green-800'
+              }`}>
+                {riskScore >= 80 ? 'CRITICAL RISK' :
+                 riskScore >= 60 ? 'HIGH RISK' :
+                 riskScore >= 40 ? 'MEDIUM RISK' : 'LOW RISK'}
+              </div>
+            </div>
+          </div>
+
+          {/* Live Alerts */}
+          {(riskScore >= 40 || Object.keys(detectedPatterns).length > 0) && (
+            <div className="p-4 border-b border-gray-200">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                Live Alerts
+              </h4>
+              
+              {riskScore >= 80 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="w-4 h-4 text-red-600" />
+                    <span className="text-sm font-medium text-red-800">
+                      {scamType === 'romance_scam' ? 'ROMANCE SCAM DETECTED' :
+                       scamType === 'investment_scam' ? 'INVESTMENT SCAM DETECTED' :
+                       scamType === 'impersonation_scam' ? 'IMPERSONATION SCAM DETECTED' :
+                       'FRAUD DETECTED'}
                     </span>
                   </div>
-                )}
-              </div>
-
-              {/* Progress Indicator */}
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div 
-                  className={`h-2 rounded-full transition-all duration-500 ${
-                    riskScore >= 80 ? 'bg-red-500' :
-                    riskScore >= 60 ? 'bg-orange-500' :
-                    riskScore >= 40 ? 'bg-yellow-500' :
-                    'bg-green-500'
-                  }`}
-                  style={{ width: `${Math.min(riskScore, 100)}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
-
-          {/* Enhanced Detected Patterns */}
-          <div className="p-4 border-b border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-              <Brain className="w-4 h-4 mr-2" />
-              Detected Patterns
-              {Object.keys(accumulatedPatterns).length > 0 && (
-                <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                  ADK
-                </span>
+                  <p className="text-xs text-red-700 mt-1">
+                    Analysis: {Object.keys(detectedPatterns).join(', ') || 'Multiple fraud indicators detected'}
+                  </p>
+                </div>
               )}
-            </h3>
-            
-            {Object.keys(accumulatedPatterns).length === 0 ? (
-              <p className="text-sm text-gray-500">No patterns detected yet</p>
-            ) : (
+              
+              {riskScore >= 60 && riskScore < 80 && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
+                  <div className="flex items-center space-x-2">
+                    <AlertCircle className="w-4 h-4 text-orange-600" />
+                    <span className="text-sm font-medium text-orange-800">
+                      {scamType === 'romance_scam' ? 'EMOTIONAL MANIPULATION' :
+                       scamType === 'investment_scam' ? 'URGENCY PRESSURE' :
+                       'SUSPICIOUS ACTIVITY'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-orange-700 mt-1">
+                    Server detected: {Object.keys(detectedPatterns).slice(0, 2).join(', ')} patterns  
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Recommended Actions */}
+          {policyGuidance && policyGuidance.recommended_actions.length > 0 && (
+            <div className="p-4 border-b border-gray-200">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                Recommendations
+              </h4>
+              
               <div className="space-y-2">
-                {Object.entries(accumulatedPatterns).map(([key, pattern]) => (
-                  <div key={key} className="p-2 bg-gray-50 rounded border">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">
-                        {pattern.pattern_name.replace('_', ' ').toUpperCase()}
-                      </span>
-                      <div className="flex items-center space-x-2">
-                        <span className={`text-xs px-2 py-1 rounded ${
-                          pattern.severity === 'critical' ? 'bg-red-100 text-red-800' :
-                          pattern.severity === 'high' ? 'bg-orange-100 text-orange-800' :
-                          'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {pattern.severity}
-                        </span>
-                        <span className="text-xs text-gray-600">×{pattern.count}</span>
-                      </div>
-                    </div>
-                    {pattern.matches && pattern.matches.length > 0 && (
-                      <div className="mt-1">
-                        <p className="text-xs text-gray-600">
-                          Matches: {pattern.matches.slice(0, 2).join(', ')}
-                          {pattern.matches.length > 2 && '...'}
-                        </p>
-                      </div>
-                    )}
+                {policyGuidance.recommended_actions.slice(0, 4).map((action: string, index: number) => (
+                  <div key={index} className="flex items-start space-x-3 p-2 bg-blue-50 rounded-lg">
+                    <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-medium">
+                      {index + 1}
+                    </span>
+                    <span className="text-xs text-blue-900">{action}</span>
                   </div>
                 ))}
+                
+                {riskScore >= 80 && (
+                  <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-medium text-red-800">1. ALERT: STOP TRANSACTION</span>
+                    </div>
+                    <p className="text-xs text-red-700 mt-1">Detection alert - Do not process any transfers</p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* RAG Policy Guidance */}
-          {policyGuidance && (
+          {/* Policy Guidance */}
+          {policyGuidance && policyGuidance.policy_id && (
             <div className="p-4 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                <BookOpen className="w-4 h-4 mr-2" />
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <FileText className="w-4 h-4 text-blue-500 mr-2" />
                 Policy Guidance
-                {policyGuidance.rag_powered && (
-                  <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
-                    RAG
-                  </span>
-                )}
-              </h3>
+              </h4>
               
-              <div className="space-y-3">
-                {/* Policy Metadata */}
-                <div className="text-xs text-gray-600">
-                  <div>Policy: {policyGuidance.policy_id}</div>
-                  <div>Version: {policyGuidance.policy_version}</div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="text-xs font-medium text-blue-800 mb-2">
+                  {policyGuidance.policy_title} ({policyGuidance.policy_id})
                 </div>
-
-                {/* Immediate Alerts */}
-                {policyGuidance.immediate_alerts.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold text-red-700 mb-2">🚨 IMMEDIATE ALERTS</h4>
-                    <div className="space-y-1">
-                      {policyGuidance.immediate_alerts.map((alert, index) => (
-                        <div key={index} className="text-xs p-2 bg-red-50 border border-red-200 rounded text-red-800">
-                          {alert}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                {policyGuidance.policy_version && (
+                  <div className="text-xs text-blue-600 mb-2">Version: {policyGuidance.policy_version}</div>
                 )}
-
-                {/* Recommended Actions */}
-                {policyGuidance.recommended_actions.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold text-blue-700 mb-2">📋 ACTIONS</h4>
-                    <div className="space-y-1">
-                      {policyGuidance.recommended_actions.slice(0, 4).map((action, index) => (
-                        <div key={index} className="text-xs p-2 bg-blue-50 border border-blue-200 rounded text-blue-800">
-                          {action}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Key Questions */}
-                {policyGuidance.key_questions.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold text-purple-700 mb-2">❓ KEY QUESTIONS</h4>
-                    <div className="space-y-1">
-                      {policyGuidance.key_questions.slice(0, 3).map((question, index) => (
-                        <div key={index} className="text-xs p-2 bg-purple-50 border border-purple-200 rounded text-purple-800">
-                          {question}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Customer Education */}
-                {policyGuidance.customer_education.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold text-green-700 mb-2">🎓 CUSTOMER EDUCATION</h4>
-                    <div className="space-y-1">
-                      {policyGuidance.customer_education.slice(0, 3).map((education, index) => (
-                        <div key={index} className="text-xs p-2 bg-green-50 border border-green-200 rounded text-green-800">
-                          {education}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                {policyGuidance.customer_education && policyGuidance.customer_education.length > 0 ? (
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    {policyGuidance.customer_education.slice(0, 4).map((point: string, index: number) => (
+                      <li key={index}>• {point}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-blue-700">Policy guidance loading...</p>
                 )}
               </div>
             </div>
           )}
 
-          {/* ADK Orchestrator Decision */}
-          {orchestratorDecision && (
+          {/* Key Questions */}
+          {policyGuidance && policyGuidance.key_questions.length > 0 && (
             <div className="p-4 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                <Bot className="w-4 h-4 mr-2 text-purple-600" />
-                ADK Decision
-                <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                  Orchestrator
-                </span>
-              </h3>
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <Eye className="w-4 h-4 text-purple-500 mr-2" />
+                Key Questions
+              </h4>
               
-              <div className="space-y-3">
-                {/* Decision */}
-                <div className={`p-3 rounded-lg border-2 ${
-                  orchestratorDecision.priority === 'CRITICAL' ? 'bg-red-50 border-red-300' :
-                  orchestratorDecision.priority === 'HIGH' ? 'bg-orange-50 border-orange-300' :
-                  orchestratorDecision.priority === 'MEDIUM' ? 'bg-yellow-50 border-yellow-300' :
-                  'bg-green-50 border-green-300'
-                }`}>
-                  <div className="text-sm font-bold">{orchestratorDecision.decision}</div>
-                  <div className="text-xs mt-1">{orchestratorDecision.reasoning}</div>
-                </div>
-
-                {/* Priority */}
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs text-gray-600">Priority:</span>
-                  <span className={`text-xs px-2 py-1 rounded font-medium ${
-                    orchestratorDecision.priority === 'CRITICAL' ? 'bg-red-100 text-red-800' :
-                    orchestratorDecision.priority === 'HIGH' ? 'bg-orange-100 text-orange-800' :
-                    orchestratorDecision.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-green-100 text-green-800'
-                  }`}>
-                    {orchestratorDecision.priority}
-                  </span>
-                </div>
-
-                {/* Immediate Actions */}
-                {orchestratorDecision.immediate_actions && orchestratorDecision.immediate_actions.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-semibold text-gray-700 mb-2">Immediate Actions:</h4>
-                    <div className="space-y-1">
-                      {orchestratorDecision.immediate_actions.slice(0, 4).map((action, index) => (
-                        <div key={index} className="text-xs p-2 bg-gray-50 border border-gray-200 rounded">
-                          • {action}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Case Creation Required */}
-                {orchestratorDecision.case_creation_required && (
-                  <div className="flex items-center space-x-2 text-xs">
-                    <FileText className="w-3 h-3 text-blue-600" />
-                    <span className="text-blue-600 font-medium">Case Creation Required</span>
-                  </div>
-                )}
-
-                {/* Escalation Path */}
-                {orchestratorDecision.escalation_path && (
-                  <div className="text-xs">
-                    <span className="text-gray-600">Escalation:</span>
-                    <span className="ml-1 font-medium">{orchestratorDecision.escalation_path}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Analysis History */}
-          {analysisHistory.length > 0 && (
-            <div className="p-4 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                <Activity className="w-4 h-4 mr-2" />
-                Analysis History
-                <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                  ADK
-                </span>
-              </h3>
-              
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {analysisHistory.slice(-5).map((analysis, index) => (
-                  <div key={index} className="p-2 bg-gray-50 rounded border text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">Analysis #{analysis.analysis_number}</span>
-                      <span className={`px-2 py-1 rounded ${getRiskColor(analysis.risk_score)}`}>
-                        {analysis.risk_score}%
-                      </span>
-                    </div>
-                    <div className="text-gray-600 mt-1">
-                      Patterns: {Object.keys(analysis.patterns || {}).length}
-                    </div>
-                    {analysis.adk_powered && (
-                      <div className="flex items-center mt-1">
-                        <Bot className="w-3 h-3 text-purple-600 mr-1" />
-                        <span className="text-purple-600">ADK Powered</span>
-                      </div>
-                    )}
+              <div className="space-y-2">
+                {policyGuidance.key_questions.slice(0, 3).map((question: string, index: number) => (
+                  <div key={index} className="p-2 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors cursor-pointer">
+                    <p className="text-xs text-green-900 font-medium">"{question}"</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Call Summary */}
-          <div className="p-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Call Summary</h3>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Duration:</span>
-                <span>{formatTime(currentTime)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Segments:</span>
-                <span>{showingSegments.filter(s => s.is_final).length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Final Risk:</span>
-                <span className={`font-medium ${
-                  riskScore >= 80 ? 'text-red-600' :
-                  riskScore >= 60 ? 'text-orange-600' :
-                  riskScore >= 40 ? 'text-yellow-600' :
-                  'text-green-600'
-                }`}>
-                  {riskScore.toFixed(1)}%
-                </span>
-              </div>
-              {sessionId && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Session:</span>
-                  <span className="font-mono">{sessionId.slice(-8)}</span>
-                </div>
-              )}
+          {/* Customer Education */}
+          {policyGuidance && policyGuidance.customer_education.length > 0 && (
+            <div className="p-4 flex-1">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <Users className="w-4 h-4 text-green-500 mr-2" />
+                Customer Education
+              </h4>
               
-              {/* Processing Summary */}
-              {serverProcessing && (
-                <div className="mt-3 p-2 bg-purple-50 border border-purple-200 rounded">
-                  <div className="flex items-center space-x-2">
-                    <Bot className="w-4 h-4 text-purple-600 animate-pulse" />
-                    <span className="text-purple-700 font-medium">ADK Processing Active</span>
+              <div className="space-y-2">
+                {policyGuidance.customer_education.slice(0, 3).map((point: string, index: number) => (
+                  <div key={index} className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-xs text-yellow-900">"{point}"</p>
                   </div>
-                  <div className="text-purple-600 mt-1">
-                    {adkProcessing.currentAgent || 'Multi-agent processing'}
-                  </div>
-                </div>
-              )}
-              
-              {/* Completion Status */}
-              {!serverProcessing && riskScore > 0 && (
-                <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded">
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-4 h-4 text-green-600" />
-                    <span className="text-green-700 font-medium">ADK Analysis Complete</span>
-                  </div>
-                  {autoIncidentCreated && (
-                    <div className="text-green-600 mt-1">
-                      Auto-incident: {autoIncidentCreated}
-                    </div>
-                  )}
-                </div>
-              )}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Default State */}
+          {riskScore === 0 && Object.keys(detectedPatterns).length === 0 && !policyGuidance && (
+            <div className="flex-1 flex items-center justify-center p-4">
+              <div className="text-center text-gray-500">
+                <Brain className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h4 className="text-sm font-medium text-gray-900 mb-2">AI Processing</h4>
+                <p className="text-xs text-gray-600">
+                  Start a demo call to see fraud detection
+                </p>
+                <div className="mt-4 space-y-2 text-xs">
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span>6 Agents Ready</span>
+                  </div>
+                  <div className="text-gray-400">Audio • Fraud • Policy • Case • Compliance • Orchestrator</div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-export default App;
+export default App;        

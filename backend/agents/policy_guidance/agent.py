@@ -6,7 +6,7 @@ Policy Guidance Agent - Provides procedural guidance for fraud scenarios
 from google.adk.agents import LlmAgent
 from . import prompt
 
-MODEL = "gemini-1.5-pro"
+MODEL = "gemini-2.5-flash"
 
 policy_guidance_agent = LlmAgent(
     name="policy_guidance_agent",

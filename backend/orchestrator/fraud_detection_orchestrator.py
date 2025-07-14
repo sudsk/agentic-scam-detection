@@ -107,40 +107,29 @@ class FraudDetectionOrchestrator:
         return DefaultSettings()
     
     def _initialize_adk_system(self):
-        """Initialize ADK system with proper session management"""
+        """Initialize ADK system with proper session management - simplified like TradeSage"""
         try:
             logger.info("🔧 Starting ADK system initialization...")
             
-            # FIXED: Import proper ADK components
+            # Import ADK components
             from google.adk.agents import LlmAgent
             from google.adk.runners import Runner
             from google.adk.sessions import InMemorySessionService
             from google.genai import types
-            import vertexai
             
             logger.info("✅ ADK imports successful")
             
-            # FIXED: Initialize Vertex AI first
+            # Check environment variables (like TradeSage approach)
             project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-            location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+            location = os.getenv("GOOGLE_CLOUD_LOCATION")
+            use_vertexai = os.getenv("GOOGLE_GENAI_USE_VERTEXAI")
             
-            logger.info(f"🔧 Checking environment variables: PROJECT={project_id}, LOCATION={location}")
+            logger.info(f"🔧 Environment: PROJECT={project_id}, LOCATION={location}, USE_VERTEXAI={use_vertexai}")
             
             if not project_id:
-                logger.error("❌ GOOGLE_CLOUD_PROJECT environment variable not set")
-                logger.info("💡 Please set: export GOOGLE_CLOUD_PROJECT='your-project-id'")
-                logger.info("💡 Or export GOOGLE_AI_API_KEY='your-api-key' to use Google AI instead")
-                # Try to continue without Vertex AI - might work with Google AI API key
-                
-            if project_id:
-                try:
-                    vertexai.init(project=project_id, location=location)
-                    logger.info(f"✅ Vertex AI initialized: project={project_id}, location={location}")
-                except Exception as e:
-                    logger.error(f"❌ Failed to initialize Vertex AI: {e}")
-                    logger.info("💡 Continuing without Vertex AI - will try Google AI API if available")
+                logger.warning("⚠️ GOOGLE_CLOUD_PROJECT not set - ADK will try default authentication")
             
-            # FIXED: Create session service (like TradeSage)
+            # Create session service (exactly like TradeSage)
             try:
                 self.session_service = InMemorySessionService()
                 logger.info("✅ InMemorySessionService created")
@@ -150,7 +139,7 @@ class FraudDetectionOrchestrator:
             
             self.types = types
             
-            # FIXED: Create agents with better error handling
+            # Create agents with simple configuration (like TradeSage)
             agent_configs = [
                 ("scam_detection", "scam_detection_agent", "Analyzes customer speech for fraud patterns and calculates risk scores", self._get_scam_detection_instruction()),
                 ("policy_guidance", "policy_guidance_agent", "Provides procedural guidance and escalation recommendations for fraud scenarios", self._get_policy_guidance_instruction()),
@@ -164,14 +153,14 @@ class FraudDetectionOrchestrator:
             logger.info(f"🔧 Creating {len(agent_configs)} agents...")
             
             for agent_key, agent_name, description, instruction in agent_configs:
-                logger.info(f"🔧 Creating agent: {agent_key} ({agent_name})")
+                logger.info(f"🔧 Creating agent: {agent_key}")
                 try:
-                    agent = self._create_adk_agent(agent_name, description, instruction)
+                    agent = self._create_simple_agent(agent_name, description, instruction)
                     if agent is not None:
                         self.agents[agent_key] = agent
                         logger.info(f"✅ Agent created: {agent_key}")
                         
-                        # Create runner for this agent
+                        # Create runner for this agent (exactly like TradeSage)
                         try:
                             runner = Runner(
                                 agent=agent,
@@ -188,12 +177,10 @@ class FraudDetectionOrchestrator:
                             continue
                             
                     else:
-                        logger.error(f"❌ Failed to create agent: {agent_key} (returned None)")
+                        logger.error(f"❌ Failed to create agent: {agent_key}")
                         
                 except Exception as e:
                     logger.error(f"❌ Error creating agent {agent_key}: {e}")
-                    import traceback
-                    logger.error(f"❌ Traceback: {traceback.format_exc()}")
                     continue
             
             # Case management agent initialization
@@ -214,7 +201,6 @@ class FraudDetectionOrchestrator:
                 logger.info(f"✅ Available agents: {list(self.agents.keys())}")
             else:
                 logger.error("❌ No agents were successfully created - system will use fallback mode")
-                logger.info("💡 Check your Google Cloud credentials or API key setup")
                 
             return success
             
@@ -224,40 +210,29 @@ class FraudDetectionOrchestrator:
             logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return False
     
-    def _create_adk_agent(self, name: str, description: str, instruction: str):
-        """Create ADK agent with proper Vertex AI configuration"""
-        logger.info(f"🔧 Attempting to create ADK agent: {name}")
+    def _create_simple_agent(self, name: str, description: str, instruction: str):
+        """Create ADK agent with simple configuration - following the same pattern as TradeSage"""
         try:
             from google.adk.agents import LlmAgent
             
-            logger.info(f"🔧 Creating LlmAgent with model: gemini-1.5-pro")
-            
-            # FIXED: Create LlmAgent with minimal required parameters
+            # Simple agent creation - let ADK handle authentication automatically
             agent = LlmAgent(
                 name=name,
-                model="gemini-1.5-pro",  # Use stable model
+                model="gemini-1.5-pro",
                 description=description,
                 instruction=instruction,
-                # Remove output_key as it might be causing issues
-                tools=[],  # No tools for now
+                tools=[],
             )
             
-            logger.info(f"✅ Successfully created ADK agent: {name}")
+            logger.info(f"✅ Created simple ADK agent: {name}")
             return agent
             
         except Exception as e:
-            logger.error(f"❌ Failed to create ADK agent {name}: {e}")
-            import traceback
-            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
-            
-            # Check for specific error types
-            if "api_key" in str(e).lower():
-                logger.error("💡 This looks like an API key issue")
-                logger.error("💡 Either set GOOGLE_AI_API_KEY or configure Vertex AI properly")
-            elif "project" in str(e).lower():
-                logger.error("💡 This looks like a project configuration issue")
-                logger.error("💡 Make sure GOOGLE_CLOUD_PROJECT and credentials are set")
-            
+            logger.error(f"❌ Failed to create agent {name}: {e}")
+            if "Missing key inputs argument" in str(e):
+                logger.error("💡 Authentication issue - check your environment variables:")
+                logger.error("💡   GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_GENAI_USE_VERTEXAI")
+                logger.error("💡   Or run: gcloud auth application-default login")
             return None
     
     def _get_scam_detection_instruction(self) -> str:

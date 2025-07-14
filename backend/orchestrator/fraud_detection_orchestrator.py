@@ -2,7 +2,7 @@
 """
 Fixed Fraud Detection Orchestrator with proper ADK session management
 Based on Google ADK patterns and successful implementations
-""" 
+"""
 
 import asyncio
 import json
@@ -163,18 +163,36 @@ class FraudDetectionOrchestrator:
             return False
     
     def _create_adk_agent(self, name: str, description: str, instruction: str):
-        """Create ADK agent with proper configuration"""
+        """Create ADK agent with proper Vertex AI configuration"""
         try:
             from google.adk.agents import LlmAgent
+            import vertexai
             
-            # FIXED: Use LlmAgent with proper parameters (like TradeSage)
+            # FIXED: Initialize Vertex AI with project and location
+            project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+            location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+            
+            if not project_id:
+                logger.error("❌ GOOGLE_CLOUD_PROJECT environment variable not set")
+                return None
+            
+            # Initialize Vertex AI
+            try:
+                vertexai.init(project=project_id, location=location)
+                logger.info(f"✅ Vertex AI initialized: project={project_id}, location={location}")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize Vertex AI: {e}")
+                return None
+            
+            # FIXED: Create LlmAgent with Vertex AI configuration
             agent = LlmAgent(
                 name=name,
-                model="gemini-2.0-flash-exp",  # Use fast model for real-time
+                model="gemini-1.5-pro",  # Use stable model for Vertex AI
                 description=description,
                 instruction=instruction,
                 output_key="analysis_result",
                 tools=[],  # No tools for now - pure text analysis
+                # Vertex AI configuration will be picked up automatically after vertexai.init()
             )
             
             return agent

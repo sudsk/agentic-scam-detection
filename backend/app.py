@@ -1,7 +1,8 @@
-# backend/app.py - FIXED WITH WEBSOCKET HANDLER INTEGRATION
+# backend/app.py - UPDATED WITH FRAUD DETECTION ORCHESTRATOR
 """
 Fraud Detection Agent - FastAPI Backend
-FIXED: Integrated FraudDetectionWebSocketHandler for real-time communication
+UPDATED: Now uses FraudDetectionOrchestrator instead of fraud_detection_system
+Eliminates redundant fraud_detection_system.py
 """
 
 import asyncio
@@ -24,10 +25,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 import aiofiles
 
-# Import consolidated components with FIXED paths
-from .agents.fraud_detection_system import fraud_detection_system
+# UPDATED: Import orchestrator instead of fraud_detection_system
+from .orchestrator.fraud_detection_orchestrator import FraudDetectionOrchestrator, FraudDetectionWebSocketHandler
 from .websocket.connection_manager import ConnectionManager
-from .websocket.fraud_detection_handler import FraudDetectionWebSocketHandler  # ADDED
 from .api.routes import audio, fraud, cases
 from .config.settings import get_settings
 from .middleware.error_handling import error_handling_middleware, handle_api_errors
@@ -50,8 +50,8 @@ settings = get_settings()
 # Create FastAPI app
 app = FastAPI(
     title="Fraud Detection Agent API",
-    description="Real-time fraud detection using modular multi-agent system with WebSocket support",
-    version="2.0.0",
+    description="Real-time fraud detection using FraudDetectionOrchestrator with multi-agent coordination",
+    version="3.0.0",  # UPDATED: Version bump for orchestrator architecture
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -73,15 +73,16 @@ static_dir = Path("static")
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# FIXED: Initialize WebSocket components
+# UPDATED: Initialize orchestrator and WebSocket components
 connection_manager = ConnectionManager()
+orchestrator = FraudDetectionOrchestrator(connection_manager)
 fraud_ws_handler = FraudDetectionWebSocketHandler(connection_manager)
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize system on startup using consolidated components"""
+    """Initialize system on startup using FraudDetectionOrchestrator"""
     
-    log_agent_activity("system", "Starting Consolidated Fraud Detection System with WebSocket Support")
+    log_agent_activity("system", "Starting Fraud Detection System with FraudDetectionOrchestrator")
     
     try:
         # Create uploads directory
@@ -91,66 +92,90 @@ async def startup_event():
         db_info = mock_db.get_database_info()
         logger.info(f"📊 Database initialized with {db_info['total_records']} records across {db_info['total_collections']} collections")
         
-        # Get system status to verify agents are ready
-        status = fraud_detection_system.get_agent_status()
+        # UPDATED: Get orchestrator status instead of fraud_detection_system
+        orchestrator_status = orchestrator.get_orchestrator_status()
         
-        logger.info("✅ Consolidated fraud detection system initialized successfully")
-        logger.info(f"System ready with {status['agents_count']} agents")
+        logger.info("✅ Fraud Detection Orchestrator system initialized successfully")
+        logger.info(f"🎭 Orchestrator ready with {len(orchestrator_status['agents_managed'])} managed agents")
         logger.info(f"🔌 WebSocket handler ready for real-time communication")
         
-        # Log each agent status using centralized logging
-        for agent_name, agent_status in status['agents'].items():
-            log_agent_activity("system", f"Agent {agent_name}: {agent_status}")
+        # Log each managed agent
+        for agent_name in orchestrator_status['agents_managed']:
+            log_agent_activity("orchestrator", f"Managing agent: {agent_name}")
+        
+        # Log architecture change
+        logger.info("🏗️ Architecture: fraud_detection_system.py eliminated - using FraudDetectionOrchestrator")
         
     except Exception as e:
-        logger.error(f"❌ Failed to initialize system: {e}")
+        logger.error(f"❌ Failed to initialize orchestrator system: {e}")
         raise
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
-    log_agent_activity("system", "Shutting down system")
+    log_agent_activity("system", "Shutting down orchestrator system")
     
     # Close all WebSocket connections
     await connection_manager.disconnect_all()
     
-    # Cleanup fraud handler sessions
-    if hasattr(fraud_ws_handler, 'active_sessions'):
-        active_count = len(fraud_ws_handler.active_sessions)
-        if active_count > 0:
-            logger.info(f"🧹 Cleaning up {active_count} active WebSocket sessions")
+    # Cleanup orchestrator sessions
+    active_count = len(orchestrator.active_sessions)
+    if active_count > 0:
+        logger.info(f"🧹 Cleaning up {active_count} active orchestrator sessions")
+        for session_id in list(orchestrator.active_sessions.keys()):
+            await orchestrator._cleanup_session(session_id)
     
     # Create backup of mock database
     backup = mock_db.backup_data()
     logger.info(f"💾 Created system backup with {len(backup['collections'])} collections")
     
-    logger.info("✅ Shutdown complete")
+    logger.info("✅ Orchestrator system shutdown complete")
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
-    """Root endpoint with system information"""
+    """Root endpoint with updated system information"""
     # Get WebSocket status
     ws_status = "Connected" if connection_manager.get_connection_count() > 0 else "Ready"
     active_sessions = fraud_ws_handler.get_active_sessions_count()
+    orchestrator_status = orchestrator.get_orchestrator_status()
     
     return f"""
     <html>
         <head>
-            <title>Fraud Detection Agent API - CONSOLIDATED + WEBSOCKET</title>
+            <title>Fraud Detection Agent API - ORCHESTRATOR ARCHITECTURE</title>
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
                 .container {{ background: white; padding: 30px; border-radius: 8px; max-width: 900px; }}
                 .header {{ color: #dc2626; border-bottom: 2px solid #dc2626; padding-bottom: 10px; }}
                 .feature {{ background: #f0f9ff; padding: 15px; margin: 10px 0; border-radius: 6px; }}
-                .consolidation {{ background: #ecfdf5; padding: 15px; margin: 10px 0; border-radius: 6px; }}
+                .orchestrator {{ background: #ecfdf5; padding: 15px; margin: 10px 0; border-radius: 6px; }}
                 .websocket {{ background: #fef3c7; padding: 15px; margin: 10px 0; border-radius: 6px; }}
                 .status {{ background: #ddd6fe; padding: 10px; border-radius: 4px; margin: 5px 0; }}
+                .architecture {{ background: #fdf2f8; padding: 15px; margin: 10px 0; border-radius: 6px; }}
             </style>
         </head>
         <body>
             <div class="container">
-                <h1 class="header">🏦 Fraud Detection Agent API ✨</h1>
-                <p><strong>Real-time Multi-Agent System with WebSocket Support!</strong></p>
+                <h1 class="header">🏦 Fraud Detection Agent API 🎭</h1>
+                <p><strong>FraudDetectionOrchestrator Architecture with Multi-Agent Coordination!</strong></p>
+                
+                <div class="orchestrator">
+                    <h3>🎭 FraudDetectionOrchestrator Status</h3>
+                    <div class="status">
+                        <p><strong>Orchestrator Status:</strong> {orchestrator_status.get('system_status', 'unknown')}</p>
+                        <p><strong>Active Sessions:</strong> {orchestrator_status.get('active_sessions', 0)}</p>
+                        <p><strong>Agents Available:</strong> {orchestrator_status.get('agents_available', False)}</p>
+                        <p><strong>Managed Agents:</strong> {len(orchestrator_status.get('agents_managed', []))}</p>
+                    </div>
+                </div>
+                
+                <div class="architecture">
+                    <h3>🏗️ Architecture Update</h3>
+                    <p><strong>✅ NEW:</strong> FraudDetectionOrchestrator - True system coordinator</p>
+                    <p><strong>✅ RENAMED:</strong> Orchestrator Agent → Decision Agent</p>
+                    <p><strong>✅ ELIMINATED:</strong> fraud_detection_system.py (redundant)</p>
+                    <p><strong>✅ UPDATED:</strong> REST APIs now use orchestrator</p>
+                </div>
                 
                 <div class="websocket">
                     <h3>🔌 WebSocket Integration Status</h3>
@@ -158,17 +183,31 @@ async def root():
                         <p><strong>WebSocket Status:</strong> {ws_status}</p>
                         <p><strong>Active Connections:</strong> {connection_manager.get_connection_count()}</p>
                         <p><strong>Processing Sessions:</strong> {active_sessions}</p>
+                        <p><strong>Handler Type:</strong> Orchestrator Delegation</p>
                     </div>
                 </div>
+                
                 <div class="feature">
-                    <h3>🤖 Modular Agents</h3>
-                    <p>All agents now use <code>agent.process()</code> directly:</p>
+                    <h3>🤖 Orchestrator-Managed Agents</h3>
+                    <p>All agents coordinated by FraudDetectionOrchestrator:</p>
                     <ul>
                         <li>🎵 Audio Processing Agent</li>
-                        <li>🔍 Fraud Detection Agent</li>
+                        <li>🔍 Scam Detection Agent</li>
                         <li>📚 Policy Guidance Agent</li>
+                        <li>🎯 Decision Agent (renamed from Orchestrator)</li>
+                        <li>📝 Summarization Agent</li>
                         <li>📋 Case Management Agent</li>
-                        <li>🎭 System Orchestrator</li>
+                    </ul>
+                </div>
+                
+                <div class="feature">
+                    <h3>🔗 API Endpoints</h3>
+                    <ul>
+                        <li><a href="/docs">📚 Interactive API Documentation</a></li>
+                        <li><a href="/health">💚 System Health Check</a></li>
+                        <li><a href="/api/v1/fraud/orchestrator/status">🎭 Orchestrator Status</a></li>
+                        <li><a href="/api/v1/database/info">🗄️ Database Information</a></li>
+                        <li><a href="/api/v1/websocket/status">🔌 WebSocket Status</a></li>
                     </ul>
                 </div>
                 
@@ -179,17 +218,6 @@ async def root():
                         <li><strong>General Purpose:</strong> <code>ws://localhost:8000/ws/{{client_id}}</code></li>
                     </ul>
                 </div>
-                
-                <div class="feature">
-                    <h3>🔗 API Endpoints</h3>
-                    <ul>
-                        <li><a href="/docs">📚 Interactive API Documentation</a></li>
-                        <li><a href="/health">💚 System Health Check</a></li>
-                        <li><a href="/api/v1/system/status">📊 Detailed Agent Status</a></li>
-                        <li><a href="/api/v1/database/info">🗄️ Database Information</a></li>
-                        <li><a href="/api/v1/websocket/status">🔌 WebSocket Status</a></li>
-                    </ul>
-                </div>
             </div>
         </body>
     </html>
@@ -198,9 +226,9 @@ async def root():
 @app.get("/health")
 @handle_api_errors("health_check")
 async def health_check():
-    """System health check using consolidated components"""
+    """System health check using FraudDetectionOrchestrator"""
     
-    status = fraud_detection_system.get_agent_status()
+    orchestrator_status = orchestrator.get_orchestrator_status()
     db_info = mock_db.get_database_info()
     
     # Add WebSocket health info
@@ -214,25 +242,30 @@ async def health_check():
         data={
             "status": "healthy",
             "timestamp": get_current_timestamp(),
-            "agents_active": status.get('agents_count', 0),
-            "version": "2.0.0",
+            "orchestrator_active": orchestrator_status.get('agents_available', False),
+            "orchestrator_sessions": orchestrator_status.get('active_sessions', 0),
+            "managed_agents": len(orchestrator_status.get('agents_managed', [])),
+            "version": "3.0.0",  # UPDATED: Version bump
+            "architecture": "FraudDetectionOrchestrator",
             "database_records": db_info.get('total_records', 0),
-            "websocket_health": ws_health
+            "websocket_health": ws_health,
+            "fraud_detection_system_eliminated": True  # UPDATED: Note the architectural change
         },
-        message="System is healthy with WebSocket support"
+        message="System is healthy with FraudDetectionOrchestrator architecture"
     )
 
 @app.get("/api/v1/system/status")
 @handle_api_errors("system_status")
 async def get_system_status():
-    """Get detailed system and agent status using consolidated services"""
+    """Get detailed system status using FraudDetectionOrchestrator"""
     
-    status = fraud_detection_system.get_agent_status()
+    orchestrator_status = orchestrator.get_orchestrator_status()
     db_info = mock_db.get_database_info()
     
     # Add WebSocket status
     ws_status = {
         "handler_active": True,
+        "handler_type": "orchestrator_delegation",
         "active_connections": connection_manager.get_connection_count(),
         "active_sessions": fraud_ws_handler.get_active_sessions_count(),
         "connection_manager": connection_manager.__class__.__name__,
@@ -241,15 +274,22 @@ async def get_system_status():
     
     return create_success_response(
         data={
-            "system_status": status.get('system_status', 'operational'),
-            "agents_count": status.get('agents_count', 0),
-            "agents": status.get('agents', {}),
-            "framework": "Consolidated Multi-Agent System with WebSocket",
-            "last_updated": status.get('last_updated', get_current_timestamp()),
+            "system_architecture": "FraudDetectionOrchestrator",
+            "orchestrator_status": orchestrator_status,
+            "framework": "Multi-Agent System with Orchestrator Coordination",
+            "agents_managed": orchestrator_status.get('agents_managed', []),
+            "agents_available": orchestrator_status.get('agents_available', False),
+            "last_updated": orchestrator_status.get('timestamp', get_current_timestamp()),
             "database_info": db_info,
-            "websocket_status": ws_status
+            "websocket_status": ws_status,
+            "architectural_changes": {
+                "fraud_detection_system_eliminated": True,
+                "orchestrator_agent_renamed_to_decision_agent": True,
+                "websocket_handler_delegates_to_orchestrator": True,
+                "rest_apis_use_orchestrator": True
+            }
         },
-        message="System status retrieved with WebSocket info"
+        message="System status retrieved from FraudDetectionOrchestrator"
     )
 
 @app.get("/api/v1/database/info")
@@ -276,19 +316,23 @@ async def get_database_info():
                 "audio_service": "AudioFileService - handles audio metadata",
                 "case_service": "CaseService - manages fraud cases", 
                 "session_service": "SessionService - tracks sessions"
+            },
+            "orchestrator_integration": {
+                "sessions_managed_by_orchestrator": True,
+                "fraud_detection_system_data_migrated": True
             }
         },
         message="Consolidated database information retrieved"
     )
 
-# ADDED: WebSocket status endpoint
 @app.get("/api/v1/websocket/status")
 @handle_api_errors("websocket_status")
 async def get_websocket_status():
-    """Get WebSocket system status"""
+    """Get WebSocket system status with orchestrator info"""
     
     active_connections = connection_manager.get_connection_count()
     active_sessions = fraud_ws_handler.get_active_sessions_count()
+    orchestrator_sessions = len(orchestrator.active_sessions)
     
     # Get detailed connection info
     connection_details = []
@@ -304,22 +348,30 @@ async def get_websocket_status():
             "websocket_system": {
                 "status": "operational",
                 "handler_class": fraud_ws_handler.__class__.__name__,
-                "manager_class": connection_manager.__class__.__name__
+                "manager_class": connection_manager.__class__.__name__,
+                "orchestrator_integration": True
             },
             "connections": {
                 "active_count": active_connections,
                 "processing_sessions": active_sessions,
+                "orchestrator_sessions": orchestrator_sessions,
                 "details": connection_details
             },
+            "orchestrator_info": {
+                "class": orchestrator.__class__.__name__,
+                "agents_managed": len(orchestrator.orchestrator.get_orchestrator_status().get('agents_managed', [])) if hasattr(orchestrator, 'orchestrator') else 0,
+                "delegation_model": "WebSocket Handler delegates to Orchestrator"
+            },
             "capabilities": [
-                "Real-time fraud detection",
+                "Real-time fraud detection via orchestrator",
                 "Live transcription streaming", 
                 "Multi-agent coordination",
-                "Session management",
-                "Error recovery"
+                "Session management through orchestrator",
+                "Error recovery",
+                "Orchestrator delegation pattern"
             ]
         },
-        message="WebSocket status retrieved"
+        message="WebSocket status retrieved with orchestrator integration"
     )
 
 @app.post("/upload-audio")
@@ -356,12 +408,13 @@ async def upload_audio(file: UploadFile = File(...)):
         "size_bytes": len(content),
         "size_mb": get_file_size_mb(len(content)),
         "format": file.filename.split('.')[-1].lower(),
-        "status": "uploaded"
+        "status": "uploaded",
+        "orchestrator_compatible": True  # UPDATED: Note orchestrator compatibility
     }
     
     audio_service.store_audio_metadata(file_id, metadata)
     
-    log_agent_activity("upload", f"File uploaded: {file.filename} ({len(content)} bytes)")
+    log_agent_activity("upload", f"File uploaded: {file.filename} ({len(content)} bytes) - Orchestrator compatible")
     
     return create_success_response(
         data={
@@ -369,32 +422,71 @@ async def upload_audio(file: UploadFile = File(...)):
             "filename": file.filename,
             "size_bytes": len(content),
             "size_mb": metadata["size_mb"],
-            "consolidation_note": "Processed using centralized utilities and services"
+            "orchestrator_compatible": True,
+            "processing_note": "File ready for FraudDetectionOrchestrator processing"
         },
-        message="File uploaded successfully using consolidated system"
+        message="File uploaded successfully - ready for orchestrator processing"
     )
 
-# backend/app.py - FIXED WebSocket endpoints
+@app.post("/process-audio-orchestrator")
+@handle_api_errors("process_audio_orchestrator")
+async def process_audio_with_orchestrator(filename: str, session_id: str = None):
+    """Process audio file directly through FraudDetectionOrchestrator (REST API)"""
+    
+    try:
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = generate_session_id("rest_orchestrator")
+        
+        logger.info(f"🎭 REST API processing audio via orchestrator: {filename}")
+        
+        # Process through orchestrator
+        result = await orchestrator.orchestrate_audio_processing(
+            filename=filename,
+            session_id=session_id
+        )
+        
+        if result.get('success'):
+            return create_success_response(
+                data={
+                    "session_id": session_id,
+                    "orchestrator_result": result,
+                    "message": "Audio processing started via FraudDetectionOrchestrator",
+                    "api_type": "rest",
+                    "orchestrator": "FraudDetectionOrchestrator"
+                },
+                message="Audio processed through FraudDetectionOrchestrator"
+            )
+        else:
+            return create_error_response(
+                error=result.get('error', 'Orchestrator processing failed'),
+                code="ORCHESTRATOR_PROCESSING_ERROR"
+            )
+        
+    except Exception as e:
+        logger.error(f"❌ REST orchestrator processing error: {e}")
+        return create_error_response(
+            error=str(e),
+            code="ORCHESTRATOR_ERROR"
+        )
+
+# WebSocket endpoints - UPDATED to note orchestrator delegation
 
 @app.websocket("/ws/fraud-detection/{client_id}")
 async def fraud_detection_websocket(websocket: WebSocket, client_id: str):
     """
-    Dedicated WebSocket endpoint for fraud detection - FIXED: Proper connection handling
+    Dedicated WebSocket endpoint for fraud detection via orchestrator delegation
     """
-    # FIXED: Accept the WebSocket connection first
     await websocket.accept()
-    
-    # Then connect through the manager (without accepting again)
     await connection_manager.connect(websocket, client_id)
-    logger.info(f"🔌 Fraud detection WebSocket connected: {client_id}")
+    logger.info(f"🔌 Fraud detection WebSocket connected: {client_id} (Orchestrator delegation)")
     
     try:
         while True:
-            # Receive message from client
             data = await websocket.receive_text()
             message_data = json.loads(data)
             
-            # Process through fraud detection handler
+            # Process through fraud detection handler (which delegates to orchestrator)
             await fraud_ws_handler.handle_message(websocket, client_id, message_data)
             
     except WebSocketDisconnect:
@@ -409,18 +501,14 @@ async def fraud_detection_websocket(websocket: WebSocket, client_id: str):
 @app.websocket("/ws/{client_id}")
 async def general_websocket_endpoint(websocket: WebSocket, client_id: str):
     """
-    General WebSocket endpoint - FIXED: Proper connection handling
+    General WebSocket endpoint with orchestrator awareness
     """
-    # FIXED: Accept the WebSocket connection first
     await websocket.accept()
-    
-    # Then connect through the manager
     await connection_manager.connect(websocket, client_id)
     logger.info(f"🔌 General WebSocket connected: {client_id}")
     
     try:
         while True:
-            # Receive message from client
             data = await websocket.receive_text()
             message_data = json.loads(data)
             
@@ -435,7 +523,7 @@ async def general_websocket_endpoint(websocket: WebSocket, client_id: str):
         connection_manager.disconnect(client_id)
 
 async def handle_general_websocket_message(websocket: WebSocket, client_id: str, message_data: dict):
-    """Handle general WebSocket messages with basic functionality"""
+    """Handle general WebSocket messages with orchestrator awareness"""
     try:
         message_type = message_data.get('type')
         
@@ -444,13 +532,13 @@ async def handle_general_websocket_message(websocket: WebSocket, client_id: str,
                 json.dumps({
                     'type': 'pong', 
                     'timestamp': get_current_timestamp(),
-                    'server': 'consolidated_fraud_detection_system'
+                    'server': 'fraud_detection_orchestrator_system'  # UPDATED
                 }),
                 client_id
             )
         elif message_type == 'get_system_status':
-            # Send system status via WebSocket
-            status = fraud_detection_system.get_agent_status()
+            # Send orchestrator status via WebSocket
+            status = orchestrator.get_orchestrator_status()
             await connection_manager.send_personal_message(
                 json.dumps({
                     'type': 'system_status',
@@ -460,7 +548,7 @@ async def handle_general_websocket_message(websocket: WebSocket, client_id: str,
                 client_id
             )
         elif message_type == 'fraud_detection':
-            # Redirect to fraud detection handler
+            # Redirect to fraud detection handler (which uses orchestrator)
             await fraud_ws_handler.handle_message(websocket, client_id, message_data)
         else:
             logger.warning(f"❓ Unknown general message type: {message_type} from {client_id}")
@@ -476,9 +564,9 @@ async def handle_general_websocket_message(websocket: WebSocket, client_id: str,
             client_id
         )
 
-# Include consolidated API routes
+# Include API routes (now using orchestrator)
 app.include_router(audio.router, prefix="/api/v1/audio", tags=["audio"])
-app.include_router(fraud.router, prefix="/api/v1/fraud", tags=["fraud"])
+app.include_router(fraud.router, prefix="/api/v1/fraud", tags=["fraud"])  # UPDATED: Now uses orchestrator
 app.include_router(cases.router, prefix="/api/v1/cases", tags=["cases"])
 
 if __name__ == "__main__":

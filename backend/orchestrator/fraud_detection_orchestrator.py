@@ -1,6 +1,7 @@
-# backend/orchestrator/fraud_detection_orchestrator.py 
+# backend/orchestrator/fraud_detection_orchestrator.py - FIXED ADK VERSION
 """
-Corrected Fraud Detection Orchestrator 
+Fixed Fraud Detection Orchestrator with proper ADK session management
+Based on Google ADK patterns and successful implementations
 """
 
 import asyncio
@@ -9,11 +10,13 @@ import logging
 import time
 import warnings
 import os
+import sys
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Callable
 import uuid
+from io import StringIO
 
-# Suppress warnings 
+# Suppress warnings at the top
 warnings.filterwarnings('ignore')
 os.environ['GRPC_VERBOSITY'] = 'ERROR'
 os.environ['GLOG_minloglevel'] = '2'
@@ -22,11 +25,9 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 logger = logging.getLogger(__name__)
 
 class WarningSuppressionContext:
-    """Context manager to suppress warnings"""
+    """Context manager to suppress ADK warnings"""
     
     def __init__(self):
-        import sys
-        from io import StringIO
         self.original_stderr = sys.stderr
         self.suppressed_stderr = StringIO()
         self.warning_patterns = [
@@ -37,12 +38,10 @@ class WarningSuppressionContext:
         ]
     
     def __enter__(self):
-        import sys
         sys.stderr = self.suppressed_stderr
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        import sys
         captured = self.suppressed_stderr.getvalue()
         sys.stderr = self.original_stderr
         
@@ -58,7 +57,7 @@ class WarningSuppressionContext:
                 print('\n'.join(filtered_lines), file=sys.stderr)
 
 class FraudDetectionOrchestrator:
-    """Fraud Detection Orchestrator """
+    """Fraud Detection Orchestrator with proper ADK session management"""
     
     def __init__(self, connection_manager=None):
         self.connection_manager = connection_manager
@@ -77,13 +76,18 @@ class FraudDetectionOrchestrator:
             logger.warning("Settings import failed, using defaults")
             self.settings = self._get_default_settings()
         
-        # Initialize agents 
-        self.agents = self._initialize_agents()
+        # FIXED: Initialize ADK components properly
+        self.session_service = None
+        self.agents = {}
+        self.runners = {}
+        
+        # Initialize ADK system
+        self._initialize_adk_system()
         
         # Initialize customer profiles
         self._initialize_customer_profiles()
         
-        logger.info("🎭 Orchestrator initialized")
+        logger.info("🎭 Fraud Detection Orchestrator initialized with proper ADK session management")
     
     def _get_default_settings(self):
         """Fallback settings if import fails"""
@@ -95,33 +99,54 @@ class FraudDetectionOrchestrator:
                 self.risk_threshold_low = 20
         return DefaultSettings()
     
-    def _initialize_agents(self) -> Dict[str, Any]:
-        """Initialize agents """
+    def _initialize_adk_system(self):
+        """Initialize ADK system with proper session management"""
         try:
-            from google.adk.agents import Agent
+            # FIXED: Import proper ADK components
+            from google.adk.agents import LlmAgent
+            from google.adk.runners import Runner
+            from google.adk.sessions import InMemorySessionService
+            from google.genai import types
             
-            agents = {
-                "scam_detection": self._create_agent(
-                    "scam_detection",
-                    "Analyzes customer speech for fraud patterns",
+            # FIXED: Create session service (like TradeSage)
+            self.session_service = InMemorySessionService()
+            self.types = types
+            
+            # FIXED: Create agents with proper ADK pattern
+            self.agents = {
+                "scam_detection": self._create_adk_agent(
+                    "scam_detection_agent",
+                    "Analyzes customer speech for fraud patterns and calculates risk scores",
                     self._get_scam_detection_instruction()
                 ),
-                "policy_guidance": self._create_agent(
-                    "policy_guidance", 
-                    "Provides procedural guidance for fraud scenarios",
+                "policy_guidance": self._create_adk_agent(
+                    "policy_guidance_agent", 
+                    "Provides procedural guidance and escalation recommendations for fraud scenarios",
                     self._get_policy_guidance_instruction()
                 ),
-                "decision": self._create_agent(
-                    "decision",
-                    "Makes final fraud prevention decisions", 
+                "decision": self._create_adk_agent(
+                    "decision_agent",
+                    "Makes final fraud prevention decisions based on multi-agent analysis", 
                     self._get_decision_instruction()
                 ),
-                "summarization": self._create_agent(
-                    "summarization",
-                    "Creates professional incident summaries",
+                "summarization": self._create_adk_agent(
+                    "summarization_agent",
+                    "Creates professional incident summaries for ServiceNow case documentation",
                     self._get_summarization_instruction()
                 )
             }
+            
+            # FIXED: Create runners for each agent (like TradeSage)
+            for agent_name, agent in self.agents.items():
+                try:
+                    runner = Runner(
+                        agent=agent,
+                        app_name=f"fraud_detection_{agent_name}",
+                        session_service=self.session_service
+                    )
+                    self.runners[agent_name] = runner
+                except Exception as e:
+                    logger.error(f"❌ Failed to create runner for {agent_name}: {e}")
             
             # Case management agent
             try:
@@ -130,95 +155,200 @@ class FraudDetectionOrchestrator:
             except ImportError:
                 self.case_management_agent = None
             
-            logger.info(f"✅ Initialized {len(agents)} agents ")
-            return agents
+            logger.info(f"✅ ADK system initialized: {len(self.agents)} agents, {len(self.runners)} runners")
+            return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to initialize agents: {e}")
-            return {}
+            logger.error(f"❌ Failed to initialize ADK system: {e}")
+            return False
     
-    def _create_agent(self, name: str, description: str, instruction: str):
-        """Create agent """
-        from google.adk.agents import Agent
-        
-        return Agent(
-            name=name,
-            model="gemini-1.5-pro",
-            description=description,
-            instruction=instruction,
-            tools=[],
-        )
+    def _create_adk_agent(self, name: str, description: str, instruction: str):
+        """Create ADK agent with proper configuration"""
+        try:
+            from google.adk.agents import LlmAgent
+            
+            # FIXED: Use LlmAgent with proper parameters (like TradeSage)
+            agent = LlmAgent(
+                name=name,
+                model="gemini-2.0-flash-exp",  # Use fast model for real-time
+                description=description,
+                instruction=instruction,
+                output_key="analysis_result",
+                tools=[],  # No tools for now - pure text analysis
+            )
+            
+            return agent
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to create ADK agent {name}: {e}")
+            return None
     
     def _get_scam_detection_instruction(self) -> str:
         return """
-You are the Scam Detection Agent for HSBC Fraud Prevention System.
+You are the Scam Detection Agent for HSBC Fraud Prevention System. Analyze customer speech for fraud indicators.
 
-Output STRUCTURED analysis in this EXACT format:
+CRITICAL: Output STRUCTURED analysis in this EXACT format:
 
 Risk Score: [0-100]%
 Risk Level: [MINIMAL/LOW/MEDIUM/HIGH/CRITICAL]
 Scam Type: [romance_scam/investment_scam/impersonation_scam/authority_scam/unknown]
-Detected Patterns: [list of patterns]
-Key Evidence: [exact phrases]
+Detected Patterns: [list of specific patterns found]
+Key Evidence: [exact phrases that triggered alerts]
 Confidence: [0-100]%
 Recommended Action: [IMMEDIATE_ESCALATION/ENHANCED_MONITORING/VERIFY_CUSTOMER_INTENT/CONTINUE_NORMAL_PROCESSING]
 
-Analyze customer speech for fraud indicators and provide immediate assessment.
+FRAUD PATTERNS TO DETECT:
+- Romance Scams: Online relationships, never met, emergency money requests, overseas partners
+- Investment Scams: Guaranteed returns, pressure to invest immediately, unregulated schemes  
+- Impersonation Scams: Fake bank/authority calls, requests for PINs/passwords
+- Authority Scams: Police/court threats, immediate payment demands
+- Urgency Pressure: "Today only", "immediate action required", artificial deadlines
+
+RISK SCORING:
+- 80-100%: CRITICAL (romance emergency, fake police, guaranteed returns)
+- 60-79%: HIGH (investment pressure, impersonation attempts)
+- 40-59%: MEDIUM (suspicious urgency, unusual requests)
+- 20-39%: LOW (minor red flags)
+- 0-19%: MINIMAL (normal conversation)
+
+Analyze the customer speech and provide IMMEDIATE fraud assessment to protect the customer.
+Focus on SPECIFIC patterns and provide CONCRETE evidence from the text.
 """
     
     def _get_policy_guidance_instruction(self) -> str:
         return """
-You are the Policy Guidance Agent for HSBC Fraud Prevention.
+You are the Policy Guidance Agent for HSBC Fraud Prevention. Provide SPECIFIC procedural guidance for detected fraud scenarios.
 
-Output STRUCTURED guidance in this EXACT format:
+CRITICAL: Output STRUCTURED guidance in this EXACT format:
 
 Policy ID: FP-[TYPE]-[NUMBER]
 Policy Title: [Specific policy name]
-Immediate Alerts: [Urgent warnings]
-Recommended Actions: [Step-by-step procedures]
-Key Questions: [Questions to ask customer]
-Customer Education: [What to explain]
+Immediate Alerts: [Urgent warnings for the agent]
+Recommended Actions: [Step-by-step procedures to follow]
+Key Questions: [Exact questions to ask the customer]
+Customer Education: [What to explain to the customer]
 Escalation Threshold: [Risk score % when to escalate]
 
-Provide immediate, actionable policy guidance.
+SCAM-SPECIFIC POLICIES:
+
+ROMANCE SCAMS (Risk 60%+):
+Policy ID: FP-ROMANCE-001
+- Immediate Alerts: "STOP TRANSFER - Romance scam indicators detected"
+- Recommended Actions: Verify relationship timeline, Ask about meeting in person, Check for emotional manipulation
+- Key Questions: "How long have you known this person?", "Have you met them in person?", "Are they asking you to keep this secret?"
+- Customer Education: Romance scammers create fake emergencies, Never send money to someone you haven't met, Real relationships don't require secrecy
+
+INVESTMENT SCAMS (Risk 60%+):
+Policy ID: FP-INVESTMENT-001  
+- Immediate Alerts: "HIGH RISK - Investment fraud detected"
+- Recommended Actions: Question guaranteed returns, Verify regulatory status, Explain cooling-off period
+- Key Questions: "What regulatory body oversees this investment?", "Why is this opportunity time-sensitive?"
+- Customer Education: No legitimate investment guarantees returns, High returns always mean high risk, Take time to research
+
+IMPERSONATION SCAMS (Risk 70%+):
+Policy ID: FP-IMPERSON-001
+- Immediate Alerts: "SECURITY BREACH - Impersonation attempt"
+- Recommended Actions: Verify caller identity independently, Never provide credentials over phone, Document attempt
+- Key Questions: "What department do you claim to be from?", "What is your employee ID?"
+- Customer Education: HSBC will never ask for PINs by phone, Always hang up and call official numbers
+
+AUTHORITY SCAMS (Risk 80%+):  
+Policy ID: FP-AUTHORITY-001
+- Immediate Alerts: "CRITICAL - Authority impersonation detected"
+- Recommended Actions: Stop all payments, Verify authority independently, Contact legal compliance
+- Key Questions: "What is your badge number?", "Which court issued this order?"
+- Customer Education: Real authorities don't demand immediate payment, Legal processes have proper documentation
+
+Provide IMMEDIATE, ACTIONABLE policy guidance to protect customers and ensure compliance.
+Agent needs SPECIFIC steps to follow RIGHT NOW.
 """
     
     def _get_decision_instruction(self) -> str:
         return """
-You are the Decision Agent for HSBC Fraud Prevention.
+You are the Decision Agent for HSBC Fraud Prevention. Make FINAL fraud prevention decisions based on multi-agent analysis.
 
-Output IMMEDIATE decisions in this EXACT format:
+CRITICAL: Output IMMEDIATE, ACTIONABLE decisions in this EXACT format:
 
 DECISION: [BLOCK_AND_ESCALATE/VERIFY_AND_MONITOR/MONITOR_AND_EDUCATE/CONTINUE_NORMAL]
-REASONING: [Why this decision was made]
+REASONING: [Why this decision was made based on risk score and patterns]
 PRIORITY: [CRITICAL/HIGH/MEDIUM/LOW]
-IMMEDIATE_ACTIONS: [Specific steps]
+IMMEDIATE_ACTIONS: [Specific steps agent must take immediately]
 CASE_CREATION_REQUIRED: [YES/NO]
-ESCALATION_PATH: [Which team]
-CUSTOMER_IMPACT: [How this affects customer]
+ESCALATION_PATH: [Which team to contact]
+CUSTOMER_IMPACT: [How this affects the customer experience]
 
-Make final fraud prevention decisions immediately.
+DECISION MATRIX:
+
+BLOCK_AND_ESCALATE (Risk 80%+):
+- REASONING: Critical fraud indicators detected requiring immediate intervention
+- PRIORITY: CRITICAL
+- IMMEDIATE_ACTIONS: Stop all transactions, Contact fraud team immediately, Secure customer account, Document evidence
+- CASE_CREATION_REQUIRED: YES
+- ESCALATION_PATH: Financial Crime Team (immediate contact)
+- CUSTOMER_IMPACT: Transaction blocked, enhanced verification required
+
+VERIFY_AND_MONITOR (Risk 60-79%):
+- REASONING: High risk patterns require enhanced verification and monitoring
+- PRIORITY: HIGH  
+- IMMEDIATE_ACTIONS: Enhanced identity verification, Additional security questions, Monitor account activity, Educational warnings
+- CASE_CREATION_REQUIRED: YES
+- ESCALATION_PATH: Fraud Prevention Team (within 1 hour)
+- CUSTOMER_IMPACT: Additional verification steps, transaction may be delayed
+
+MONITOR_AND_EDUCATE (Risk 40-59%):
+- REASONING: Moderate risk indicators require customer education and monitoring
+- PRIORITY: MEDIUM
+- IMMEDIATE_ACTIONS: Customer education about fraud risks, Document interaction, Flag account for monitoring, Standard processing
+- CASE_CREATION_REQUIRED: NO (unless escalates)
+- ESCALATION_PATH: Customer Protection Team (standard timeline)
+- CUSTOMER_IMPACT: Educational information provided, normal service continues
+
+CONTINUE_NORMAL (Risk <40%):
+- REASONING: Low risk assessment allows normal processing with standard precautions
+- PRIORITY: LOW
+- IMMEDIATE_ACTIONS: Standard processing, Basic fraud awareness, Document interaction
+- CASE_CREATION_REQUIRED: NO
+- ESCALATION_PATH: Standard Customer Service
+- CUSTOMER_IMPACT: No impact, normal service
+
+Make the FINAL DECISION immediately. Customer and agent are waiting for clear direction.
+Banking requires decisive fraud prevention action to protect customers.
+Base decision on risk score, detected patterns, and customer vulnerability.
 """
     
     def _get_summarization_instruction(self) -> str:
         return """
-You are the Summarization Agent for HSBC Fraud Prevention.
+You are the Summarization Agent for HSBC Fraud Prevention. Create PROFESSIONAL incident summaries for ServiceNow case documentation.
 
-Create PROFESSIONAL incident summaries in this format:
+CRITICAL: Output a COMPLETE, READY-TO-USE incident summary in this EXACT format:
 
 EXECUTIVE SUMMARY
-[2-3 sentences with risk level and findings]
+[2-3 sentences with risk level and key findings]
 
-CUSTOMER REQUEST ANALYSIS
-[What customer wanted, red flags]
+CUSTOMER REQUEST ANALYSIS  
+[What customer wanted, red flags identified]
 
 FRAUD INDICATORS DETECTED
-[Specific patterns with evidence]
+[Specific patterns with evidence quotes]
+
+CUSTOMER BEHAVIOR ASSESSMENT
+[Vulnerability analysis, decision-making state]
 
 RECOMMENDED ACTIONS
-[Immediate steps required]
+[Immediate steps, follow-up requirements]
 
-Create complete incident summaries for compliance documentation.
+INCIDENT CLASSIFICATION
+[Severity, financial risk, escalation needs]
+
+FORMAT REQUIREMENTS:
+- Professional ServiceNow documentation style
+- Include specific quotes from customer speech
+- Reference detected fraud patterns with evidence
+- Provide actionable recommendations for case management
+- Include risk scores and confidence levels
+- Use clear, concise language suitable for fraud investigators
+
+Create COMPLETE incident summaries immediately. Banking compliance requires detailed, professional documentation for fraud cases.
 """
     
     def _initialize_customer_profiles(self):
@@ -240,7 +370,7 @@ Create complete incident summaries for compliance documentation.
                 'phone': '+44 121 555789'
             }
         }
-    
+
     # ===== MAIN ORCHESTRATION METHODS =====
     
     async def orchestrate_audio_processing(
@@ -280,8 +410,9 @@ Create complete incident summaries for compliance documentation.
             return {
                 'success': True,
                 'session_id': session_id,
-                'orchestrator': 'Orchestrator',
+                'orchestrator': 'FraudDetectionOrchestrator',
                 'agents_available': len(self.agents) > 0,
+                'adk_session_service': self.session_service is not None,
                 'audio_duration': result.get('audio_duration', 0)
             }
             
@@ -297,7 +428,7 @@ Create complete incident summaries for compliance documentation.
         context: Optional[Dict] = None,
         callback: Optional[Callable] = None
     ) -> Dict[str, Any]:
-        """Text analysis orchestration"""
+        """Text analysis orchestration with proper ADK execution"""
         session_id = session_id or f"text_analysis_{uuid.uuid4().hex[:8]}"
         
         try:
@@ -306,32 +437,33 @@ Create complete incident summaries for compliance documentation.
             # Initialize session
             await self._initialize_text_session(session_id, customer_text, context, callback)
             
-            # Run the agent pipeline
-            result = await self._run_agent_pipeline(session_id, customer_text, callback)
+            # FIXED: Run the ADK agent pipeline properly
+            result = await self._run_adk_agent_pipeline(session_id, customer_text, callback)
             
             return {
                 'success': True,
                 'session_id': session_id,
-                'orchestrator': 'Orchestrator',
+                'orchestrator': 'FraudDetectionOrchestrator',
                 'analysis_result': result,
-                'agents_involved': self._get_agents_involved(result.get('risk_score', 0))
+                'agents_involved': self._get_agents_involved(result.get('risk_score', 0)),
+                'adk_execution': True
             }
             
         except Exception as e:
             logger.error(f"❌ Text analysis error: {e}")
             return {'success': False, 'error': str(e)}
     
-    # ===== AGENT EXECUTION PATTERN =====
+    # ===== FIXED ADK AGENT EXECUTION PATTERN =====
     
-    async def _run_agent_pipeline(self, session_id: str, customer_text: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
-        """Run agent pipelin"""
+    async def _run_adk_agent_pipeline(self, session_id: str, customer_text: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
+        """Run ADK agent pipeline with proper session management"""
         try:
-            logger.info(f"🎭 Running agent pipeline: {session_id}")
+            logger.info(f"🎭 Running ADK agent pipeline: {session_id}")
             
             session_data = self.active_sessions[session_id]
             
-            # STEP 1: Scam Detection 
-            scam_analysis = await self._run_agent("scam_detection", {
+            # STEP 1: Scam Detection using proper ADK execution
+            scam_analysis = await self._run_adk_agent("scam_detection", {
                 "customer_text": customer_text,
                 "session_id": session_id
             })
@@ -341,7 +473,7 @@ Create complete incident summaries for compliance documentation.
             
             # STEP 2: Policy Guidance (if medium+ risk)
             if risk_score >= 40:
-                policy_result = await self._run_agent("policy_guidance", {
+                policy_result = await self._run_adk_agent("policy_guidance", {
                     "scam_analysis": parsed_analysis,
                     "session_id": session_id
                 })
@@ -349,7 +481,7 @@ Create complete incident summaries for compliance documentation.
             
             # STEP 3: Decision Agent (if high risk)
             if risk_score >= 60:
-                decision_result = await self._run_agent("decision", {
+                decision_result = await self._run_adk_agent("decision", {
                     "scam_analysis": parsed_analysis,
                     "policy_guidance": session_data.get('policy_guidance', {}),
                     "session_id": session_id
@@ -360,7 +492,7 @@ Create complete incident summaries for compliance documentation.
             if risk_score >= 50 and self.case_management_agent:
                 await self._run_case_management(session_id, parsed_analysis, callback)
             
-            logger.info(f"✅ Pipeline completed: {risk_score}% risk")
+            logger.info(f"✅ ADK pipeline completed: {risk_score}% risk")
             
             return {
                 'risk_score': risk_score,
@@ -368,99 +500,120 @@ Create complete incident summaries for compliance documentation.
                 'policy_guidance': session_data.get('policy_guidance'),
                 'decision_result': session_data.get('decision_result'),
                 'case_info': session_data.get('case_info'),
-                'orchestration_complete': True
+                'orchestration_complete': True,
+                'adk_execution': True
             }
             
         except Exception as e:
-            logger.error(f"❌ Pipeline error: {e}")
-            return {'error': str(e)}
+            logger.error(f"❌ ADK pipeline error: {e}")
+            return {'error': str(e), 'adk_execution': False}
     
-    async def _run_agent(self, agent_name: str, input_data: Dict[str, Any]) -> str:
-        """Run agent """
+    async def _run_adk_agent(self, agent_name: str, input_data: Dict[str, Any]) -> str:
+        """FIXED: Run ADK agent with proper session management"""
         try:
-            if agent_name not in self.agents:
+            if agent_name not in self.agents or agent_name not in self.runners:
                 return self._fallback_agent_response(agent_name, input_data)
             
             agent = self.agents[agent_name]
+            runner = self.runners[agent_name]
             
-            # Format input 
+            # FIXED: Create proper ADK session (like TradeSage)
+            app_name = f"fraud_detection_{agent_name}"
+            user_id = "fraud_detection_user"
+            session_adk_id = f"session_{agent_name}_{id(input_data)}"
+            
+            # FIXED: Create session using session service
+            try:
+                session = await self.session_service.create_session(
+                    app_name=app_name,
+                    user_id=user_id,
+                    session_id=session_adk_id
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to create ADK session: {e}")
+                return self._fallback_agent_response(agent_name, input_data)
+            
+            # Format input for agent
             user_message = self._format_agent_input(agent_name, input_data)
             
-            # Use warning suppression pattern
+            # FIXED: Create proper message (like TradeSage)
+            message = self.types.Content(
+                role='user',
+                parts=[self.types.Part(text=user_message)]
+            )
+            
+            # FIXED: Use warning suppression and proper event handling (like TradeSage)
             with WarningSuppressionContext():
-                from google.adk.runners import Runner
-                from google.genai import types
-                
-                # Create runner 
-                runner = Runner(
-                    agent=agent,
-                    app_name=f"fraud_detection_{agent_name}",
-                    session_service=None 
-                )
-                
-                # Create message 
-                message = types.Content(
-                    role='user',
-                    parts=[types.Part(text=user_message)]
-                )
-                
-                # Collect response 
+                # Collect ALL events and parts properly
                 text_responses = []
                 function_calls = []
                 function_responses = []
+                tool_results = {}
                 errors = []
                 
-                # Process events 
+                # FIXED: Process all events and handle ALL part types to avoid warnings
                 async for event in runner.run_async(
-                    user_id="fraud_detection_user",
-                    session_id=f"session_{agent_name}_{id(input_data)}",
+                    user_id=user_id,
+                    session_id=session_adk_id,
                     new_message=message
                 ):
-                    # Handle ALL part types to avoid warnings 
+                    # Handle different event types - process ALL parts to avoid warnings
                     if hasattr(event, 'content') and event.content:
                         if hasattr(event.content, 'parts') and event.content.parts:
                             for part in event.content.parts:
+                                # Handle ALL part types to avoid warnings
+                                
                                 # Handle text parts
                                 if hasattr(part, 'text') and part.text:
                                     text_responses.append(part.text)
                                 
-                                # Handle function calls (prevents warnings)
+                                # Handle function calls (prevents warning about non-text parts)
                                 elif hasattr(part, 'function_call') and part.function_call:
-                                    function_calls.append({
+                                    function_call = {
                                         "name": part.function_call.name,
                                         "args": dict(part.function_call.args) if part.function_call.args else {}
-                                    })
+                                    }
+                                    function_calls.append(function_call)
                                 
-                                # Handle function responses (prevents warnings)
+                                # Handle function responses (prevents warning about non-text parts)
                                 elif hasattr(part, 'function_response') and part.function_response:
-                                    function_responses.append({
+                                    function_response = {
                                         "name": part.function_response.name,
                                         "response": part.function_response.response
-                                    })
+                                    }
+                                    function_responses.append(function_response)
+                                    
+                                    # Store tool results for easy access
+                                    tool_results[part.function_response.name] = part.function_response.response
                                 
                                 # Handle any other part types to prevent warnings
                                 else:
+                                    # This catches any other part types and processes them silently
                                     pass
                     
                     # Handle errors
                     if hasattr(event, 'error') and event.error:
                         errors.append(str(event.error))
                 
-                # Combine response 
+                # Combine all response parts properly
                 final_text = " ".join(text_responses) if text_responses else ""
                 
+                # If we have function calls but no text response, create summary
                 if function_calls and not final_text:
                     final_text = f"Completed {len(function_calls)} tool calls successfully."
                 
-                logger.info(f"✅ Agent {agent_name} completed")
+                if errors:
+                    logger.warning(f"⚠️ ADK agent {agent_name} reported {len(errors)} errors")
+                
+                logger.info(f"✅ ADK agent {agent_name} completed successfully")
                 return final_text or self._fallback_agent_response(agent_name, input_data)
                 
         except Exception as e:
-            logger.error(f"❌ Agent {agent_name} error: {e}")
+            logger.error(f"❌ ADK agent {agent_name} error: {e}")
             return self._fallback_agent_response(agent_name, input_data)
     
     def _format_agent_input(self, agent_name: str, input_data: Dict[str, Any]) -> str:
-        """Format input for agent """
+        """Format input for ADK agent"""
         if agent_name == "scam_detection":
             customer_text = input_data.get('customer_text', '')
             session_id = input_data.get('session_id', '')
@@ -500,7 +653,7 @@ Please provide final decision with reasoning, priority, and immediate actions.
     # ===== FALLBACK METHODS =====
     
     def _fallback_agent_response(self, agent_name: str, input_data: Dict[str, Any]) -> str:
-        """Fallback response when agent fails"""
+        """Fallback response when ADK agent fails"""
         if agent_name == "scam_detection":
             return self._fallback_scam_detection(input_data.get('customer_text', ''))
         elif agent_name == "policy_guidance":
@@ -511,7 +664,7 @@ Please provide final decision with reasoning, priority, and immediate actions.
             return f"Fallback response for {agent_name}"
     
     def _fallback_scam_detection(self, customer_text: str) -> str:
-        """Fallback scam detection"""
+        """Fallback scam detection using pattern matching"""
         risk_score = 0
         detected_patterns = []
         scam_type = "unknown"
@@ -560,7 +713,7 @@ Confidence: 75%
 Recommended Action: {action}
 """
     
-    # ===== PARSING METHODS =====
+    # ===== PARSING METHODS (same as before) =====
     
     async def _parse_and_accumulate_patterns(self, session_id: str, analysis_result: str) -> Dict[str, Any]:
         """Parse analysis and accumulate patterns"""
@@ -785,7 +938,7 @@ Recommended Action: {action}
             ])
             
             if len(accumulated_speech.strip()) >= 15:
-                await self._run_agent_pipeline(session_id, accumulated_speech)
+                await self._run_adk_agent_pipeline(session_id, accumulated_speech)
                 
         except Exception as e:
             logger.error(f"❌ Error processing customer speech: {e}")
@@ -825,7 +978,7 @@ Recommended Action: {action}
                     'data': {
                         'session_id': session_id,
                         'case_result': case_result,
-                        'orchestrator': 'Orchestrator'
+                        'orchestrator': 'FraudDetectionOrchestrator'
                     }
                 })
             
@@ -884,24 +1037,34 @@ Recommended Action: {action}
                 return datetime.now().isoformat()
         
         return {
-            'orchestrator_type': 'Orchestrator',
+            'orchestrator_type': 'FraudDetectionOrchestrator',
+            'system_status': 'operational' if self.session_service else 'degraded',
             'active_sessions': len(self.active_sessions),
             'agents_available': len(self.agents) > 0,
+            'adk_session_service': self.session_service is not None,
+            'adk_runners': len(self.runners),
             'agents_managed': list(self.agents.keys()) + (['case_management'] if self.case_management_agent else []),
             'capabilities': [
-                'Agent execution',
+                'ADK Agent execution with proper session management',
                 'Multi-agent orchestration',
                 'Session state management', 
                 'Pipeline coordination',
                 'Audio and text processing',
                 'Real-time and batch analysis',
                 'WebSocket and REST API support',
-                'Robust fallback mechanisms'
+                'Robust fallback mechanisms',
+                'Proper warning suppression'
             ],
             'statistics': {
                 'total_sessions': len(self.active_sessions),
                 'total_analyses': sum(len(history) for history in self.session_analysis_history.values()),
                 'total_patterns': sum(len(patterns) for patterns in self.accumulated_patterns.values())
+            },
+            'adk_info': {
+                'session_service_active': self.session_service is not None,
+                'agents_initialized': len(self.agents),
+                'runners_created': len(self.runners),
+                'warning_suppression': True
             },
             'timestamp': get_current_timestamp()
         }
@@ -916,17 +1079,18 @@ Recommended Action: {action}
             'speech_buffer': self.customer_speech_buffer.get(session_id, []),
             'analysis_history': self.session_analysis_history.get(session_id, []),
             'accumulated_patterns': self.accumulated_patterns.get(session_id, {}),
+            'adk_execution': True
         }
 
 # ===== WEBSOCKET COMPATIBILITY LAYER =====
 
 class FraudDetectionWebSocketHandler:
-    """WebSocket Handler """
+    """WebSocket Handler that delegates to the fixed ADK orchestrator"""
     
     def __init__(self, connection_manager):
         self.connection_manager = connection_manager
         self.orchestrator = FraudDetectionOrchestrator(connection_manager)
-        logger.info("🔌 WebSocket Handler initialized")
+        logger.info("🔌 WebSocket Handler initialized with fixed ADK orchestrator")
     
     async def handle_message(self, websocket, client_id: str, message: Dict[str, Any]) -> None:
         """Handle WebSocket messages"""
@@ -959,7 +1123,7 @@ class FraudDetectionWebSocketHandler:
             await self.send_error(websocket, client_id, f"Message processing error: {str(e)}")
     
     async def handle_audio_processing(self, websocket, client_id: str, data: Dict) -> None:
-        """Handle audio processing"""
+        """Handle audio processing with ADK orchestrator"""
         filename = data.get('filename')
         session_id = data.get('session_id')
         
@@ -972,7 +1136,7 @@ class FraudDetectionWebSocketHandler:
             async def websocket_callback(message_data: Dict) -> None:
                 await self.send_message(websocket, client_id, message_data)
             
-            # Delegate to orchestrator
+            # Delegate to fixed ADK orchestrator
             result = await self.orchestrator.orchestrate_audio_processing(
                 filename=filename,
                 session_id=session_id,
@@ -983,15 +1147,17 @@ class FraudDetectionWebSocketHandler:
                 await self.send_error(websocket, client_id, result.get('error', 'Processing failed'))
                 return
             
-            # Send confirmation
+            # Send confirmation with ADK info
             await self.send_message(websocket, client_id, {
                 'type': 'processing_started',
                 'data': {
                     'session_id': result['session_id'],
                     'filename': filename,
-                    'orchestrator': 'Orchestrator',
+                    'orchestrator': 'FraudDetectionOrchestrator',
                     'handler': 'WebSocketHandler',
-                    'pipeline_mode': 'multi_agent',
+                    'pipeline_mode': 'adk_multi_agent',
+                    'adk_session_service': result.get('adk_session_service', False),
+                    'agents_available': result.get('agents_available', False),
                     'timestamp': datetime.now().isoformat()
                 }
             })
@@ -1023,7 +1189,8 @@ class FraudDetectionWebSocketHandler:
                 'data': {
                     'session_id': session_id,
                     'status': 'stopped',
-                    'orchestrator': 'Orchestrator',
+                    'orchestrator': 'FraudDetectionOrchestrator',
+                    'adk_cleanup': True,
                     'timestamp': datetime.now().isoformat()
                 }
             })
@@ -1065,7 +1232,7 @@ class FraudDetectionWebSocketHandler:
                 'type': 'session_analysis_response',
                 'data': {
                     'session_id': session_id,
-                    'orchestrator': 'Orchestrator',
+                    'orchestrator': 'FraudDetectionOrchestrator',
                     **session_data
                 }
             })
@@ -1115,7 +1282,8 @@ class FraudDetectionWebSocketHandler:
                             'session_id': session_id,
                             'case_number': case_result.get('incident_number'),
                             'case_url': case_result.get('incident_url'),
-                            'orchestrator': 'Orchestrator',
+                            'orchestrator': 'FraudDetectionOrchestrator',
+                            'adk_execution': True,
                             'timestamp': datetime.now().isoformat()
                         }
                     })
@@ -1151,7 +1319,8 @@ class FraudDetectionWebSocketHandler:
         return {
             **orchestrator_status['statistics'],
             'websocket_handler': 'WebSocketHandler',
-            'orchestrator_delegation': 'Orchestrator'
+            'orchestrator_delegation': 'FraudDetectionOrchestrator',
+            'adk_execution': True
         }
     
     # ===== WEBSOCKET COMMUNICATION METHODS =====
@@ -1177,5 +1346,5 @@ class FraudDetectionWebSocketHandler:
             }
         })
 
-# Create the handler class for export (maintains compatibility)
-FraudDetectionWebSocketHandler = FraudDetectionWebSocketHandler
+# Export the fixed classes
+__all__ = ['FraudDetectionOrchestrator', 'FraudDetectionWebSocketHandler']

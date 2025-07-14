@@ -744,44 +744,19 @@ Click OK to open the case in ServiceNow.
     </div>
   );
 
-// Safe helper function to check arrays
-const safeArray = (arr: any): any[] => {
-  if (Array.isArray(arr)) return arr;
-  if (typeof arr === 'string') return [arr];
-  return [];
-};
-
-// Safe helper to get array length
-const safeLength = (arr: any): number => {
-  return safeArray(arr).length;
-};
-
-// ===== ADD THE DEBUG COMPONENT HERE (right before return) =====
-const DebugPolicyData = ({ policyData }: { policyData: PolicyGuidance | null }) => {
-  if (!policyData) return null;
+  // Safe helper function to check arrays
+  const safeArray = (arr: any): any[] => {
+    if (Array.isArray(arr)) return arr;
+    if (typeof arr === 'string') return [arr];
+    return [];
+  };
   
-  return (
-    <div style={{
-      position: 'fixed',
-      bottom: '10px',
-      right: '10px',
-      background: 'rgba(0,0,0,0.8)',
-      color: 'white',
-      padding: '10px',
-      fontSize: '10px',
-      maxWidth: '300px',
-      borderRadius: '4px',
-      zIndex: 9999
-    }}>
-      <div>🐛 Policy Debug:</div>
-      <div>policy_id: {policyData.policy_id || 'undefined'}</div>
-      <div>recommended_actions: {typeof policyData.recommended_actions} ({Array.isArray(policyData.recommended_actions) ? policyData.recommended_actions.length : 'not array'})</div>
-      <div>key_questions: {typeof policyData.key_questions} ({Array.isArray(policyData.key_questions) ? policyData.key_questions.length : 'not array'})</div>
-      <div>customer_education: {typeof policyData.customer_education} ({Array.isArray(policyData.customer_education) ? policyData.customer_education.length : 'not array'})</div>
-    </div>
-  );
-};
-  
+  // Safe helper to get array length
+  const safeLength = (arr: any): number => {
+    return safeArray(arr).length;
+  };
+
+ 
   // ===== EFFECTS =====
 
   useEffect(() => {
@@ -865,9 +840,6 @@ const DebugPolicyData = ({ policyData }: { policyData: PolicyGuidance | null }) 
         </div>
       </div>
 
-      {/* ADD THE DEBUG COMPONENT HERE - INSIDE THE MAIN DIV */}
-      <DebugPolicyData policyData={policyGuidance} />
-      
       {/* Main Content Grid */}
       <div className="flex h-[calc(100vh-120px)]">
         

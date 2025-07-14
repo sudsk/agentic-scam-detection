@@ -4,46 +4,31 @@ AGENT_CONFIGS = {
     "scam_detection_agent": {
         "name": "scam_detection_agent",
         "model": "gemini-2.0-flash",  # Fast model for real-time fraud detection
-        "description": "Analyzes customer speech for fraud patterns and calculates risk scores",
-        "temperature": 0.2,  # Low temperature for consistent fraud detection
-        "max_tokens": 1500,
-        "tools_enabled": True
+        "description": "Analyzes customer speech for fraud patterns and calculates risk scores"
     },
     
     "policy_guidance_agent": {
         "name": "policy_guidance_agent", 
         "model": "gemini-2.0-flash",  # Pro model for complex policy reasoning
-        "description": "Provides procedural guidance and escalation recommendations for fraud scenarios",
-        "temperature": 0.3,  # Low temperature for consistent policy guidance
-        "max_tokens": 2000,
-        "tools_enabled": True
+        "description": "Provides procedural guidance and escalation recommendations for fraud scenarios"
     },
     
     "summarization_agent": {
         "name": "summarization_agent",
         "model": "gemini-2.0-flashh",  # Fast model for summary generation
-        "description": "Creates professional incident summaries for ServiceNow case documentation",
-        "temperature": 0.3,  # Balanced for structured yet readable summaries
-        "max_tokens": 2500,
-        "tools_enabled": True
+        "description": "Creates professional incident summaries for ServiceNow case documentation"
     },
     
     "orchestrator_agent": {
         "name": "orchestrator_agent",
         "model": "gemini-2.0-flash",  # Pro model for complex decision-making
-        "description": "Coordinates multi-agent analysis and makes final fraud prevention decisions",
-        "temperature": 0.1,  # Very low temperature for consistent decision-making
-        "max_tokens": 1000,
-        "tools_enabled": True
+        "description": "Coordinates multi-agent analysis and makes final fraud prevention decisions"
     },
     
     "decision_agent": {
         "name": "decision_agent",  # Add this for the renamed decision agent
         "model": "gemini-2.0-flash",
-        "description": "Makes final fraud prevention decisions based on multi-agent analysis",
-        "temperature": 0.1,
-        "max_tokens": 1000,
-        "tools_enabled": True
+        "description": "Makes final fraud prevention decisions based on multi-agent analysis"
     }
 }
 

@@ -112,13 +112,13 @@ class NativeStereoTracker:
         # RULE 1: First segment is ALWAYS agent (banking convention)
         if self.segment_count == 1:
             detected_speaker = "agent"
-            logger.info(f"🎯 First segment: agent (channel:{channel})")
+            #logger.info(f"🎯 First segment: agent (channel:{channel})")
         
         # RULE 2: Use Google's channel information if available
         elif channel is not None:
             if channel in self.channel_mapping:
                 detected_speaker = self.channel_mapping[channel]
-                logger.info(f"🎯 Channel {channel} mapped to: {detected_speaker}")
+                #logger.info(f"🎯 Channel {channel} mapped to: {detected_speaker}")
             else:
                 # Unknown channel - use alternation logic
                 detected_speaker = "customer" if self.last_detected_speaker == "agent" else "agent"

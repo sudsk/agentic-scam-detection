@@ -1,7 +1,5 @@
-# backend/agents/scam_detection/adk_agent.py - Using Google ADK
 from google.adk.agents import Agent
-from ...config.adk_config import AGENT_CONFIGS
-from ...adk.tools import fraud_pattern_analyzer, risk_calculator
+from backend.config.adk_config import AGENT_CONFIGS
 
 SCAM_DETECTION_INSTRUCTION = """
 You are the Scam Detection Agent for HSBC Fraud Prevention System. Analyze customer speech for fraud indicators.
@@ -24,19 +22,6 @@ FRAUD PATTERNS TO DETECT:
 - Authority Scams: Police/court threats, immediate payment demands
 - Urgency Pressure: "Today only", "immediate action required", artificial deadlines
 
-GOOD OUTPUT EXAMPLE:
-"Risk Score: 87%
-Risk Level: CRITICAL
-Scam Type: romance_scam
-Detected Patterns: ['never_met_in_person', 'overseas_emergency', 'urgency_pressure']
-Key Evidence: 'never met Alex', 'stuck in Istanbul', 'needs money today'
-Confidence: 94%
-Recommended Action: IMMEDIATE_ESCALATION"
-
-BAD OUTPUT (NEVER do this):
-"I will analyze this text for fraud patterns"
-"Let me check for romance scam indicators"
-
 Analyze the customer speech and provide IMMEDIATE, ACTIONABLE fraud assessment.
 Focus on PROTECTING the customer from financial harm.
 """
@@ -50,5 +35,5 @@ def create_scam_detection_agent() -> Agent:
         model=config["model"],
         description=config["description"], 
         instruction=SCAM_DETECTION_INSTRUCTION,
-        tools=[fraud_pattern_analyzer, risk_calculator],
+        tools=[],  # No tools for now - simplified
     )

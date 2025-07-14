@@ -708,8 +708,8 @@ const safeLength = (arr: any): number => {
 };
 
 // ===== ADD THE DEBUG COMPONENT HERE (right before return) =====
-const DebugPolicyData = () => {
-  if (!policyGuidance) return null;
+const DebugPolicyData = ({ policyData }: { policyData: PolicyGuidance | null }) => {
+  if (!policyData) return null;
   
   return (
     <div style={{
@@ -725,10 +725,10 @@ const DebugPolicyData = () => {
       zIndex: 9999
     }}>
       <div>🐛 Policy Debug:</div>
-      <div>policy_id: {policyGuidance.policy_id || 'undefined'}</div>
-      <div>recommended_actions: {typeof policyGuidance.recommended_actions} ({Array.isArray(policyGuidance.recommended_actions) ? policyGuidance.recommended_actions.length : 'not array'})</div>
-      <div>key_questions: {typeof policyGuidance.key_questions} ({Array.isArray(policyGuidance.key_questions) ? policyGuidance.key_questions.length : 'not array'})</div>
-      <div>customer_education: {typeof policyGuidance.customer_education} ({Array.isArray(policyGuidance.customer_education) ? policyGuidance.customer_education.length : 'not array'})</div>
+      <div>policy_id: {policyData.policy_id || 'undefined'}</div>
+      <div>recommended_actions: {typeof policyData.recommended_actions} ({Array.isArray(policyData.recommended_actions) ? policyData.recommended_actions.length : 'not array'})</div>
+      <div>key_questions: {typeof policyData.key_questions} ({Array.isArray(policyData.key_questions) ? policyData.key_questions.length : 'not array'})</div>
+      <div>customer_education: {typeof policyData.customer_education} ({Array.isArray(policyData.customer_education) ? policyData.customer_education.length : 'not array'})</div>
     </div>
   );
 };
@@ -817,7 +817,7 @@ const DebugPolicyData = () => {
       </div>
 
       {/* ADD THE DEBUG COMPONENT HERE - INSIDE THE MAIN DIV */}
-      <DebugPolicyData />
+      <DebugPolicyData policyData={policyGuidance} />
       
       {/* Main Content Grid */}
       <div className="flex h-[calc(100vh-120px)]">

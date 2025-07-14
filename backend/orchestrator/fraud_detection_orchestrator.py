@@ -563,20 +563,24 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
             parsed_analysis = await self._parse_and_accumulate_patterns(session_id, scam_analysis_raw)
             risk_score = parsed_analysis.get('risk_score', 0)
             
-            # FIXED: Send fraud analysis update to UI
+            # FIXED: Send fraud analysis update to UI with detailed logging
             if callback:
+                fraud_update_data = {
+                    'session_id': session_id,
+                    'risk_score': risk_score,
+                    'risk_level': parsed_analysis.get('risk_level', 'MINIMAL'),
+                    'scam_type': parsed_analysis.get('scam_type', 'unknown'),
+                    'detected_patterns': self.accumulated_patterns.get(session_id, {}),
+                    'confidence': parsed_analysis.get('confidence', 0.0),
+                    'explanation': parsed_analysis.get('explanation', ''),
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                logger.info(f"🔍 Sending fraud_analysis_update: risk_score={risk_score}, patterns={list(fraud_update_data['detected_patterns'].keys())}")
+                
                 await callback({
                     'type': 'fraud_analysis_update',
-                    'data': {
-                        'session_id': session_id,
-                        'risk_score': risk_score,
-                        'risk_level': parsed_analysis.get('risk_level', 'MINIMAL'),
-                        'scam_type': parsed_analysis.get('scam_type', 'unknown'),
-                        'detected_patterns': self.accumulated_patterns.get(session_id, {}),
-                        'confidence': parsed_analysis.get('confidence', 0.0),
-                        'explanation': parsed_analysis.get('explanation', ''),
-                        'timestamp': datetime.now().isoformat()
-                    }
+                    'data': fraud_update_data
                 })
             
             # STEP 2: Policy Guidance (if medium+ risk)
@@ -598,13 +602,25 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
                 })
                 session_data['policy_guidance'] = self._parse_policy_response(policy_result)
                 
-                # FIXED: Send policy guidance to UI
+                # FIXED: Send policy guidance to UI with detailed logging
                 if callback:
+                    policy_data = session_data['policy_guidance']
+                    
+                    # Debug the policy data structure
+                    logger.info(f"📚 Policy guidance data structure:")
+                    logger.info(f"  - policy_id: {policy_data.get('policy_id', 'None')}")
+                    logger.info(f"  - immediate_alerts type: {type(policy_data.get('immediate_alerts', []))}")
+                    logger.info(f"  - immediate_alerts length: {len(policy_data.get('immediate_alerts', []))}")
+                    logger.info(f"  - recommended_actions type: {type(policy_data.get('recommended_actions', []))}")
+                    logger.info(f"  - recommended_actions length: {len(policy_data.get('recommended_actions', []))}")
+                    logger.info(f"  - key_questions type: {type(policy_data.get('key_questions', []))}")
+                    logger.info(f"  - customer_education type: {type(policy_data.get('customer_education', []))}")
+                    
                     await callback({
                         'type': 'policy_guidance_ready',
                         'data': {
                             'session_id': session_id,
-                            'policy_guidance': session_data['policy_guidance'],
+                            'policy_guidance': policy_data,
                             'timestamp': datetime.now().isoformat()
                         }
                     })

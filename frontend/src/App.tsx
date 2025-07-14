@@ -694,8 +694,6 @@ Click OK to open the case in ServiceNow.
     };
   }, []);
 
-// frontend/src/App.tsx - CHUNK 3: Header and Left Sidebar JSX (Simplified)
-
   // ===== RENDER =====
 
   return (
@@ -913,9 +911,6 @@ Click OK to open the case in ServiceNow.
             </div>
           </div>
         </div>
-
-// frontend/src/App.tsx - CHUNK 4: Center and Right Sidebar JSX (Simplified)
-
         {/* Center - Live Transcription */}
         <div className="flex-1 bg-white border-r border-gray-200">
           <div className="p-4 border-b border-gray-200 flex items-center justify-between">

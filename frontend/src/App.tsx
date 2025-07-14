@@ -315,143 +315,192 @@ function App() {
     }
   };
 
-  const handleWebSocketMessage = (message: WebSocketMessage): void => {
-    console.log('📨 WebSocket message received:', message);
-    
-    switch (message.type) {
-      case 'processing_started':
-      case 'server_processing_started':
-        setProcessingStage('🖥️ Server processing started');
-        setServerProcessing(true);
-        break;
-        
-      case 'streaming_started':
-        setProcessingStage('🎙️ Audio streaming started');
-        break;
-        
-      case 'transcription_segment':
-        const transcriptData = message.data;
-        
-        const finalSegment: AudioSegment = {
-          speaker: transcriptData.speaker,
-          start: transcriptData.start || 0,
-          duration: transcriptData.duration || 0,
-          text: transcriptData.text,
-          confidence: transcriptData.confidence,
-          is_final: true,
-          speaker_tag: transcriptData.speaker_tag,
-          segment_id: `final-${Date.now()}-${Math.random()}`
-        };
-        
-        setShowingSegments(prev => [...prev, finalSegment]);
-        
-        if (transcriptData.speaker === 'customer') {
-          setTranscription(prev => {
-            const customerText = prev + ' ' + transcriptData.text;
-            return customerText.trim();
-          });
-        }
-        
-        setProcessingStage(`🎙️ ${transcriptData.speaker}: ${transcriptData.text.slice(0, 30)}...`);
-        break;
-        
-      case 'transcription_interim':
-        const interimData = message.data;
-        
-        const interimSegment: AudioSegment = {
-          speaker: interimData.speaker,
-          start: interimData.start || 0,
-          duration: interimData.duration || 0,
-          text: interimData.text,
-          confidence: interimData.confidence,
-          is_final: false,
-          is_interim: true,
-          speaker_tag: interimData.speaker_tag,
-          segment_id: `interim-${Date.now()}-${Math.random()}`
-        };
-        
-        setShowingSegments(prev => {
-          const withoutLastInterim = prev.filter(s => 
-            s.is_final || s.speaker !== interimData.speaker || !s.is_interim
-          );
-          return [...withoutLastInterim, interimSegment];
-        });
-        
-        setProcessingStage(`🎙️ ${interimData.speaker} speaking...`);
-        break;
-        
-      case 'fraud_analysis_started':
-        setProcessingStage('🔍 Analyzing for fraud patterns...');
-        break;
-        
-      case 'fraud_analysis_update':
-        const analysis = message.data;
-        
-        // DEBUG: Log analysis data structure
-        console.log('🔍 Fraud Analysis Update:');
-        console.log('  - risk_score:', analysis.risk_score);
-        console.log('  - detected_patterns:', analysis.detected_patterns);
-        console.log('  - detected_patterns type:', typeof analysis.detected_patterns);
-        console.log('  - detected_patterns keys:', Object.keys(analysis.detected_patterns || {}));        
-       
-        setRiskScore(analysis.risk_score || 0);
-        setRiskLevel(analysis.risk_level || 'MINIMAL');
-        setScamType(analysis.scam_type || 'unknown');
-        setDetectedPatterns(analysis.detected_patterns || {});
-        setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
-        break;
-        
-      case 'policy_analysis_started':
-        setProcessingStage('📚 Retrieving policy guidance...');
-        break;
-        
-      case 'policy_guidance_ready':
-        setPolicyGuidance(message.data);
-        
-        const policyData = message.data.policy_guidance;
-        // DEBUG: Log policy data structure
-        console.log('📚 Policy Guidance Ready:');
-        console.log('  - Full policy data:', policyData);
-        console.log('  - immediate_alerts:', policyData?.immediate_alerts);
-        console.log('  - immediate_alerts type:', typeof policyData?.immediate_alerts);
-        console.log('  - immediate_alerts is array:', Array.isArray(policyData?.immediate_alerts));
-        console.log('  - recommended_actions:', policyData?.recommended_actions);
-        console.log('  - recommended_actions type:', typeof policyData?.recommended_actions);
-        console.log('  - recommended_actions is array:', Array.isArray(policyData?.recommended_actions));
-        console.log('  - key_questions:', policyData?.key_questions);
-        console.log('  - customer_education:', policyData?.customer_education);   
-        
-        setProcessingStage('📚 Policy guidance ready');
-        break;
-        
-      case 'case_creation_started':
-        setProcessingStage('📋 Creating fraud case...');
-        break;
-        
-      case 'case_created':
-        setProcessingStage(`📋 Case created: ${message.data.case_id}`);
-        break;
-        
-      case 'processing_complete':
-        setProcessingStage('✅ Server processing complete');
-        setServerProcessing(false);
-        break;
-        
-      case 'processing_stopped':
-        setProcessingStage('🛑 Processing stopped');
-        setServerProcessing(false);
-        break;
-        
-      case 'error':
-        setProcessingStage(`❌ Error: ${message.data.error || message.data.message}`);
-        setServerProcessing(false);
-        break;
-        
-      default:
-        console.log('❓ Unknown message type:', message.type);
-    }
-  };
+// Replace the entire handleWebSocketMessage function with this enhanced version:
 
+const handleWebSocketMessage = (message: WebSocketMessage): void => {
+  console.log('📨 WebSocket message received:', message);
+  
+  switch (message.type) {
+    case 'processing_started':
+    case 'server_processing_started':
+      setProcessingStage('🖥️ Server processing started');
+      setServerProcessing(true);
+      break;
+      
+    case 'streaming_started':
+      setProcessingStage('🎙️ Audio streaming started');
+      break;
+      
+    case 'transcription_segment':
+      const transcriptData = message.data;
+      
+      const finalSegment: AudioSegment = {
+        speaker: transcriptData.speaker,
+        start: transcriptData.start || 0,
+        duration: transcriptData.duration || 0,
+        text: transcriptData.text,
+        confidence: transcriptData.confidence,
+        is_final: true,
+        speaker_tag: transcriptData.speaker_tag,
+        segment_id: `final-${Date.now()}-${Math.random()}`
+      };
+      
+      setShowingSegments(prev => [...prev, finalSegment]);
+      
+      if (transcriptData.speaker === 'customer') {
+        setTranscription(prev => {
+          const customerText = prev + ' ' + transcriptData.text;
+          return customerText.trim();
+        });
+      }
+      
+      setProcessingStage(`🎙️ ${transcriptData.speaker}: ${transcriptData.text.slice(0, 30)}...`);
+      break;
+      
+    case 'transcription_interim':
+      const interimData = message.data;
+      
+      const interimSegment: AudioSegment = {
+        speaker: interimData.speaker,
+        start: interimData.start || 0,
+        duration: interimData.duration || 0,
+        text: interimData.text,
+        confidence: interimData.confidence,
+        is_final: false,
+        is_interim: true,
+        speaker_tag: interimData.speaker_tag,
+        segment_id: `interim-${Date.now()}-${Math.random()}`
+      };
+      
+      setShowingSegments(prev => {
+        const withoutLastInterim = prev.filter(s => 
+          s.is_final || s.speaker !== interimData.speaker || !s.is_interim
+        );
+        return [...withoutLastInterim, interimSegment];
+      });
+      
+      setProcessingStage(`🎙️ ${interimData.speaker} speaking...`);
+      break;
+      
+    case 'progressive_fraud_analysis_trigger':
+      console.log('🔍 Progressive fraud analysis triggered for customer speech');
+      setProcessingStage('🔍 Analyzing customer speech for fraud patterns...');
+      break;
+      
+    case 'fraud_analysis_started':
+      setProcessingStage('🔍 Analyzing for fraud patterns...');
+      break;
+      
+    case 'fraud_analysis_update':
+      const analysis = message.data;
+      
+      // DEBUG: Log analysis data structure
+      console.log('🔍 Fraud Analysis Update:');
+      console.log('  - risk_score:', analysis.risk_score);
+      console.log('  - detected_patterns:', analysis.detected_patterns);
+      console.log('  - detected_patterns type:', typeof analysis.detected_patterns);
+      console.log('  - detected_patterns keys:', Object.keys(analysis.detected_patterns || {}));        
+     
+      setRiskScore(analysis.risk_score || 0);
+      setRiskLevel(analysis.risk_level || 'MINIMAL');
+      setScamType(analysis.scam_type || 'unknown');
+      setDetectedPatterns(analysis.detected_patterns || {});
+      setProcessingStage(`🔍 Risk updated: ${analysis.risk_score}%`);
+      break;
+      
+    case 'processing_progress':
+      const progressData = message.data;
+      console.log('📊 Processing progress:', progressData);
+      setProcessingStage(`📊 Progress: ${progressData.progress || 0}% - ${progressData.chunks_processed || 0}/${progressData.total_chunks || 0} chunks`);
+      break;
+      
+    case 'policy_analysis_started':
+      setProcessingStage('📚 Retrieving policy guidance...');
+      break;
+      
+    case 'policy_guidance_ready':
+      const policyMessage = message.data;
+      console.log('📚 Policy Guidance Ready - Enhanced Debug:');
+      console.log('  - Full message data:', policyMessage);
+      console.log('  - policy_guidance property:', policyMessage.policy_guidance);
+      
+      // Check if data is nested
+      const actualPolicyData = policyMessage.policy_guidance || policyMessage;
+      console.log('  - actual policy data:', actualPolicyData);
+      console.log('  - immediate_alerts:', actualPolicyData?.immediate_alerts);
+      console.log('  - recommended_actions:', actualPolicyData?.recommended_actions);
+      
+      setPolicyGuidance(actualPolicyData);
+      setProcessingStage('📚 Policy guidance ready');
+      break;
+      
+    case 'decision_made':
+      const decisionData = message.data;
+      console.log('🎯 Decision made:', decisionData);
+      setProcessingStage(`🎯 Decision: ${decisionData.decision} (${decisionData.priority} priority)`);
+      
+      // Show decision in UI
+      if (decisionData.decision === 'BLOCK_AND_ESCALATE') {
+        setProcessingStage('🚨 CRITICAL: BLOCK TRANSACTION - Escalating to fraud team');
+      } else if (decisionData.decision === 'VERIFY_AND_MONITOR') {
+        setProcessingStage('⚠️ HIGH RISK: Enhanced verification required');
+      }
+      break;
+      
+    case 'analysis_complete':
+      console.log('✅ Analysis pipeline complete');
+      setProcessingStage('✅ Multi-agent analysis complete');
+      
+      // Show summary of what was completed
+      const completionData = message.data;
+      if (completionData.final_risk_score !== undefined) {
+        console.log(`🎯 Final analysis: ${completionData.final_risk_score}% risk, ${completionData.agents_involved?.length || 0} agents involved`);
+      }
+      break;
+      
+    case 'ui_player_start':
+      console.log('🎵 UI player start signal received');
+      setProcessingStage('🎵 Audio player synchronized with server');
+      break;
+      
+    case 'ui_player_stop':
+      console.log('🎵 UI player stop signal received');
+      setProcessingStage('🎵 Audio player stopped');
+      break;
+      
+    case 'case_creation_started':
+      setProcessingStage('📋 Creating fraud case...');
+      break;
+      
+    case 'case_created':
+      setProcessingStage(`📋 Case created: ${message.data.case_number || message.data.case_id}`);
+      break;
+      
+    case 'case_creation_error':
+      setProcessingStage(`❌ Case creation failed: ${message.data.error}`);
+      break;
+      
+    case 'processing_complete':
+      setProcessingStage('✅ Server processing complete');
+      setServerProcessing(false);
+      break;
+      
+    case 'processing_stopped':
+      setProcessingStage('🛑 Processing stopped');
+      setServerProcessing(false);
+      break;
+      
+    case 'error':
+      setProcessingStage(`❌ Error: ${message.data.error || message.data.message}`);
+      setServerProcessing(false);
+      console.error('Server error:', message.data);
+      break;
+      
+    default:
+      console.log('❓ Unknown message type:', message.type);
+      // Don't update processing stage for unknown messages to avoid confusion
+  }
+};
   // ===== AUDIO PROCESSING FUNCTIONS =====
 
   const startServerProcessing = async (audioFile: RealAudioFile): Promise<void> => {

@@ -208,11 +208,6 @@ const defaultCustomerProfile: CustomerProfile = {
     lastCall: "N/A",
     description: "No recent activity"
   },
-  demographics: {
-    age: 0,
-    location: "Unknown",
-    relationship: "Unknown"
-  },
   alerts: []
 };
 
@@ -651,7 +646,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       const caseData = {
         customer_name: currentCustomer.name,
         customer_account: currentCustomer.account,
-        customer_phone: currentCustomer.demographics?.location || 'Unknown',
         risk_score: riskScore,
         scam_type: scamType,
         session_id: sessionId,

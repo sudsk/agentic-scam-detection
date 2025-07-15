@@ -1867,7 +1867,7 @@ class FraudDetectionWebSocketHandler:
                 await self.handle_session_analysis_request(websocket, client_id, data)
             elif message_type == 'create_manual_case':
                 await self.handle_manual_case_creation(websocket, client_id, data)
-            elif message_type == 'audio_processing_complete':
+            elif message_type == 'processing_complete':
                 await self.handle_audio_completion(websocket, client_id, data)                
             elif message_type == 'call_completion':
                 await self.handle_call_completion(websocket, client_id, data)

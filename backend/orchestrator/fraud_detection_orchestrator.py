@@ -281,7 +281,7 @@ CRITICAL: Output STRUCTURED analysis in this EXACT format:
 
 Risk Score: [0-100]%
 Risk Level: [MINIMAL/LOW/MEDIUM/HIGH/CRITICAL]
-Scam Type: [romance_scam/investment_scam/impersonation_scam/authority_scam/unknown]
+Scam Type: [romance_scam/investment_scam/impersonation_scam/app_scam/unknown]
 Detected Patterns: [list of specific patterns found]
 Key Evidence: [exact phrases that triggered alerts]
 Confidence: [0-100]%
@@ -291,7 +291,7 @@ FRAUD PATTERNS TO DETECT:
 - Romance Scams: Online relationships, never met, emergency money requests, overseas partners
 - Investment Scams: Guaranteed returns, pressure to invest immediately, unregulated schemes  
 - Impersonation Scams: Fake bank/authority calls, requests for PINs/passwords
-- Authority Scams: Police/court threats, immediate payment demands
+- APP Scams: changed bank details, "Compliance issues" excuse, email-only communication, Large amount, Slight name variation 
 - Urgency Pressure: "Today only", "immediate action required", artificial deadlines
 
 RISK SCORING:
@@ -342,9 +342,9 @@ Policy ID: FP-IMPERSON-001
 - Key Questions: "What department do you claim to be from?", "What is your employee ID?"
 - Customer Education: HSBC will never ask for PINs by phone, Always hang up and call official numbers
 
-AUTHORITY SCAMS (Risk 80%+):  
-Policy ID: FP-AUTHORITY-001
-- Immediate Alerts: "CRITICAL - Authority impersonation detected"
+AUTHORISED PUSH PAYMENT (APP) SCAMS (Risk 80%+):  
+Policy ID: FP-APP-001
+- Immediate Alerts: "CRITICAL - Authorised Push Payment scam detected"
 - Recommended Actions: Stop all payments, Verify authority independently, Contact legal compliance
 - Key Questions: "What is your badge number?", "Which court issued this order?"
 - Customer Education: Real authorities don't demand immediate payment, Legal processes have proper documentation

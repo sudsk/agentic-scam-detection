@@ -119,11 +119,6 @@ const customerProfiles: Record<string, CustomerProfile> = {
       description: "Balance inquiry and international transfer questions",
       additionalInfo: "Asked about sending money overseas multiple times"
     },
-    demographics: {
-      age: 67,
-      location: "Bournemouth, UK",
-      relationship: "Widow"
-    },
     alerts: [
       {
         type: "Unusual Activity",
@@ -132,8 +127,8 @@ const customerProfiles: Record<string, CustomerProfile> = {
       }
     ]
   },
-  'investment_scam_live_call.wav': {
-    name: "Mr David Chen",
+  'investment_scam_1.wav': {
+    name: "Mr Robert Chen",
     account: "****5691",
     status: "Active", 
     segment: "Business Banking",
@@ -143,11 +138,6 @@ const customerProfiles: Record<string, CustomerProfile> = {
       description: "Investment account setup inquiry",
       additionalInfo: "Mentioned guaranteed returns opportunity"
     },
-    demographics: {
-      age: 42,
-      location: "Manchester, UK",
-      relationship: "Married"
-    },
     alerts: [
       {
         type: "Investment Warning",
@@ -156,8 +146,8 @@ const customerProfiles: Record<string, CustomerProfile> = {
       }
     ]
   },
-  'impersonation_scam_live_call.wav': {
-    name: "Ms Sarah Thompson",
+  'impersonation_scam_1.wav': {
+    name: "Mrs Sarah Foster",
     account: "****7234",
     status: "Active",
     segment: "Personal Banking", 
@@ -167,16 +157,47 @@ const customerProfiles: Record<string, CustomerProfile> = {
       description: "Reported suspicious call claiming to be from HSBC security",
       additionalInfo: "Customer was asked for PIN - correctly refused"
     },
-    demographics: {
-      age: 34,
-      location: "Birmingham, UK",
-      relationship: "Single"
-    },
     alerts: [
       {
         type: "Security Alert",
         date: "Yesterday",
         description: "Customer reported impersonation attempt - no account compromise detected"
+      }
+    ]
+  },
+  'app_scam_1.wav': {
+    name: "Mr Adam Henderson",
+    account: "****6390",
+    status: "Active",
+    segment: "Business Banking", 
+    riskProfile: "Medium",
+    recentActivity: {
+      lastCall: "1 day ago",
+      description: "Inquired about activating Business Internet Banking"
+    },
+    alerts: [
+      {
+        type: "Security Alert",
+        date: "Last week",
+        description: "Customer seeked help with online banking security, potential password compromise"
+      }
+    ]
+  },
+  'legitimate_call_1.wav': {
+    name: "Mr Michael Thompson",
+    account: "****9205",
+    status: "Active",
+    segment: "Personal Banking", 
+    riskProfile: "Low",
+    recentActivity: {
+      lastCall: "1 day ago",
+      description: "Account balance enquiry"
+    },
+    alerts: [
+      {
+        type: "Security Alert",
+        date: "Last month",
+        description: "Customer reported an unrecognized transaction"
       }
     ]
   }

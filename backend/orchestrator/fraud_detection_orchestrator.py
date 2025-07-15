@@ -1261,8 +1261,6 @@ Please provide professional incident summary for ServiceNow case documentation.
         """Create audio callback"""
         async def orchestrator_callback(message_data: Dict) -> None:
             try:
-                logger.info(f"🔍 ORCHESTRATOR CALLBACK: {message_data.get('type')} for {session_id}")
-            
                 if external_callback:
                     await external_callback(message_data)
 
@@ -1644,7 +1642,6 @@ class FraudDetectionWebSocketHandler:
         try:
             # Create WebSocket callback
             async def websocket_callback(message_data: Dict) -> None:
-                logger.info(f"🔍 WEBSOCKET CALLBACK: {message_data.get('type')} for {data.get('session_id')}")
                 await self.send_message(websocket, client_id, message_data)
             
             # Delegate to fixed ADK orchestrator

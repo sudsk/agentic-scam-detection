@@ -81,10 +81,14 @@ class FraudDetectionOrchestrator:
         self.agents = {}
         self.runners = {}
         self.case_management_agent = None
+        self.servicenow_service = None  # CHANGE: Added ServiceNow service
         self.types = None
         
         # Initialize ADK system
         adk_success = self._initialize_adk_system()
+        
+        # CHANGE: Initialize ServiceNow service directly
+        self._initialize_servicenow()
         
         # Initialize customer profiles
         self._initialize_customer_profiles()
@@ -96,6 +100,27 @@ class FraudDetectionOrchestrator:
         
         logger.info(f"🎭 Fraud Detection Orchestrator ready - Agents: {len(self.agents)}, Runners: {len(self.runners)}")
     
+    # CHANGE: Add ServiceNow initialization
+    def _initialize_servicenow(self):
+        """Initialize ServiceNow service"""
+        try:
+            from ..services.servicenow_service import ServiceNowService
+            
+            if self.settings.servicenow_enabled:
+                self.servicenow_service = ServiceNowService(
+                    instance_url=self.settings.servicenow_instance_url,
+                    username=self.settings.servicenow_username,
+                    password=self.settings.servicenow_password,
+                    api_key=self.settings.servicenow_api_key
+                )
+                logger.info("✅ ServiceNow service initialized")
+            else:
+                logger.warning("⚠️ ServiceNow integration disabled")
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize ServiceNow service: {e}")
+            self.servicenow_service = None
+    
     def _get_default_settings(self):
         """Fallback settings if import fails"""
         class DefaultSettings:
@@ -104,6 +129,11 @@ class FraudDetectionOrchestrator:
                 self.risk_threshold_high = 60
                 self.risk_threshold_medium = 40
                 self.risk_threshold_low = 20
+                self.servicenow_enabled = False
+                self.servicenow_instance_url = ""
+                self.servicenow_username = ""
+                self.servicenow_password = ""
+                self.servicenow_api_key = ""
         return DefaultSettings()
     
     def _initialize_adk_system(self):
@@ -197,7 +227,7 @@ class FraudDetectionOrchestrator:
             logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return False
     
-    def _create_inline_agents(self):
+def _create_inline_agents(self):
         """Fallback to inline agent creation if pre-defined agents fail"""
         logger.info("🔧 Creating inline agents as fallback...")
         
@@ -554,7 +584,130 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
             logger.error(f"❌ Text analysis error: {e}")
             return {'success': False, 'error': str(e)}
     
-    # ===== FIXED ADK AGENT EXECUTION PATTERN =====
+    # CHANGE: Add call completion handler
+    async def handle_call_completion(self, session_id: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
+        """Handle call completion - run summarization and case management"""
+        try:
+            logger.info(f"🏁 Call completion handler started for session {session_id}")
+            
+            if session_id not in self.active_sessions:
+                logger.warning(f"❌ Session {session_id} not found for call completion")
+                return {'success': False, 'error': 'Session not found'}
+            
+            session_data = self.active_sessions[session_id]
+            
+            # Get accumulated customer speech
+            accumulated_speech = ""
+            if session_id in self.customer_speech_buffer:
+                accumulated_speech = " ".join([
+                    segment['text'] for segment in self.customer_speech_buffer[session_id]
+                ])
+            
+            if not accumulated_speech.strip():
+                logger.info(f"ℹ️ No customer speech to analyze for session {session_id}")
+                return {'success': True, 'message': 'No customer speech to analyze'}
+            
+            # Send call completion started message
+            if callback:
+                await callback({
+                    'type': 'call_completion_started',
+                    'data': {
+                        'session_id': session_id,
+                        'accumulated_speech_length': len(accumulated_speech),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                })
+            
+            # Get the latest analysis from session (from progressive updates)
+            latest_analysis = await self._get_latest_analysis_from_session(session_id, accumulated_speech)
+            risk_score = latest_analysis.get('risk_score', 0)
+            
+            # Run summarization and case management only if risk is high enough
+            if risk_score >= 50:
+                # STEP 4: Summarization Agent
+                logger.info(f"📝 Running summarization for call completion: {session_id}")
+                summarization_result = await self._run_adk_agent("summarization", {
+                    "fraud_analysis": latest_analysis,
+                    "policy_guidance": session_data.get('policy_guidance', {}),
+                    "decision_result": session_data.get('decision_result', {}),
+                    "session_id": session_id
+                })
+                session_data['incident_summary'] = self._parse_summarization_response(summarization_result)
+                
+                if callback:
+                    await callback({
+                        'type': 'summarization_complete',
+                        'data': {
+                            'session_id': session_id,
+                            'summary_ready': True,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    })
+                
+                # STEP 5: ServiceNow Case Creation
+                if self.servicenow_service:
+                    logger.info(f"📋 Creating ServiceNow case for call completion: {session_id}")
+                    
+                    if callback:
+                        await callback({
+                            'type': 'case_creation_started',
+                            'data': {
+                                'session_id': session_id,
+                                'risk_score': risk_score,
+                                'timestamp': datetime.now().isoformat()
+                            }
+                        })
+                    
+                    case_result = await self._create_servicenow_case(session_id, latest_analysis, callback)
+                    session_data['case_info'] = case_result
+            
+            # Mark session as completed
+            session_data['status'] = 'completed'
+            session_data['completion_time'] = datetime.now()
+            
+            # Send final completion message
+            if callback:
+                await callback({
+                    'type': 'call_completion_finished',
+                    'data': {
+                        'session_id': session_id,
+                        'final_risk_score': risk_score,
+                        'case_created': risk_score >= 50 and self.servicenow_service is not None,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                })
+            
+            logger.info(f"✅ Call completion finished: {session_id}")
+            
+            return {
+                'success': True,
+                'session_id': session_id,
+                'final_risk_score': risk_score,
+                'case_created': risk_score >= 50 and self.servicenow_service is not None,
+                'case_info': session_data.get('case_info')
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Call completion error: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    # CHANGE: Add helper method for latest analysis
+    async def _get_latest_analysis_from_session(self, session_id: str, accumulated_speech: str) -> Dict[str, Any]:
+        """Get the latest analysis from session data or run fresh analysis"""
+        try:
+            # Run fresh scam detection with accumulated speech
+            scam_analysis_raw = await self._run_adk_agent("scam_detection", {
+                "customer_text": accumulated_speech,
+                "session_id": session_id
+            })
+            
+            return await self._parse_and_accumulate_patterns(session_id, scam_analysis_raw)
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting latest analysis: {e}")
+            return {'risk_score': 0, 'risk_level': 'MINIMAL', 'scam_type': 'unknown'}
+
+# ===== FIXED ADK AGENT EXECUTION PATTERN =====
     
     async def _run_adk_agent_pipeline(self, session_id: str, customer_text: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
         """Run ADK agent pipeline with proper session management and UI updates"""
@@ -661,20 +814,7 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
                         }
                     })
             
-            # STEP 4: Case Management (if required)
-            if risk_score >= 50 and self.case_management_agent:
-                logger.info(f"📋 Step 4: Running case management for session {session_id}")
-                if callback:
-                    await callback({
-                        'type': 'case_creation_started',
-                        'data': {
-                            'session_id': session_id,
-                            'risk_score': risk_score,
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    })
-                
-                await self._run_case_management(session_id, parsed_analysis, callback)
+            # CHANGE: Remove case management from pipeline - only run during call completion
             
             logger.info(f"✅ ADK pipeline completed: {risk_score}% risk")
             
@@ -685,7 +825,7 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
                     'data': {
                         'session_id': session_id,
                         'final_risk_score': risk_score,
-                        'total_steps_completed': 4 if risk_score >= 50 else 3 if risk_score >= 60 else 2 if risk_score >= 40 else 1,
+                        'total_steps_completed': 3 if risk_score >= 60 else 2 if risk_score >= 40 else 1,
                         'agents_involved': self._get_agents_involved(risk_score),
                         'timestamp': datetime.now().isoformat()
                     }
@@ -704,6 +844,248 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
         except Exception as e:
             logger.error(f"❌ ADK pipeline error: {e}")
             return {'error': str(e), 'adk_execution': False}
+    
+    # CHANGE: Add ServiceNow case creation method
+    async def _create_servicenow_case(self, session_id: str, analysis: Dict, callback: Optional[Callable]) -> Dict[str, Any]:
+        """Create ServiceNow case with proper formatting"""
+        try:
+            session_data = self.active_sessions[session_id]
+            customer_profile = session_data.get('customer_profile', {})
+            
+            # Get scam type for ServiceNow mapping
+            scam_type = analysis.get('scam_type', 'unknown')
+            risk_score = analysis.get('risk_score', 0)
+            
+            # Map to ServiceNow categories (only standard categories/subcategories)
+            category_mapping = {
+                'app_scam': 'Security',
+                'crypto_scam': 'Security', 
+                'impersonation_scam': 'Security',
+                'investment_scam': 'Security',
+                'romance_scam': 'Security',
+                'unknown': 'Security'
+            }
+            
+            subcategory_mapping = {
+                'app_scam': 'Fraud',
+                'crypto_scam': 'Fraud',
+                'impersonation_scam': 'Fraud',
+                'investment_scam': 'Fraud',
+                'romance_scam': 'Fraud',
+                'unknown': 'Fraud'
+            }
+            
+            # Determine priority based on risk score
+            if risk_score >= 80:
+                priority = "1"
+                urgency = "1"
+            elif risk_score >= 60:
+                priority = "2"
+                urgency = "2"
+            elif risk_score >= 40:
+                priority = "3"
+                urgency = "3"
+            else:
+                priority = "4"
+                urgency = "3"
+            
+            # Format transcript for ServiceNow description
+            transcript_text = ""
+            if session_id in self.customer_speech_buffer:
+                transcript_text = "\n".join([
+                    f"[{segment.get('timestamp', 0):.1f}s] {segment.get('text', '')}"
+                    for segment in self.customer_speech_buffer[session_id]
+                ])
+            
+            # Format detected patterns
+            patterns_text = ""
+            if session_id in self.accumulated_patterns:
+                patterns_text = "\n".join([
+                    f"• {pattern.replace('_', ' ').title()}: {data.get('count', 0)} occurrences"
+                    for pattern, data in self.accumulated_patterns[session_id].items()
+                ])
+            
+            # Get summarization if available
+            incident_summary = session_data.get('incident_summary', {})
+            summary_text = incident_summary.get('executive_summary', 'Automated fraud detection alert')
+            
+            # Format incident data with standard ServiceNow fields only
+            incident_data = {
+                "category": category_mapping.get(scam_type, 'Security'),
+                "subcategory": subcategory_mapping.get(scam_type, 'Fraud'),
+                "short_description": f"Fraud Alert: {scam_type.replace('_', ' ').title()} - {customer_profile.get('name', 'Unknown Customer')}",
+                "description": f"""
+=== AUTOMATED FRAUD DETECTION ALERT ===
+
+EXECUTIVE SUMMARY:
+{summary_text}
+
+CUSTOMER INFORMATION:
+• Name: {customer_profile.get('name', 'Unknown')}
+• Account: {customer_profile.get('account', 'Unknown')}
+• Phone: {customer_profile.get('phone', 'Unknown')}
+
+FRAUD ANALYSIS:
+• Risk Score: {risk_score}%
+• Risk Level: {analysis.get('risk_level', 'UNKNOWN')}
+• Scam Type: {scam_type.replace('_', ' ').title()}
+• Confidence: {analysis.get('confidence', 0):.1%}
+• Session ID: {session_id}
+
+DETECTED PATTERNS:
+{patterns_text or 'No specific patterns detected'}
+
+POLICY GUIDANCE:
+{session_data.get('policy_guidance', {}).get('policy_id', 'No policy guidance available')}
+
+DECISION OUTCOME:
+{session_data.get('decision_result', {}).get('decision', 'CONTINUE_NORMAL')}
+
+CUSTOMER SPEECH TRANSCRIPT:
+{transcript_text or 'No transcript available'}
+
+RECOMMENDED ACTIONS:
+{chr(10).join(f"• {action}" for action in session_data.get('policy_guidance', {}).get('recommended_actions', []))}
+
+Generated: {datetime.now().isoformat()}
+System: HSBC Fraud Detection Orchestrator
+                """.strip(),
+                "priority": priority,
+                "urgency": urgency,
+                "state": "2",
+                "caller_id": "fraud_detection_system",
+                "opened_by": "fraud_detection_system"
+            }
+            
+            # Create incident in ServiceNow
+            logger.info(f"🎯 Creating ServiceNow incident with category: {incident_data['category']}, subcategory: {incident_data['subcategory']}")
+            result = await self.servicenow_service.create_incident(incident_data)
+            
+            if result["success"]:
+                logger.info(f"✅ ServiceNow case created: {result['incident_number']}")
+                
+                # Send success to UI
+                if callback:
+                    await callback({
+                        'type': 'case_created',
+                        'data': {
+                            'session_id': session_id,
+                            'case_number': result['incident_number'],
+                            'case_url': result['incident_url'],
+                            'success': True,
+                            'case_id': result['incident_sys_id'],
+                            'priority': priority,
+                            'category': incident_data['category'],
+                            'subcategory': incident_data['subcategory'],
+                            'risk_score': risk_score,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    })
+                
+                return {
+                    'success': True,
+                    'incident_number': result['incident_number'],
+                    'incident_sys_id': result['incident_sys_id'],
+                    'incident_url': result['incident_url'],
+                    'priority': priority,
+                    'category': incident_data['category'],
+                    'subcategory': incident_data['subcategory']
+                }
+            else:
+                logger.error(f"❌ ServiceNow case creation failed: {result['error']}")
+                
+                # Send error to UI
+                if callback:
+                    await callback({
+                        'type': 'case_creation_error',
+                        'data': {
+                            'session_id': session_id,
+                            'error': result['error'],
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    })
+                
+                return {
+                    'success': False,
+                    'error': result['error']
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ ServiceNow case creation error: {e}")
+            
+            # Send error to UI
+            if callback:
+                await callback({
+                    'type': 'case_creation_error',
+                    'data': {
+                        'session_id': session_id,
+                        'error': str(e),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                })
+            
+            return {
+                'success': False,
+                'error': str(e)
+            }
+        finally:
+            # Always close ServiceNow session
+            if self.servicenow_service:
+                await self.servicenow_service.close_session()
+    
+    # CHANGE: Add summarization response parser
+    def _parse_summarization_response(self, response_text: str) -> Dict[str, Any]:
+        """Parse summarization agent response"""
+        try:
+            parsed = {}
+            lines = response_text.split('\n')
+            current_section = None
+            current_content = []
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Check for section headers
+                if line.upper().startswith('EXECUTIVE SUMMARY'):
+                    current_section = 'executive_summary'
+                    current_content = []
+                elif line.upper().startswith('CUSTOMER REQUEST ANALYSIS'):
+                    if current_section and current_content:
+                        parsed[current_section] = '\n'.join(current_content).strip()
+                    current_section = 'customer_request_analysis'
+                    current_content = []
+                elif line.upper().startswith('FRAUD INDICATORS DETECTED'):
+                    if current_section and current_content:
+                        parsed[current_section] = '\n'.join(current_content).strip()
+                    current_section = 'fraud_indicators'
+                    current_content = []
+                elif line.upper().startswith('RECOMMENDED ACTIONS'):
+                    if current_section and current_content:
+                        parsed[current_section] = '\n'.join(current_content).strip()
+                    current_section = 'recommended_actions'
+                    current_content = []
+                elif line.upper().startswith('INCIDENT CLASSIFICATION'):
+                    if current_section and current_content:
+                        parsed[current_section] = '\n'.join(current_content).strip()
+                    current_section = 'incident_classification'
+                    current_content = []
+                else:
+                    current_content.append(line)
+            
+            # Save final section
+            if current_section and current_content:
+                parsed[current_section] = '\n'.join(current_content).strip()
+            
+            return parsed
+            
+        except Exception as e:
+            logger.error(f"❌ Error parsing summarization response: {e}")
+            return {
+                'executive_summary': 'Error parsing incident summary',
+                'error': str(e)
+            }
     
     async def _run_adk_agent(self, agent_name: str, input_data: Dict[str, Any]) -> str:
         """FIXED: Run ADK agent with proper session management and validation"""
@@ -865,6 +1247,20 @@ POLICY GUIDANCE: {json.dumps(policy_guidance, indent=2)}
 Please provide final decision with reasoning, priority, and immediate actions.
 """
         
+        elif agent_name == "summarization":
+            fraud_analysis = input_data.get('fraud_analysis', {})
+            policy_guidance = input_data.get('policy_guidance', {})
+            decision_result = input_data.get('decision_result', {})
+            
+            return f"""
+SUMMARIZATION REQUEST:
+FRAUD ANALYSIS: {json.dumps(fraud_analysis, indent=2)}
+POLICY GUIDANCE: {json.dumps(policy_guidance, indent=2)}
+DECISION RESULT: {json.dumps(decision_result, indent=2)}
+
+Please provide professional incident summary for ServiceNow case documentation.
+"""
+        
         return str(input_data)
     
     # ===== FALLBACK METHODS =====
@@ -877,6 +1273,8 @@ Please provide final decision with reasoning, priority, and immediate actions.
             return "Policy ID: FP-FALLBACK-001\nPolicy Title: Standard Processing\nImmediate Alerts: None\nRecommended Actions: Follow standard procedures"
         elif agent_name == "decision":
             return "DECISION: CONTINUE_NORMAL\nREASONING: Fallback processing\nPRIORITY: LOW\nIMMEDIATE_ACTIONS: Standard processing"
+        elif agent_name == "summarization":
+            return "EXECUTIVE SUMMARY\nFallback incident summary created due to system limitations"
         else:
             return f"Fallback response for {agent_name}"
     
@@ -1469,6 +1867,9 @@ class FraudDetectionWebSocketHandler:
                 await self.handle_session_analysis_request(websocket, client_id, data)
             elif message_type == 'create_manual_case':
                 await self.handle_manual_case_creation(websocket, client_id, data)
+            # CHANGE: Add call completion handler
+            elif message_type == 'call_completion':
+                await self.handle_call_completion(websocket, client_id, data)
             elif message_type == 'ping':
                 await self.send_message(websocket, client_id, {
                     'type': 'pong',
@@ -1480,6 +1881,45 @@ class FraudDetectionWebSocketHandler:
         except Exception as e:
             logger.error(f"❌ WebSocket handler error: {e}")
             await self.send_error(websocket, client_id, f"Message processing error: {str(e)}")
+    
+    # CHANGE: Add call completion handler
+    async def handle_call_completion(self, websocket, client_id: str, data: Dict) -> None:
+        """Handle call completion request"""
+        session_id = data.get('session_id')
+        if not session_id:
+            await self.send_error(websocket, client_id, "Missing session_id")
+            return
+        
+        try:
+            # Create WebSocket callback
+            async def websocket_callback(message_data: Dict) -> None:
+                await self.send_message(websocket, client_id, message_data)
+            
+            # Delegate to orchestrator
+            result = await self.orchestrator.handle_call_completion(
+                session_id=session_id,
+                callback=websocket_callback
+            )
+            
+            if not result.get('success'):
+                await self.send_error(websocket, client_id, result.get('error', 'Call completion failed'))
+                return
+            
+            # Send final confirmation
+            await self.send_message(websocket, client_id, {
+                'type': 'call_completion_result',
+                'data': {
+                    'session_id': session_id,
+                    'success': True,
+                    'final_risk_score': result.get('final_risk_score', 0),
+                    'case_created': result.get('case_created', False),
+                    'timestamp': datetime.now().isoformat()
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Call completion error: {e}")
+            await self.send_error(websocket, client_id, f"Call completion failed: {str(e)}")
     
     async def handle_audio_processing(self, websocket, client_id: str, data: Dict) -> None:
         """Handle audio processing with ADK orchestrator"""

@@ -415,20 +415,21 @@ class AudioProcessorAgent(BaseAgent):
             await asyncio.sleep(4.0)
             audio_buffer.stop()
 
-            # In _process_native_stereo_audio method, before the websocket_callback
-            logger.info(f"🔍 AUDIO PROCESSOR: About to send processing_complete for {session_id}")
+            # Send completion only once
+            if not self.active_sessions[session_id].get("completion_sent", False):
+                self.active_sessions[session_id]["completion_sent"] = True
 
-            await websocket_callback({
-                "type": "processing_complete",
-                "data": {
-                    "session_id": session_id,
-                    "total_chunks": chunk_count,
-                    "processing_mode": "native_stereo",
-                    "timestamp": get_current_timestamp()
-                }
-            })
-
-            logger.info(f"✅ AUDIO PROCESSOR: Sent processing_complete for {session_id}")
+                await websocket_callback({
+                    "type": "processing_complete",
+                    "data": {
+                        "session_id": session_id,
+                        "total_chunks": chunk_count,
+                        "processing_mode": "native_stereo",
+                        "timestamp": get_current_timestamp()
+                    }
+                })
+                logger.info(f"✅ AUDIO PROCESSOR: Sent processing_complete for {session_id}")
+                
         except Exception as e:
             logger.error(f"❌ Error in native stereo audio processing: {e}")
             raise
@@ -509,21 +510,25 @@ class AudioProcessorAgent(BaseAgent):
             if session.get("audio_completed", False):
                 logger.info(f"🏁 Audio completed, ending streaming for {session_id}")
 
-                # FIX: Send processing_complete message here too!
-                websocket_callback = session.get("websocket_callback")
-                if websocket_callback:
-                    try:
-                        await websocket_callback({
-                            "type": "processing_complete",
-                            "data": {
-                                "session_id": session_id,
-                                "timestamp": get_current_timestamp()
-                            }
-                        })
-                        logger.info(f"✅ Sent processing_complete from streaming restart for {session_id}")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to send processing_complete from restart: {e}")
-                    
+                # Send completion only once
+                if not session.get("completion_sent", False):
+                    session["completion_sent"] = True
+                    websocket_callback = session.get("websocket_callback")
+                    if websocket_callback:
+                        try:
+                            await websocket_callback({
+                                "type": "processing_complete",
+                                "data": {
+                                    "session_id": session_id,
+                                    "timestamp": get_current_timestamp()
+                                }
+                            })
+                            logger.info(f"✅ Sent processing_complete from streaming restart for {session_id}")
+                        except Exception as e:
+                            logger.error(f"❌ Failed to send processing_complete from restart: {e}")
+                else:
+                    logger.info(f"ℹ️ Completion already sent for {session_id}, skipping duplicate")
+        
                 # Give it a bit more time to process remaining chunks
                 await asyncio.sleep(3.0)
                 break

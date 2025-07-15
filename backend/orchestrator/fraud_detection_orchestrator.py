@@ -227,7 +227,7 @@ class FraudDetectionOrchestrator:
             logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return False
     
-def _create_inline_agents(self):
+    def _create_inline_agents(self):
         """Fallback to inline agent creation if pre-defined agents fail"""
         logger.info("🔧 Creating inline agents as fallback...")
         

@@ -413,7 +413,10 @@ class AudioProcessorAgent(BaseAgent):
             # Wait for transcription to finish
             await asyncio.sleep(4.0)
             audio_buffer.stop()
-            
+
+            # In _process_native_stereo_audio method, before the websocket_callback
+            logger.info(f"🔍 AUDIO PROCESSOR: About to send processing_complete for {session_id}")
+
             await websocket_callback({
                 "type": "processing_complete",
                 "data": {
@@ -423,7 +426,8 @@ class AudioProcessorAgent(BaseAgent):
                     "timestamp": get_current_timestamp()
                 }
             })
-            
+
+            logger.info(f"✅ AUDIO PROCESSOR: Sent processing_complete for {session_id}")
         except Exception as e:
             logger.error(f"❌ Error in native stereo audio processing: {e}")
             raise

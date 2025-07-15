@@ -606,23 +606,17 @@ class FraudDetectionOrchestrator:
             risk_score = analysis.get('risk_score', 0)
             
             # Map to ServiceNow categories (only standard categories/subcategories)
-            category_mapping = {
-                'app_scam': 'Security',
-                'crypto_scam': 'Security', 
-                'impersonation_scam': 'Security',
-                'investment_scam': 'Security',
-                'romance_scam': 'Security',
-                'unknown': 'Security'
-            }
+            category = "fraud_detection"
             
             subcategory_mapping = {
-                'app_scam': 'Fraud',
-                'crypto_scam': 'Fraud',
-                'impersonation_scam': 'Fraud',
-                'investment_scam': 'Fraud',
-                'romance_scam': 'Fraud',
-                'unknown': 'Fraud'
+                'app_scam': 'app_scam',                     # Maps to "APP Scam" label
+                'crypto_scam': 'crypto_scam',               # Maps to "Crypto Scam" label
+                'impersonation_scam': 'impersonation_scam', # Maps to "Impersonation Scam" label
+                'investment_scam': 'investment_scam',       # Maps to "Investment Scam" label
+                'romance_scam': 'romance_scam',             # Maps to "Romance Scam" label
+                'unknown': 'app_scam'                       # Default fallback to APP Scam if unknown
             }
+            subcategory = subcategory_mapping.get(scam_type, 'app_scam')
             
             # Determine priority based on risk score
             if risk_score >= 80:
@@ -660,8 +654,8 @@ class FraudDetectionOrchestrator:
             
             # Format incident data with standard ServiceNow fields only
             incident_data = {
-                "category": category_mapping.get(scam_type, 'Security'),
-                "subcategory": subcategory_mapping.get(scam_type, 'Fraud'),
+                "category": category,
+                "subcategory": subcategory,
                 "short_description": f"Fraud Alert: {scam_type.replace('_', ' ').title()} - {customer_profile.get('name', 'Unknown Customer')}",
                 "description": f"""
 === AUTOMATED FRAUD DETECTION ALERT ===
@@ -702,8 +696,7 @@ System: HSBC Fraud Detection Orchestrator
                 "priority": priority,
                 "urgency": urgency,
                 "state": "2",
-                "caller_id": "fraud_detection_system",
-                "opened_by": "fraud_detection_system"
+                "opened_by": "fraud_detection_api"
             }
             
             # Create incident in ServiceNow

@@ -174,11 +174,12 @@ class FraudDetectionOrchestrator:
             
             # Case management agent initialization
             try:
-                from ..agents.case_management.adk_agent import PureADKCaseManagementAgent
-                self.case_management_agent = PureADKCaseManagementAgent()
+                from ..agents.case_management.agent import create_case_management_agent
+                self.case_management_agent = create_case_management_agent()
                 logger.info("✅ Case management agent initialized")
             except Exception as e:
                 logger.warning(f"⚠️ Case management agent not available: {e}")
+                logger.error(f"❌ Case management import error details: {traceback.format_exc()}")
                 self.case_management_agent = None
             
             success = len(self.agents) > 0 and len(self.runners) > 0

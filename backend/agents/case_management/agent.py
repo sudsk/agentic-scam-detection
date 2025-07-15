@@ -7,7 +7,7 @@ No fallback code - only ADK implementation for ServiceNow incident management
 
 import asyncio
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional 
 from google.adk.agents import Agent
 from backend.services.servicenow_service import ServiceNowService
 from backend.config.settings import get_settings

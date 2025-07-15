@@ -41,6 +41,25 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
+# ===== SUPPRESS ADK VERBOSE LOGGING =====
+# Suppress Google ADK internal logging to reduce noise
+logging.getLogger('google_adk').setLevel(logging.WARNING)
+logging.getLogger('google_adk.google.adk.models.google_llm').setLevel(logging.WARNING)
+logging.getLogger('google_adk.google.adk.runners').setLevel(logging.WARNING)
+logging.getLogger('google_adk.google.adk.sessions').setLevel(logging.WARNING)
+logging.getLogger('google_adk.google.adk.agents').setLevel(logging.WARNING)
+
+# Also suppress related Google Cloud logging
+logging.getLogger('google.cloud').setLevel(logging.WARNING)
+logging.getLogger('google.auth').setLevel(logging.WARNING)
+logging.getLogger('google.api_core').setLevel(logging.WARNING)
+logging.getLogger('googleapis').setLevel(logging.WARNING)
+
+# Suppress HTTP request logging
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('requests').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # Load centralized settings

@@ -242,7 +242,8 @@ class AudioProcessorAgent(BaseAgent):
             "transcription_segments": [],
             "restart_count": 0,
             "processing_stopped": False,
-            "audio_completed": False
+            "audio_completed": False,
+            "completion_sent": False
         }
         
         self.audio_buffers[session_id] = StereoAudioBuffer(self.stereo_chunk_size)

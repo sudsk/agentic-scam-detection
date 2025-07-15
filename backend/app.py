@@ -120,10 +120,7 @@ async def startup_event():
         # Log each managed agent
         for agent_name in orchestrator_status['agents_managed']:
             log_agent_activity("orchestrator", f"Managing agent: {agent_name}")
-        
-        # Log architecture change
-        logger.info("🏗️ Architecture: fraud_detection_system.py eliminated - using FraudDetectionOrchestrator")
-        
+ 
     except Exception as e:
         logger.error(f"❌ Failed to initialize orchestrator system: {e}")
         raise

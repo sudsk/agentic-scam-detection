@@ -1521,8 +1521,6 @@ Please provide professional incident summary for ServiceNow case documentation.
             'adk_execution': True
         }
 
-# ===== WEBSOCKET COMPATIBILITY LAYER =====
-
 class FraudDetectionWebSocketHandler:
     """WebSocket Handler that delegates to the fixed ADK orchestrator"""
     
@@ -1535,29 +1533,19 @@ class FraudDetectionWebSocketHandler:
         """Handle WebSocket messages"""
         message_type = message.get('type')
         data = message.get('data', {})
-        
+
+        # ADD THIS DEBUG LINE
+        logger.info(f"🔍 WebSocket received: {message_type} for session: {data.get('session_id', 'unknown')}")
+    
         try:
-            if message_type == 'process_audio':
-                await self.handle_audio_processing(websocket, client_id, data)
-            elif message_type == 'start_realtime_session':
+            if message_type in ['process_audio', 'start_realtime_session']:
                 await self.handle_audio_processing(websocket, client_id, data)
             elif message_type == 'stop_processing':
                 await self.handle_stop_processing(websocket, client_id, data)
-            elif message_type == 'get_status':
-                await self.handle_status_request(websocket, client_id)
-            elif message_type == 'get_session_analysis':
-                await self.handle_session_analysis_request(websocket, client_id, data)
-            elif message_type == 'create_manual_case':
-                await self.handle_manual_case_creation(websocket, client_id, data)
+            #elif message_type == 'create_manual_case':
+            #    await self.handle_manual_case_creation(websocket, client_id, data)
             elif message_type == 'processing_complete':
                 await self.handle_audio_completion(websocket, client_id, data)                
-            elif message_type == 'call_completion':
-                await self.handle_call_completion(websocket, client_id, data)
-            elif message_type == 'ping':
-                await self.send_message(websocket, client_id, {
-                    'type': 'pong',
-                    'data': {'timestamp': datetime.now().isoformat()}
-                })
             else:
                 await self.send_error(websocket, client_id, f"Unknown message type: {message_type}")
                 

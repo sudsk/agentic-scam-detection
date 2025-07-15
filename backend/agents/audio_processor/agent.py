@@ -507,6 +507,22 @@ class AudioProcessorAgent(BaseAgent):
                 
             if session.get("audio_completed", False):
                 logger.info(f"🏁 Audio completed, ending streaming for {session_id}")
+
+                # FIX: Send processing_complete message here too!
+                websocket_callback = session.get("websocket_callback")
+                if websocket_callback:
+                    try:
+                        await websocket_callback({
+                            "type": "processing_complete",
+                            "data": {
+                                "session_id": session_id,
+                                "timestamp": get_current_timestamp()
+                            }
+                        })
+                        logger.info(f"✅ Sent processing_complete from streaming restart for {session_id}")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send processing_complete from restart: {e}")
+                    
                 # Give it a bit more time to process remaining chunks
                 await asyncio.sleep(3.0)
                 break

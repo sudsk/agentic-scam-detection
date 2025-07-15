@@ -1154,6 +1154,7 @@ Click OK to open the case in ServiceNow.
                       {scamType === 'romance_scam' ? 'ROMANCE SCAM DETECTED' :
                        scamType === 'investment_scam' ? 'INVESTMENT SCAM DETECTED' :
                        scamType === 'impersonation_scam' ? 'IMPERSONATION SCAM DETECTED' :
+                       scamType === 'app_scam' ? 'APP SCAM DETECTED' :                        
                        'FRAUD DETECTED'}
                     </span>
                   </div>

@@ -449,14 +449,24 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
                 'account': '****3847',
                 'phone': '+44 1202 555123'
             },
-            'investment_scam_live_call.wav': {
-                'name': 'Mr David Chen', 
+            'investment_scam_1.wav': {
+                'name': 'Mr Robert Chen', 
                 'account': '****5691',
                 'phone': '+44 161 555456'
             },
-            'impersonation_scam_live_call.wav': {
-                'name': 'Ms Sarah Thompson',
+            'impersonation_scam_1.wav': {
+                'name': 'Mrs Sarah Foster',
                 'account': '****7234', 
+                'phone': '+44 121 555789'
+            },
+            'app_scam_1.wav': {
+                'name': 'Mr Adam Henderson',
+                'account': '****6390', 
+                'phone': '+44 121 555789'
+            },
+            'legitimate_call.wav': {
+                'name': 'Mr Michael Thompson',
+                'account': '****9205', 
                 'phone': '+44 121 555789'
             }
         }

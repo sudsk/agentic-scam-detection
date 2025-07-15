@@ -76,18 +76,18 @@ class FraudDetectionOrchestrator:
             logger.warning("Settings import failed, using defaults")
             self.settings = self._get_default_settings()
         
-        # FIXED: Initialize all attributes to prevent AttributeError
+        # Initialize all attributes to prevent AttributeError
         self.session_service = None
         self.agents = {}
         self.runners = {}
         self.case_management_agent = None
-        self.servicenow_service = None  # CHANGE: Added ServiceNow service
+        self.servicenow_service = None
         self.types = None
         
         # Initialize ADK system
         adk_success = self._initialize_adk_system()
         
-        # CHANGE: Initialize ServiceNow service directly
+        # Initialize ServiceNow service directly
         self._initialize_servicenow()
         
         # Initialize customer profiles
@@ -96,11 +96,11 @@ class FraudDetectionOrchestrator:
         if adk_success:
             logger.info("🎭 Fraud Detection Orchestrator initialized successfully with ADK")
         else:
-            logger.warning("🎭 Fraud Detection Orchestrator initialized with fallback mode (ADK failed)")
+            logger.error("🎭 Fraud Detection Orchestrator failed to initialize - ADK required")
+            raise RuntimeError("ADK initialization failed - cannot continue without ADK")
         
         logger.info(f"🎭 Fraud Detection Orchestrator ready - Agents: {len(self.agents)}, Runners: {len(self.runners)}")
     
-    # CHANGE: Add ServiceNow initialization
     def _initialize_servicenow(self):
         """Initialize ServiceNow service"""
         try:
@@ -137,7 +137,7 @@ class FraudDetectionOrchestrator:
         return DefaultSettings()
     
     def _initialize_adk_system(self):
-        """Initialize ADK system using pre-defined agents - simplified approach"""
+        """Initialize ADK system using pre-defined agents - ADK required"""
         try:
             logger.info("🔧 Starting ADK system initialization with pre-defined agents...")
             
@@ -184,8 +184,8 @@ class FraudDetectionOrchestrator:
                 
             except ImportError as e:
                 logger.error(f"❌ Failed to import individual agents: {e}")
-                logger.info("💡 Falling back to inline agent creation")
-                return self._create_inline_agents()
+                logger.error("❌ ADK agents are required - no fallback available")
+                return False
             
             # Create runners for each agent
             self.runners = {}
@@ -209,7 +209,6 @@ class FraudDetectionOrchestrator:
                 logger.info("✅ Case management agent initialized")
             except Exception as e:
                 logger.warning(f"⚠️ Case management agent not available: {e}")
-                logger.error(f"❌ Case management import error details: {traceback.format_exc()}")
                 self.case_management_agent = None
             
             success = len(self.agents) > 0 and len(self.runners) > 0
@@ -226,251 +225,6 @@ class FraudDetectionOrchestrator:
             import traceback
             logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return False
-    
-    def _create_inline_agents(self):
-        """Fallback to inline agent creation if pre-defined agents fail"""
-        logger.info("🔧 Creating inline agents as fallback...")
-        
-        # Create agents with simple configuration (like original approach)
-        agent_configs = [
-            ("scam_detection", "scam_detection_agent", "Analyzes customer speech for fraud patterns and calculates risk scores", self._get_scam_detection_instruction()),
-            ("policy_guidance", "policy_guidance_agent", "Provides procedural guidance and escalation recommendations for fraud scenarios", self._get_policy_guidance_instruction()),
-            ("decision", "decision_agent", "Makes final fraud prevention decisions based on multi-agent analysis", self._get_decision_instruction()),
-            ("summarization", "summarization_agent", "Creates professional incident summaries for ServiceNow case documentation", self._get_summarization_instruction())
-        ]
-        
-        self.agents = {}
-        self.runners = {}
-        
-        for agent_key, agent_name, description, instruction in agent_configs:
-            logger.info(f"🔧 Creating inline agent: {agent_key}")
-            try:
-                agent = self._create_simple_agent(agent_name, description, instruction)
-                if agent is not None:
-                    self.agents[agent_key] = agent
-                    
-                    # Create runner for this agent
-                    try:
-                        runner = Runner(
-                            agent=agent,
-                            app_name=f"fraud_detection_{agent_key}",
-                            session_service=self.session_service
-                        )
-                        self.runners[agent_key] = runner
-                        logger.info(f"✅ Inline agent and runner created: {agent_key}")
-                    except Exception as runner_error:
-                        logger.error(f"❌ Failed to create runner for {agent_key}: {runner_error}")
-                        if agent_key in self.agents:
-                            del self.agents[agent_key]
-                        continue
-                        
-                else:
-                    logger.error(f"❌ Failed to create inline agent: {agent_key}")
-                    
-            except Exception as e:
-                logger.error(f"❌ Error creating inline agent {agent_key}: {e}")
-                continue
-        
-        success = len(self.agents) > 0
-        if success:
-            logger.info(f"✅ Fallback inline agents created: {len(self.agents)} agents")
-        else:
-            logger.error("❌ Failed to create any agents - system will use complete fallback mode")
-            
-        return success
-    
-    def _create_simple_agent(self, name: str, description: str, instruction: str):
-        """Create ADK agent with simple configuration - following the same pattern as TradeSage"""
-        try:
-            from google.adk.agents import LlmAgent
-            
-            # Simple agent creation - let ADK handle authentication automatically
-            agent = LlmAgent(
-                name=name,
-                model="gemini-1.5-pro",
-                description=description,
-                instruction=instruction,
-                tools=[],
-            )
-            
-            logger.info(f"✅ Created simple ADK agent: {name}")
-            return agent
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to create agent {name}: {e}")
-            if "Missing key inputs argument" in str(e):
-                logger.error("💡 Authentication issue - check your environment variables:")
-                logger.error("💡   GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_GENAI_USE_VERTEXAI")
-                logger.error("💡   Or run: gcloud auth application-default login")
-            return None
-    
-    def _get_scam_detection_instruction(self) -> str:
-        return """
-You are the Scam Detection Agent for HSBC Fraud Prevention System. Analyze customer speech for fraud indicators.
-
-CRITICAL: Output STRUCTURED analysis in this EXACT format:
-
-Risk Score: [0-100]%
-Risk Level: [MINIMAL/LOW/MEDIUM/HIGH/CRITICAL]
-Scam Type: [romance_scam/investment_scam/impersonation_scam/app_scam/unknown]
-Detected Patterns: [list of specific patterns found]
-Key Evidence: [exact phrases that triggered alerts]
-Confidence: [0-100]%
-Recommended Action: [IMMEDIATE_ESCALATION/ENHANCED_MONITORING/VERIFY_CUSTOMER_INTENT/CONTINUE_NORMAL_PROCESSING]
-
-FRAUD PATTERNS TO DETECT:
-- Romance Scams: Online relationships, never met, emergency money requests, overseas partners
-- Investment Scams: Guaranteed returns, pressure to invest immediately, unregulated schemes  
-- Impersonation Scams: Fake bank/authority calls, requests for PINs/passwords
-- APP Scams: changed bank details, "Compliance issues" excuse, email-only communication, Large amount, Slight name variation 
-- Urgency Pressure: "Today only", "immediate action required", artificial deadlines
-
-RISK SCORING:
-- 80-100%: CRITICAL (romance emergency, fake police, guaranteed returns)
-- 60-79%: HIGH (investment pressure, impersonation attempts)
-- 40-59%: MEDIUM (suspicious urgency, unusual requests)
-- 20-39%: LOW (minor red flags)
-- 0-19%: MINIMAL (normal conversation)
-
-Analyze the customer speech and provide IMMEDIATE fraud assessment to protect the customer.
-Focus on SPECIFIC patterns and provide CONCRETE evidence from the text.
-"""
-    
-    def _get_policy_guidance_instruction(self) -> str:
-        return """
-You are the Policy Guidance Agent for HSBC Fraud Prevention. Provide SPECIFIC procedural guidance for detected fraud scenarios.
-
-CRITICAL: Output STRUCTURED guidance in this EXACT format:
-
-Policy ID: FP-[TYPE]-[NUMBER]
-Policy Title: [Specific policy name]
-Immediate Alerts: [Urgent warnings for the agent]
-Recommended Actions: [Step-by-step procedures to follow]
-Key Questions: [Exact questions to ask the customer]
-Customer Education: [What to explain to the customer]
-Escalation Threshold: [Risk score % when to escalate]
-
-SCAM-SPECIFIC POLICIES:
-
-ROMANCE SCAMS (Risk 60%+):
-Policy ID: FP-ROMANCE-001
-- Immediate Alerts: "STOP TRANSFER - Romance scam indicators detected"
-- Recommended Actions: Verify relationship timeline, Ask about meeting in person, Check for emotional manipulation
-- Key Questions: "How long have you known this person?", "Have you met them in person?", "Are they asking you to keep this secret?"
-- Customer Education: Romance scammers create fake emergencies, Never send money to someone you haven't met, Real relationships don't require secrecy
-
-INVESTMENT SCAMS (Risk 60%+):
-Policy ID: FP-INVESTMENT-001  
-- Immediate Alerts: "HIGH RISK - Investment fraud detected"
-- Recommended Actions: Question guaranteed returns, Verify regulatory status, Explain cooling-off period
-- Key Questions: "What regulatory body oversees this investment?", "Why is this opportunity time-sensitive?"
-- Customer Education: No legitimate investment guarantees returns, High returns always mean high risk, Take time to research
-
-IMPERSONATION SCAMS (Risk 70%+):
-Policy ID: FP-IMPERSON-001
-- Immediate Alerts: "SECURITY BREACH - Impersonation attempt"
-- Recommended Actions: Verify caller identity independently, Never provide credentials over phone, Document attempt
-- Key Questions: "What department do you claim to be from?", "What is your employee ID?"
-- Customer Education: HSBC will never ask for PINs by phone, Always hang up and call official numbers
-
-AUTHORISED PUSH PAYMENT (APP) SCAMS (Risk 80%+):  
-Policy ID: FP-APP-001
-- Immediate Alerts: "CRITICAL - Authorised Push Payment scam detected"
-- Recommended Actions: Stop all payments, Verify authority independently, Contact legal compliance
-- Key Questions: "What is your badge number?", "Which court issued this order?"
-- Customer Education: Real authorities don't demand immediate payment, Legal processes have proper documentation
-
-Provide IMMEDIATE, ACTIONABLE policy guidance to protect customers and ensure compliance.
-Agent needs SPECIFIC steps to follow RIGHT NOW.
-"""
-    
-    def _get_decision_instruction(self) -> str:
-        return """
-You are the Decision Agent for HSBC Fraud Prevention. Make FINAL fraud prevention decisions based on multi-agent analysis.
-
-CRITICAL: Output IMMEDIATE, ACTIONABLE decisions in this EXACT format:
-
-DECISION: [BLOCK_AND_ESCALATE/VERIFY_AND_MONITOR/MONITOR_AND_EDUCATE/CONTINUE_NORMAL]
-REASONING: [Why this decision was made based on risk score and patterns]
-PRIORITY: [CRITICAL/HIGH/MEDIUM/LOW]
-IMMEDIATE_ACTIONS: [Specific steps agent must take immediately]
-CASE_CREATION_REQUIRED: [YES/NO]
-ESCALATION_PATH: [Which team to contact]
-CUSTOMER_IMPACT: [How this affects the customer experience]
-
-DECISION MATRIX:
-
-BLOCK_AND_ESCALATE (Risk 80%+):
-- REASONING: Critical fraud indicators detected requiring immediate intervention
-- PRIORITY: CRITICAL
-- IMMEDIATE_ACTIONS: Stop all transactions, Contact fraud team immediately, Secure customer account, Document evidence
-- CASE_CREATION_REQUIRED: YES
-- ESCALATION_PATH: Financial Crime Team (immediate contact)
-- CUSTOMER_IMPACT: Transaction blocked, enhanced verification required
-
-VERIFY_AND_MONITOR (Risk 60-79%):
-- REASONING: High risk patterns require enhanced verification and monitoring
-- PRIORITY: HIGH  
-- IMMEDIATE_ACTIONS: Enhanced identity verification, Additional security questions, Monitor account activity, Educational warnings
-- CASE_CREATION_REQUIRED: YES
-- ESCALATION_PATH: Fraud Prevention Team (within 1 hour)
-- CUSTOMER_IMPACT: Additional verification steps, transaction may be delayed
-
-MONITOR_AND_EDUCATE (Risk 40-59%):
-- REASONING: Moderate risk indicators require customer education and monitoring
-- PRIORITY: MEDIUM
-- IMMEDIATE_ACTIONS: Customer education about fraud risks, Document interaction, Flag account for monitoring, Standard processing
-- CASE_CREATION_REQUIRED: NO (unless escalates)
-- ESCALATION_PATH: Customer Protection Team (standard timeline)
-- CUSTOMER_IMPACT: Educational information provided, normal service continues
-
-CONTINUE_NORMAL (Risk <40%):
-- REASONING: Low risk assessment allows normal processing with standard precautions
-- PRIORITY: LOW
-- IMMEDIATE_ACTIONS: Standard processing, Basic fraud awareness, Document interaction
-- CASE_CREATION_REQUIRED: NO
-- ESCALATION_PATH: Standard Customer Service
-- CUSTOMER_IMPACT: No impact, normal service
-
-Make the FINAL DECISION immediately. Customer and agent are waiting for clear direction.
-Banking requires decisive fraud prevention action to protect customers.
-Base decision on risk score, detected patterns, and customer vulnerability.
-"""
-    
-    def _get_summarization_instruction(self) -> str:
-        return """
-You are the Summarization Agent for HSBC Fraud Prevention. Create PROFESSIONAL incident summaries for ServiceNow case documentation.
-
-CRITICAL: Output a COMPLETE, READY-TO-USE incident summary in this EXACT format:
-
-EXECUTIVE SUMMARY
-[2-3 sentences with risk level and key findings]
-
-CUSTOMER REQUEST ANALYSIS  
-[What customer wanted, red flags identified]
-
-FRAUD INDICATORS DETECTED
-[Specific patterns with evidence quotes]
-
-CUSTOMER BEHAVIOR ASSESSMENT
-[Vulnerability analysis, decision-making state]
-
-RECOMMENDED ACTIONS
-[Immediate steps, follow-up requirements]
-
-INCIDENT CLASSIFICATION
-[Severity, financial risk, escalation needs]
-
-FORMAT REQUIREMENTS:
-- Professional ServiceNow documentation style
-- Include specific quotes from customer speech
-- Reference detected fraud patterns with evidence
-- Provide actionable recommendations for case management
-- Include risk scores and confidence levels
-- Use clear, concise language suitable for fraud investigators
-
-Create COMPLETE incident summaries immediately. Banking compliance requires detailed, professional documentation for fraud cases.
-"""
     
     def _initialize_customer_profiles(self):
         """Initialize customer profiles"""
@@ -568,7 +322,7 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
             # Initialize session
             await self._initialize_text_session(session_id, customer_text, context, callback)
             
-            # FIXED: Run the ADK agent pipeline properly
+            # Run the ADK agent pipeline
             result = await self._run_adk_agent_pipeline(session_id, customer_text, callback)
             
             return {
@@ -584,7 +338,6 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
             logger.error(f"❌ Text analysis error: {e}")
             return {'success': False, 'error': str(e)}
     
-    # CHANGE: Add call completion handler
     async def handle_call_completion(self, session_id: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
         """Handle call completion - run summarization and case management"""
         try:
@@ -691,7 +444,6 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
             logger.error(f"❌ Call completion error: {e}")
             return {'success': False, 'error': str(e)}
     
-    # CHANGE: Add helper method for latest analysis
     async def _get_latest_analysis_from_session(self, session_id: str, accumulated_speech: str) -> Dict[str, Any]:
         """Get the latest analysis from session data or run fresh analysis"""
         try:
@@ -707,7 +459,7 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
             logger.error(f"❌ Error getting latest analysis: {e}")
             return {'risk_score': 0, 'risk_level': 'MINIMAL', 'scam_type': 'unknown'}
 
-# ===== FIXED ADK AGENT EXECUTION PATTERN =====
+# ===== ADK AGENT EXECUTION PATTERN =====
     
     async def _run_adk_agent_pipeline(self, session_id: str, customer_text: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
         """Run ADK agent pipeline with proper session management and UI updates"""
@@ -727,7 +479,7 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
             parsed_analysis = await self._parse_and_accumulate_patterns(session_id, scam_analysis_raw)
             risk_score = parsed_analysis.get('risk_score', 0)
             
-            # FIXED: Send fraud analysis update to UI with detailed logging
+            # Send fraud analysis update to UI with detailed logging
             if callback:
                 fraud_update_data = {
                     'session_id': session_id,
@@ -766,7 +518,7 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
                 })
                 session_data['policy_guidance'] = self._parse_policy_response(policy_result)
                 
-                # FIXED: Send policy guidance to UI with detailed logging
+                # Send policy guidance to UI with detailed logging
                 if callback:
                     policy_data = session_data['policy_guidance']
                     
@@ -799,7 +551,7 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
                 })
                 session_data['decision_result'] = self._parse_decision_response(decision_result, risk_score)
                 
-                # FIXED: Send decision update to UI
+                # Send decision update to UI
                 if callback:
                     await callback({
                         'type': 'decision_made',
@@ -814,11 +566,9 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
                         }
                     })
             
-            # CHANGE: Remove case management from pipeline - only run during call completion
-            
             logger.info(f"✅ ADK pipeline completed: {risk_score}% risk")
             
-            # FIXED: Send final completion message
+            # Send final completion message
             if callback:
                 await callback({
                     'type': 'analysis_complete',
@@ -845,7 +595,6 @@ Create COMPLETE incident summaries immediately. Banking compliance requires deta
             logger.error(f"❌ ADK pipeline error: {e}")
             return {'error': str(e), 'adk_execution': False}
     
-    # CHANGE: Add ServiceNow case creation method
     async def _create_servicenow_case(self, session_id: str, analysis: Dict, callback: Optional[Callable]) -> Dict[str, Any]:
         """Create ServiceNow case with proper formatting"""
         try:
@@ -1033,7 +782,6 @@ System: HSBC Fraud Detection Orchestrator
             if self.servicenow_service:
                 await self.servicenow_service.close_session()
     
-    # CHANGE: Add summarization response parser
     def _parse_summarization_response(self, response_text: str) -> Dict[str, Any]:
         """Parse summarization agent response"""
         try:
@@ -1088,31 +836,31 @@ System: HSBC Fraud Detection Orchestrator
             }
     
     async def _run_adk_agent(self, agent_name: str, input_data: Dict[str, Any]) -> str:
-        """FIXED: Run ADK agent with proper session management and validation"""
+        """Run ADK agent with proper session management and validation"""
         try:
-            # FIXED: Validate agent and runner exist
+            # Validate agent and runner exist
             if agent_name not in self.agents:
                 logger.error(f"❌ Agent {agent_name} not found in self.agents")
-                return self._fallback_agent_response(agent_name, input_data)
+                raise RuntimeError(f"Agent {agent_name} not available")
                 
             if agent_name not in self.runners:
                 logger.error(f"❌ Runner {agent_name} not found in self.runners")
-                return self._fallback_agent_response(agent_name, input_data)
+                raise RuntimeError(f"Runner {agent_name} not available")
             
             agent = self.agents[agent_name]
             runner = self.runners[agent_name]
             
-            # FIXED: Validate agent is not None
+            # Validate agent is not None
             if agent is None:
                 logger.error(f"❌ Agent {agent_name} is None")
-                return self._fallback_agent_response(agent_name, input_data)
+                raise RuntimeError(f"Agent {agent_name} is None")
             
-            # FIXED: Create proper ADK session (like TradeSage)
+            # Create proper ADK session
             app_name = f"fraud_detection_{agent_name}"
             user_id = "fraud_detection_user"
             session_adk_id = f"session_{agent_name}_{id(input_data)}"
             
-            # FIXED: Create session using session service
+            # Create session using session service
             try:
                 session = await self.session_service.create_session(
                     app_name=app_name,
@@ -1122,18 +870,18 @@ System: HSBC Fraud Detection Orchestrator
                 logger.debug(f"✅ Created ADK session: {session_adk_id}")
             except Exception as e:
                 logger.error(f"❌ Failed to create ADK session: {e}")
-                return self._fallback_agent_response(agent_name, input_data)
+                raise RuntimeError(f"Failed to create ADK session: {e}")
             
             # Format input for agent
             user_message = self._format_agent_input(agent_name, input_data)
             
-            # FIXED: Create proper message (like TradeSage)
+            # Create proper message
             message = self.types.Content(
                 role='user',
                 parts=[self.types.Part(text=user_message)]
             )
             
-            # FIXED: Use warning suppression and proper event handling (like TradeSage)
+            # Use warning suppression and proper event handling
             with WarningSuppressionContext():
                 # Collect ALL events and parts properly
                 text_responses = []
@@ -1142,7 +890,7 @@ System: HSBC Fraud Detection Orchestrator
                 tool_results = {}
                 errors = []
                 
-                # FIXED: Process all events and handle ALL part types to avoid warnings
+                # Process all events and handle ALL part types to avoid warnings
                 async for event in runner.run_async(
                     user_id=user_id,
                     session_id=session_adk_id,
@@ -1202,14 +950,14 @@ System: HSBC Fraud Detection Orchestrator
                     logger.info(f"✅ ADK agent {agent_name} completed successfully")
                     return final_text
                 else:
-                    logger.warning(f"⚠️ ADK agent {agent_name} returned empty response, using fallback")
-                    return self._fallback_agent_response(agent_name, input_data)
+                    logger.error(f"❌ ADK agent {agent_name} returned empty response")
+                    raise RuntimeError(f"ADK agent {agent_name} returned empty response")
                 
         except Exception as e:
             logger.error(f"❌ ADK agent {agent_name} error: {e}")
             import traceback
             logger.error(f"❌ Traceback: {traceback.format_exc()}")
-            return self._fallback_agent_response(agent_name, input_data)
+            raise e
     
     def _format_agent_input(self, agent_name: str, input_data: Dict[str, Any]) -> str:
         """Format input for ADK agent"""
@@ -1262,73 +1010,8 @@ Please provide professional incident summary for ServiceNow case documentation.
 """
         
         return str(input_data)
-    
-    # ===== FALLBACK METHODS =====
-    
-    def _fallback_agent_response(self, agent_name: str, input_data: Dict[str, Any]) -> str:
-        """Fallback response when ADK agent fails"""
-        if agent_name == "scam_detection":
-            return self._fallback_scam_detection(input_data.get('customer_text', ''))
-        elif agent_name == "policy_guidance":
-            return "Policy ID: FP-FALLBACK-001\nPolicy Title: Standard Processing\nImmediate Alerts: None\nRecommended Actions: Follow standard procedures"
-        elif agent_name == "decision":
-            return "DECISION: CONTINUE_NORMAL\nREASONING: Fallback processing\nPRIORITY: LOW\nIMMEDIATE_ACTIONS: Standard processing"
-        elif agent_name == "summarization":
-            return "EXECUTIVE SUMMARY\nFallback incident summary created due to system limitations"
-        else:
-            return f"Fallback response for {agent_name}"
-    
-    def _fallback_scam_detection(self, customer_text: str) -> str:
-        """Fallback scam detection using pattern matching"""
-        risk_score = 0
-        detected_patterns = []
-        scam_type = "unknown"
-        
-        text_lower = customer_text.lower()
-        
-        # Romance scam patterns
-        if any(word in text_lower for word in ['boyfriend', 'girlfriend', 'online', 'emergency', 'money']):
-            risk_score += 30
-            detected_patterns.append('romance_exploitation')
-            scam_type = "romance_scam"
-        
-        # Investment scam patterns
-        if any(word in text_lower for word in ['investment', 'guaranteed', 'returns', 'profit']):
-            risk_score += 35
-            detected_patterns.append('investment_fraud')
-            scam_type = "investment_scam"
-        
-        # Urgency patterns
-        if any(word in text_lower for word in ['urgent', 'immediately', 'today', 'now']):
-            risk_score += 20
-            detected_patterns.append('urgency_pressure')
-        
-        risk_score = min(risk_score, 100)
-        
-        if risk_score >= 80:
-            risk_level = "CRITICAL"
-            action = "IMMEDIATE_ESCALATION"
-        elif risk_score >= 60:
-            risk_level = "HIGH"
-            action = "ENHANCED_MONITORING"
-        elif risk_score >= 40:
-            risk_level = "MEDIUM"
-            action = "VERIFY_CUSTOMER_INTENT"
-        else:
-            risk_level = "LOW"
-            action = "CONTINUE_NORMAL_PROCESSING"
-        
-        return f"""
-Risk Score: {risk_score}%
-Risk Level: {risk_level}
-Scam Type: {scam_type}
-Detected Patterns: {detected_patterns}
-Key Evidence: {customer_text[:100]}...
-Confidence: 75%
-Recommended Action: {action}
-"""
-    
-    # ===== PARSING METHODS (same as before) =====
+
+# ===== PARSING METHODS =====
     
     async def _parse_and_accumulate_patterns(self, session_id: str, analysis_result: str) -> Dict[str, Any]:
         """Parse analysis and accumulate patterns"""
@@ -1702,7 +1385,7 @@ Recommended Action: {action}
             
             session_data['case_info'] = case_result
             
-            # FIXED: Send case creation update to UI
+            # Send case creation update to UI
             if callback:
                 await callback({
                     'type': 'case_created',
@@ -1782,7 +1465,7 @@ Recommended Action: {action}
             def get_current_timestamp():
                 return datetime.now().isoformat()
         
-        # FIXED: Safe attribute access with defaults
+        # Safe attribute access with defaults
         agents = getattr(self, 'agents', {})
         runners = getattr(self, 'runners', {})
         session_service = getattr(self, 'session_service', None)
@@ -1808,7 +1491,6 @@ Recommended Action: {action}
                 'Audio and text processing',
                 'Real-time and batch analysis',
                 'WebSocket and REST API support',
-                'Robust fallback mechanisms',
                 'Proper warning suppression'
             ],
             'statistics': {
@@ -1883,7 +1565,6 @@ class FraudDetectionWebSocketHandler:
             logger.error(f"❌ WebSocket handler error: {e}")
             await self.send_error(websocket, client_id, f"Message processing error: {str(e)}")
 
-    # CHANGE: Add this new method
     async def handle_audio_completion(self, websocket, client_id: str, data: Dict) -> None:
         """Handle audio processing completion and trigger call completion"""
         session_id = data.get('session_id')
@@ -1924,7 +1605,6 @@ class FraudDetectionWebSocketHandler:
             logger.error(f"❌ Audio completion error: {e}")
             await self.send_error(websocket, client_id, f"Audio completion failed: {str(e)}")
             
-    # CHANGE: Add call completion handler
     async def handle_call_completion(self, websocket, client_id: str, data: Dict) -> None:
         """Handle call completion request"""
         session_id = data.get('session_id')

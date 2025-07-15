@@ -1272,6 +1272,12 @@ Please provide professional incident summary for ServiceNow case documentation.
             
                 if external_callback:
                     await external_callback(message_data)
+
+                # Handle processing_complete in orchestrator
+                if message_data.get('type') == 'processing_complete':
+                    logger.info(f"🔍 ORCHESTRATOR: Triggering call completion for {session_id}")
+                    await self.handle_call_completion(session_id, external_callback)
+            
                 await self._handle_audio_message(session_id, message_data)
             except Exception as e:
                 logger.error(f"❌ Callback error: {e}")

@@ -696,6 +696,7 @@ System: HSBC Fraud Detection Orchestrator
                 "priority": priority,
                 "urgency": urgency,
                 "state": "2",
+                "caller_id": "fraud_detection_api",
                 "opened_by": "fraud_detection_api"
             }
             

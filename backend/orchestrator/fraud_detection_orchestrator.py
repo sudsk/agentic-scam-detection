@@ -1867,7 +1867,8 @@ class FraudDetectionWebSocketHandler:
                 await self.handle_session_analysis_request(websocket, client_id, data)
             elif message_type == 'create_manual_case':
                 await self.handle_manual_case_creation(websocket, client_id, data)
-            # CHANGE: Add call completion handler
+            elif message_type == 'audio_processing_complete':
+                await self.handle_audio_completion(websocket, client_id, data)                
             elif message_type == 'call_completion':
                 await self.handle_call_completion(websocket, client_id, data)
             elif message_type == 'ping':
@@ -1881,7 +1882,48 @@ class FraudDetectionWebSocketHandler:
         except Exception as e:
             logger.error(f"❌ WebSocket handler error: {e}")
             await self.send_error(websocket, client_id, f"Message processing error: {str(e)}")
-    
+
+    # CHANGE: Add this new method
+    async def handle_audio_completion(self, websocket, client_id: str, data: Dict) -> None:
+        """Handle audio processing completion and trigger call completion"""
+        session_id = data.get('session_id')
+        if not session_id:
+            await self.send_error(websocket, client_id, "Missing session_id")
+            return
+        
+        try:
+            logger.info(f"🏁 Audio processing completed, triggering call completion for {session_id}")
+            
+            # Create WebSocket callback
+            async def websocket_callback(message_data: Dict) -> None:
+                await self.send_message(websocket, client_id, message_data)
+            
+            # Trigger call completion
+            result = await self.orchestrator.handle_call_completion(
+                session_id=session_id,
+                callback=websocket_callback
+            )
+            
+            if not result.get('success'):
+                await self.send_error(websocket, client_id, result.get('error', 'Call completion failed'))
+                return
+            
+            # Send final confirmation
+            await self.send_message(websocket, client_id, {
+                'type': 'call_completion_result',
+                'data': {
+                    'session_id': session_id,
+                    'success': True,
+                    'final_risk_score': result.get('final_risk_score', 0),
+                    'case_created': result.get('case_created', False),
+                    'timestamp': datetime.now().isoformat()
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Audio completion error: {e}")
+            await self.send_error(websocket, client_id, f"Audio completion failed: {str(e)}")
+            
     # CHANGE: Add call completion handler
     async def handle_call_completion(self, websocket, client_id: str, data: Dict) -> None:
         """Handle call completion request"""

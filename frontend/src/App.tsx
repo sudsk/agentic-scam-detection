@@ -93,11 +93,6 @@ interface CustomerProfile {
     description: string;
     additionalInfo?: string;
   };
-  demographics: {
-    age: number;
-    location: string;
-    relationship: string;
-  };
   alerts: {
     type: string;
     date: string;

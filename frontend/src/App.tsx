@@ -644,6 +644,11 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     setPolicyGuidance(null);
     setProcessingStage('');
     setShowingSegments([]);
+    // ADD these new lines:
+    setTranscriptSegments([]);
+    setCurrentInterimSegment(null);
+    setLastFinalSegmentTime(0);
+    
     setSessionId('');
     setServerProcessing(false);
   };
@@ -813,6 +818,84 @@ Click OK to open the case in ServiceNow.
     };
   }, []);
 
+  // Enhanced transcript display component (simplified - no confidence/timestamps)
+  const TranscriptDisplay = () => {
+    const allSegments = [...transcriptSegments];
+    if (currentInterimSegment) {
+      allSegments.push(currentInterimSegment);
+    }
+  
+    return (
+      <div className="p-4 h-full overflow-y-auto">
+        {allSegments.length === 0 ? (
+          <div className="flex items-center justify-center h-64 text-gray-500">
+            <div className="text-center">
+              <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p>Select a demo call to see live transcription</p>
+              {processingStage && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                  <p className="text-blue-700 text-sm">{processingStage}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {allSegments.map((segment, index) => {
+              const isInterim = segment.is_interim;
+              const isLastSegment = index === allSegments.length - 1;
+              
+              return (
+                <div 
+                  key={segment.segment_id || `${segment.speaker}-${index}`}
+                  className={`transition-all duration-300 ${
+                    isInterim ? 'opacity-70 animate-pulse' : 'opacity-100'
+                  }`}
+                >
+                  {/* Clean Speaker Header */}
+                  <div className="flex items-center mb-2">
+                    <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium border ${
+                      getSpeakerColor(segment.speaker, isInterim)
+                    }`}>
+                      {getSpeakerIcon(segment.speaker)}
+                      <span>{getSpeakerLabel(segment.speaker)}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Clean Text Display */}
+                  <div className={`ml-3 p-4 rounded-lg border-l-4 ${
+                    isInterim 
+                      ? 'bg-yellow-50 border-yellow-400' 
+                      : segment.speaker === 'customer'
+                      ? 'bg-blue-50 border-blue-400'
+                      : 'bg-green-50 border-green-400'
+                  }`}>
+                    <p className={`text-sm leading-relaxed ${
+                      isInterim ? 'italic text-gray-600' : 'text-gray-800'
+                    }`}>
+                      {segment.text}
+                      {isInterim && isLastSegment && (
+                        <span className="animate-pulse ml-1 text-blue-500">|</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+            
+            {/* Processing indicator */}
+            {serverProcessing && (
+              <div className="flex items-center space-x-2 text-gray-500 ml-3 py-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                <span className="text-sm">Processing audio...</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+  
   // ===== RENDER =====
 
   return (
@@ -1033,76 +1116,8 @@ Click OK to open the case in ServiceNow.
             </div>
           </div>
           
-          <div className="p-4 h-full overflow-y-auto">
-            {showingSegments.length === 0 ? (
-              <div className="flex items-center justify-center h-64 text-gray-500">
-                <div className="text-center">
-                  <Server className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p>Select a demo call to see live transcription</p>
-                  {processingStage && (
-                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
-                      <p className="text-blue-700 text-sm">{processingStage}</p>
-                      {processingStage.includes('ServiceNow case created') && (
-                        <button 
-                          onClick={() => setProcessingStage('')}
-                          className="mt-1 text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>  
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {showingSegments.map((segment, index) => {
-                  const isInterim = !segment.is_final;
-                  
-                  return (
-                    <div key={segment.segment_id || `${segment.speaker}-${index}-${isInterim ? 'interim' : 'final'}`} 
-                         className={`animate-in slide-in-from-bottom duration-500 ${isInterim ? 'opacity-70' : ''}`}>
-                      
-                      {/* Speaker Label */}
-                      <div className="flex items-start space-x-3">
-                        <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium border ${
-                          getSpeakerColor(segment.speaker, isInterim)
-                        }`}>
-                          {getSpeakerIcon(segment.speaker)}
-                          <span>{getSpeakerLabel(segment.speaker)}</span>
-                        </div>
-                        
-                        {isInterim && (
-                          <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded animate-pulse">
-                            typing...
-                          </span>
-                        )}
-                      </div>
-                      
-                      {/* Text Display */}
-                      <div className={`mt-2 ml-3 p-3 rounded-lg border-l-4 ${
-                        isInterim 
-                          ? 'bg-yellow-50 border-yellow-400' 
-                          : 'bg-gray-50 border-blue-400'
-                      }`}>
-                        <p className={`text-sm text-gray-800 ${isInterim ? 'italic' : ''}`}>
-                          {segment.text}
-                          {isInterim && <span className="animate-pulse ml-1">|</span>}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-                
-                {serverProcessing && (
-                  <div className="flex items-center space-x-2 text-gray-500 ml-3">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                    <span className="text-sm">Server processing audio...</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <TranscriptDisplay />
+          
         </div>
 
         {/* Right Sidebar - Restored AI Agent Assist */}

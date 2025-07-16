@@ -246,8 +246,6 @@ const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-// frontend/src/App.tsx - CHUNK 2: Main Component State and Functions (Simplified)
-
 function App() {
   // ===== CORE STATE =====
   const [selectedAudioFile, setSelectedAudioFile] = useState<RealAudioFile | null>(null);
@@ -279,6 +277,10 @@ function App() {
   // ===== REFS =====
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [transcriptSegments, setTranscriptSegments] = useState<AudioSegment[]>([]);
+  const [currentInterimSegment, setCurrentInterimSegment] = useState<AudioSegment | null>(null);
+  const [lastFinalSegmentTime, setLastFinalSegmentTime] = useState<number>(0);
+  
   // ===== WEBSOCKET FUNCTIONS =====
 
   const connectWebSocket = (): void => {
@@ -326,8 +328,6 @@ function App() {
     }
   };
 
-// Replace the entire handleWebSocketMessage function with this enhanced version:
-
 const handleWebSocketMessage = (message: WebSocketMessage): void => {
   console.log('📨 WebSocket message received:', message);
   
@@ -345,19 +345,47 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     case 'transcription_segment':
       const transcriptData = message.data;
       
+      // Create enhanced segment with better formatting
       const finalSegment: AudioSegment = {
         speaker: transcriptData.speaker,
         start: transcriptData.start || 0,
         duration: transcriptData.duration || 0,
-        text: transcriptData.text,
+        text: transcriptData.text.trim(),
         confidence: transcriptData.confidence,
         is_final: true,
         speaker_tag: transcriptData.speaker_tag,
         segment_id: `final-${Date.now()}-${Math.random()}`
       };
       
-      setShowingSegments(prev => [...prev, finalSegment]);
+      // Smart segment consolidation - merge if same speaker and close timing
+      setTranscriptSegments(prev => {
+        const lastSegment = prev[prev.length - 1];
+        const timeDiff = finalSegment.start - (lastSegment?.start || 0);
+        
+        // Merge if same speaker and within 2 seconds
+        if (lastSegment && 
+            lastSegment.speaker === finalSegment.speaker && 
+            timeDiff < 2 && 
+            lastSegment.text.length < 150) {
+          
+          const mergedSegment = {
+            ...lastSegment,
+            text: `${lastSegment.text} ${finalSegment.text}`.trim(),
+            duration: finalSegment.start + finalSegment.duration - lastSegment.start,
+            confidence: Math.min(lastSegment.confidence || 1, finalSegment.confidence || 1)
+          };
+          
+          return [...prev.slice(0, -1), mergedSegment];
+        }
+        
+        return [...prev, finalSegment];
+      });
       
+      // Clear interim segment since we have final
+      setCurrentInterimSegment(null);
+      setLastFinalSegmentTime(Date.now());
+      
+      // Update customer transcription for analysis
       if (transcriptData.speaker === 'customer') {
         setTranscription(prev => {
           const customerText = prev + ' ' + transcriptData.text;
@@ -371,24 +399,23 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     case 'transcription_interim':
       const interimData = message.data;
       
-      const interimSegment: AudioSegment = {
-        speaker: interimData.speaker,
-        start: interimData.start || 0,
-        duration: interimData.duration || 0,
-        text: interimData.text,
-        confidence: interimData.confidence,
-        is_final: false,
-        is_interim: true,
-        speaker_tag: interimData.speaker_tag,
-        segment_id: `interim-${Date.now()}-${Math.random()}`
-      };
-      
-      setShowingSegments(prev => {
-        const withoutLastInterim = prev.filter(s => 
-          s.is_final || s.speaker !== interimData.speaker || !s.is_interim
-        );
-        return [...withoutLastInterim, interimSegment];
-      });
+      // Only show interim if it's been a while since last final
+      const timeSinceLastFinal = Date.now() - lastFinalSegmentTime;
+      if (timeSinceLastFinal > 500) { // 500ms threshold
+        const interimSegment: AudioSegment = {
+          speaker: interimData.speaker,
+          start: interimData.start || 0,
+          duration: interimData.duration || 0,
+          text: interimData.text.trim(),
+          confidence: interimData.confidence,
+          is_final: false,
+          is_interim: true,
+          speaker_tag: interimData.speaker_tag,
+          segment_id: `interim-${Date.now()}-${Math.random()}`
+        };
+        
+        setCurrentInterimSegment(interimSegment);
+      }
       
       setProcessingStage(`🎙️ ${interimData.speaker} speaking...`);
       break;

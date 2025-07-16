@@ -146,7 +146,7 @@ def determine_call_info(filename: str) -> Dict[str, Any]:
         }
     elif "impersonation" in filename_lower:
         return {
-            "title": "Bank Impersonation Scam",
+            "title": "Impersonation Scam",
             "description": "Fake bank security team requesting credentials",
             "icon": "🎭", 
             "scam_type": "impersonation_scam",
@@ -154,12 +154,20 @@ def determine_call_info(filename: str) -> Dict[str, Any]:
         }
     elif "legitimate" in filename_lower:
         return {
-            "title": "Legitimate Banking Call",
+            "title": "Legitimate Call",
             "description": "Normal banking inquiry and account services",
             "icon": "✅",
             "scam_type": "none", 
             "duration": 25
         }
+    elif "app" in filename_lower:
+        return {
+            "title": "APP Scam",
+            "description": "Authorised Push Payment scam call",
+            "icon": "💰",
+            "scam_type": "app_scam", 
+            "duration": 35
+        }        
     else:
         return {
             "title": "Unknown Call Type",

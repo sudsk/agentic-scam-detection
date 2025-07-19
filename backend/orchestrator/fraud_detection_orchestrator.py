@@ -1327,6 +1327,11 @@ Please provide professional incident summary for ServiceNow case documentation.
                 if callback and analysis_result:
                     scam_analysis = analysis_result.get('scam_analysis', {})
                     risk_score = scam_analysis.get('risk_score', 0)
+
+                    print(f"🎙️ CUSTOMER SPEECH DEBUG - Sending fraud analysis update")
+                    print(f"🎙️ CUSTOMER SPEECH DEBUG - Risk score: {risk_score}")
+                    print(f"🎙️ CUSTOMER SPEECH DEBUG - Patterns: {self.accumulated_patterns.get(session_id, {})}")
+                      
                     
                     await callback({
                         'type': 'fraud_analysis_update',
@@ -1352,7 +1357,15 @@ Please provide professional incident summary for ServiceNow case documentation.
                                 'timestamp': datetime.now().isoformat()
                             }
                         })
-                        
+
+                    # *** THIS IS THE KEY PART - ADD DEBUG HERE ***
+                    print(f"🔥 QUESTION DEBUG - About to call _trigger_question_prompt")
+                    print(f"🔥 QUESTION DEBUG - Session ID: {session_id}")
+                    print(f"🔥 QUESTION DEBUG - Accumulated speech: {accumulated_speech[:50]}...")
+                    print(f"🔥 QUESTION DEBUG - Patterns: {self.accumulated_patterns.get(session_id, {})}")
+                    print(f"🔥 QUESTION DEBUG - Risk score: {risk_score}")
+                    print(f"🔥 QUESTION DEBUG - Callback: {callback is not None}")
+                    
                     # NEW: Trigger question prompt after analysis update
                     await self._trigger_question_prompt(
                         session_id, accumulated_speech, 
@@ -1366,6 +1379,11 @@ Please provide professional incident summary for ServiceNow case documentation.
     async def _trigger_question_prompt(self, session_id: str, customer_text: str, detected_patterns: Dict, risk_score: float, callback: Optional[Callable]):
         """Trigger question prompt based on detected patterns"""
         try:
+            print(f"🔍 QUESTION DEBUG - _trigger_question_prompt called with:")
+            print(f"  - patterns: {detected_patterns}")
+            print(f"  - risk_score: {risk_score}")
+            print(f"  - text: {customer_text[:100]}")    
+            
             # Import question triggers
             from ..config.question_triggers import select_best_question
             

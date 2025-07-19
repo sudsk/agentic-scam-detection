@@ -280,6 +280,22 @@ function App() {
   const [transcriptSegments, setTranscriptSegments] = useState<AudioSegment[]>([]);
   const [currentInterimSegment, setCurrentInterimSegment] = useState<AudioSegment | null>(null);
   const [lastFinalSegmentTime, setLastFinalSegmentTime] = useState<number>(0);
+
+  // ===== QUESTION PROMPT STATE =====
+  const [currentQuestion, setCurrentQuestion] = useState<{
+    id: string;
+    question: string;
+    context: string;
+    urgency: 'low' | 'medium' | 'high';
+    pattern: string;
+    riskLevel: number;
+  } | null>(null);
+  const [questionHistory, setQuestionHistory] = useState<Array<{
+    id: string;
+    question: string;
+    status: 'asked' | 'skipped' | 'pending';
+    timestamp: string;
+  }>>([]);
   
   // ===== WEBSOCKET FUNCTIONS =====
 
@@ -533,6 +549,23 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       setServerProcessing(false);
       console.error('Server error:', message.data);
       break;
+
+    case 'question_prompt_ready':
+      const questionData = message.data;
+      console.log('💡 Question prompt ready:', questionData);
+      
+      const newQuestion = {
+        id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        question: questionData.question || 'Verify customer identity',
+        context: questionData.context || 'Pattern detected',
+        urgency: questionData.urgency || 'medium',
+        pattern: questionData.pattern || 'unknown',
+        riskLevel: questionData.risk_level || riskScore
+      };
+      
+      setCurrentQuestion(newQuestion);
+      setProcessingStage(`💡 Question suggested: ${newQuestion.question.slice(0, 30)}...`);
+      break;
       
     default:
       console.log('❓ Unknown message type:', message.type);
@@ -651,6 +684,10 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     
     setSessionId('');
     setServerProcessing(false);
+
+    // ADD these new lines to resetState function:
+    setCurrentQuestion(null);
+    setQuestionHistory([]);    
   };
 
   const loadAudioFiles = async (): Promise<void> => {
@@ -739,6 +776,64 @@ Click OK to open the case in ServiceNow.
     }
   };
 
+  const handleQuestionAsked = () => {
+    if (currentQuestion) {
+      // Add to history
+      setQuestionHistory(prev => [...prev, {
+        id: currentQuestion.id,
+        question: currentQuestion.question,
+        status: 'asked',
+        timestamp: new Date().toISOString()
+      }]);
+      
+      // Send to server if WebSocket connected
+      if (ws && isConnected && sessionId) {
+        ws.send(JSON.stringify({
+          type: 'agent_question_asked',
+          data: {
+            session_id: sessionId,
+            question_id: currentQuestion.id,
+            question: currentQuestion.question,
+            action: 'asked'
+          }
+        }));
+      }
+      
+      // Clear current question
+      setCurrentQuestion(null);
+      setProcessingStage('✅ Question marked as asked');
+    }
+  };
+  
+  const handleQuestionSkipped = () => {
+    if (currentQuestion) {
+      // Add to history
+      setQuestionHistory(prev => [...prev, {
+        id: currentQuestion.id,
+        question: currentQuestion.question,
+        status: 'skipped',
+        timestamp: new Date().toISOString()
+      }]);
+      
+      // Send to server if WebSocket connected
+      if (ws && isConnected && sessionId) {
+        ws.send(JSON.stringify({
+          type: 'agent_question_skipped',
+          data: {
+            session_id: sessionId,
+            question_id: currentQuestion.id,
+            question: currentQuestion.question,
+            action: 'skipped'
+          }
+        }));
+      }
+      
+      // Clear current question
+      setCurrentQuestion(null);
+      setProcessingStage('⏭️ Question skipped');
+    }
+  };
+  
   // ===== COMPONENT FUNCTIONS =====
 
   const DemoCallButton = ({ audioFile }: { audioFile: RealAudioFile }) => (
@@ -818,6 +913,77 @@ Click OK to open the case in ServiceNow.
     };
   }, []);
 
+  // Question Prompt Card Component
+  const QuestionPromptCard = () => {
+    if (!currentQuestion) return null;
+  
+    const getUrgencyColor = (urgency: string) => {
+      switch (urgency) {
+        case 'high': return 'bg-red-50 border-red-300 text-red-800';
+        case 'medium': return 'bg-orange-50 border-orange-300 text-orange-800';
+        case 'low': return 'bg-yellow-50 border-yellow-300 text-yellow-800';
+        default: return 'bg-blue-50 border-blue-300 text-blue-800';
+      }
+    };
+  
+    const getUrgencyIcon = (urgency: string) => {
+      switch (urgency) {
+        case 'high': return '🚨';
+        case 'medium': return '⚠️';
+        case 'low': return '💡';
+        default: return '❓';
+      }
+    };
+  
+    return (
+      <div className="fixed top-4 right-4 z-50 w-96 animate-in slide-in-from-right duration-500">
+        <div className={`border-2 rounded-lg p-4 shadow-lg ${getUrgencyColor(currentQuestion.urgency)}`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">{getUrgencyIcon(currentQuestion.urgency)}</span>
+              <span className="font-semibold text-sm">
+                SUGGESTED QUESTION - {currentQuestion.urgency.toUpperCase()} PRIORITY
+              </span>
+            </div>
+            <button 
+              onClick={() => setCurrentQuestion(null)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="mb-3">
+            <p className="font-medium text-base leading-relaxed">
+              "{currentQuestion.question}"
+            </p>
+          </div>
+          
+          <div className="mb-4 text-xs">
+            <p><strong>Context:</strong> {currentQuestion.context}</p>
+            <p><strong>Triggered by:</strong> {currentQuestion.pattern.replace('_', ' ')} pattern</p>
+            <p><strong>Risk Level:</strong> {currentQuestion.riskLevel}%</p>
+          </div>
+          
+          <div className="flex space-x-2">
+            <button
+              onClick={handleQuestionAsked}
+              className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-green-700 transition-colors"
+            >
+              ✓ Asked Customer
+            </button>
+            <button
+              onClick={handleQuestionSkipped}
+              className="flex-1 bg-gray-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-gray-700 transition-colors"
+            >
+              Skip Question
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  
   // Enhanced transcript display component (simplified - no confidence/timestamps)
   const TranscriptDisplay = () => {
     const allSegments = [...transcriptSegments];
@@ -918,6 +1084,9 @@ Click OK to open the case in ServiceNow.
         </div>
       </header>
 
+      {/* Question Prompt Card - Floating */}
+      <QuestionPromptCard />
+      
       {/* Simplified Demo Call Selection */}
       <div className="bg-white border-b border-gray-200 px-6 py-3">
         <div className="flex items-center space-x-4">
@@ -1282,24 +1451,8 @@ Click OK to open the case in ServiceNow.
             </div>
           )}
 
-          {/* Key Questions */}
-          {policyGuidance && safeLength(policyGuidance.key_questions) > 0 && (
-            <div className="p-4 border-b border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                <Eye className="w-4 h-4 text-purple-500 mr-2" />
-                Key Questions
-              </h4>
-              
-              <div className="space-y-2">
-                {safeArray(policyGuidance.key_questions).slice(0, 3).map((question: string, index: number) => (
-                  <div key={index} className="p-2 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors cursor-pointer">
-                    <p className="text-xs text-green-900 font-medium">"{question}"</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
+          {/* REMOVED: Key Questions section - now handled by floating prompts */}
+          
           {/* Customer Education */}
           {policyGuidance && safeLength(policyGuidance.customer_education) > 0 && (
             <div className="p-4 flex-1">

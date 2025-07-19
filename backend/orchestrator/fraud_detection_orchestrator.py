@@ -100,7 +100,10 @@ class FraudDetectionOrchestrator:
             raise RuntimeError("ADK initialization failed - cannot continue without ADK")
         
         logger.info(f"🎭 Fraud Detection Orchestrator ready - Agents: {len(self.agents)}, Runners: {len(self.runners)}")
-    
+
+        # Add this: Track last question sent to prevent flickering
+        self.last_question_sent: Dict[str, Dict] = {}  # session_id -> {question_id, timestamp}
+     
     def _initialize_servicenow(self):
         """Initialize ServiceNow service"""
         try:
@@ -1378,22 +1381,44 @@ Please provide professional incident summary for ServiceNow case documentation.
             logger.error(f"❌ Error processing customer speech: {e}")
 
     async def _trigger_question_prompt(self, session_id: str, customer_text: str, detected_patterns: Dict, risk_score: float, callback: Optional[Callable]):
-        """Trigger question prompt based on detected patterns"""
+        """Trigger question prompt based on detected patterns with rate limiting"""
         try:
-            print(f"🔍 QUESTION DEBUG - _trigger_question_prompt called with:")
-            print(f"  - patterns: {detected_patterns}")
+            print(f"🔍 QUESTION DEBUG - _trigger_question_prompt called")
+            print(f"  - session_id: {session_id}")
+            print(f"  - patterns: {list(detected_patterns.keys())}")
             print(f"  - risk_score: {risk_score}")
-            print(f"  - text: {customer_text[:100]}")    
+            
+            # Rate limiting: Don't send questions too frequently
+            current_time = time.time()
+            last_question = self.last_question_sent.get(session_id, {})
+            
+            if last_question and (current_time - last_question.get('timestamp', 0)) < 5.0:
+                print(f"🔍 QUESTION DEBUG - Rate limited: Last question sent {current_time - last_question.get('timestamp', 0):.1f}s ago")
+                return
             
             # Import question triggers
             from ..config.question_triggers import select_best_question
             
             # Select best question for current context
+            print(f"🔍 QUESTION DEBUG - Calling select_best_question with:")
+            print(f"  - detected_patterns: {detected_patterns}")
+            print(f"  - risk_score: {risk_score}")
+            print(f"  - customer_text: '{customer_text[:50]}...'")
+            
             best_question = select_best_question(detected_patterns, risk_score, customer_text)
-
-            print(f"  - best_question (full): {best_question}")
+            
+            print(f"🔍 QUESTION DEBUG - select_best_question returned: {best_question}")
             
             if best_question and callback:
+                # Check if we already sent this exact question
+                question_id = f"{best_question['pattern']}_{best_question['question'][:20]}"
+                
+                if last_question.get('question_id') == question_id:
+                    print(f"🔍 QUESTION DEBUG - Duplicate question prevented: {question_id}")
+                    return
+                
+                print(f"🔍 QUESTION DEBUG - Sending new question: {best_question['question']}")
+                
                 # Send question prompt to UI
                 await callback({
                     'type': 'question_prompt_ready',
@@ -1409,29 +1434,28 @@ Please provide professional incident summary for ServiceNow case documentation.
                     }
                 })
                 
-                logger.info(f"💡 Question prompt sent: {best_question['question'][:50]}...")
-
-            # TEMPORARY: Manual question for romance scam testing
-            if 'romance' in customer_text.lower() or risk_score > 20:
-                print(f"🔍 QUESTION DEBUG - Sending manual test question")
+                # Track this question to prevent duplicates
+                self.last_question_sent[session_id] = {
+                    'question_id': question_id,
+                    'timestamp': current_time,
+                    'question': best_question['question']
+                }
                 
-                if callback:
-                    await callback({
-                        'type': 'question_prompt_ready',
-                        'data': {
-                            'session_id': session_id,
-                            'question': 'How long have you known this person?',
-                            'context': 'Romance scam pattern detected',
-                            'urgency': 'high',
-                            'pattern': 'romance_exploitation',
-                            'risk_level': risk_score,
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    })
-                    print(f"🔍 QUESTION DEBUG - Manual question sent!")
+                print(f"🔍 QUESTION DEBUG - Question sent successfully: {best_question['question'][:30]}...")
+                
+            else:
+                print(f"🔍 QUESTION DEBUG - No question to send:")
+                print(f"  - best_question exists: {best_question is not None}")
+                print(f"  - callback exists: {callback is not None}")
+                if best_question:
+                    print(f"  - question would be: {best_question.get('question', 'No question')}")
                 
         except Exception as e:
-            logger.error(f"❌ Error triggering question prompt: {e}")
+            print(f"❌ QUESTION DEBUG - Error triggering question prompt: {e}")
+            import traceback
+            print(f"❌ TRACEBACK: {traceback.format_exc()}")
+
+
         
     async def _run_case_management(self, session_id: str, analysis: Dict, callback: Optional[Callable]):
         """Run case management with proper UI updates"""
@@ -1529,6 +1553,11 @@ Please provide professional incident summary for ServiceNow case documentation.
                 del self.session_analysis_history[session_id]
             if session_id in self.accumulated_patterns:
                 del self.accumulated_patterns[session_id]
+
+            # Clean up question tracking
+            if session_id in self.last_question_sent:
+                del self.last_question_sent[session_id]
+                
         except Exception as e:
             logger.error(f"❌ Cleanup error: {e}")
     

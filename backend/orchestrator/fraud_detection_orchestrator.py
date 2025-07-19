@@ -1352,10 +1352,47 @@ Please provide professional incident summary for ServiceNow case documentation.
                                 'timestamp': datetime.now().isoformat()
                             }
                         })
+                        
+                # NEW: Trigger question prompt after analysis update
+                await self._trigger_question_prompt(
+                    session_id, accumulated_speech, 
+                    self.accumulated_patterns.get(session_id, {}),
+                    risk_score, callback
+                )
                 
         except Exception as e:
             logger.error(f"❌ Error processing customer speech: {e}")
-    
+
+    async def _trigger_question_prompt(self, session_id: str, customer_text: str, detected_patterns: Dict, risk_score: float, callback: Optional[Callable]):
+        """Trigger question prompt based on detected patterns"""
+        try:
+            # Import question triggers
+            from ..config.question_triggers import select_best_question
+            
+            # Select best question for current context
+            best_question = select_best_question(detected_patterns, risk_score, customer_text)
+            
+            if best_question and callback:
+                # Send question prompt to UI
+                await callback({
+                    'type': 'question_prompt_ready',
+                    'data': {
+                        'session_id': session_id,
+                        'question': best_question['question'],
+                        'context': best_question['context'],
+                        'urgency': best_question['urgency'],
+                        'pattern': best_question['pattern'],
+                        'risk_level': risk_score,
+                        'matched_phrases': best_question.get('matched_phrases', []),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                })
+                
+                logger.info(f"💡 Question prompt sent: {best_question['question'][:50]}...")
+                
+        except Exception as e:
+            logger.error(f"❌ Error triggering question prompt: {e}")
+        
     async def _run_case_management(self, session_id: str, analysis: Dict, callback: Optional[Callable]):
         """Run case management with proper UI updates"""
         try:

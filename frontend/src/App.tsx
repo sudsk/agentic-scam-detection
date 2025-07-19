@@ -900,12 +900,6 @@ Click OK to open the case in ServiceNow.
         </div>
       )}
     </button>
-    <button
-      onClick={testQuestionTrigger}
-      className="ml-4 px-3 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700"
-    >
-      🧪 Test Question
-    </button>    
   );
 
   const ProcessingStatus = () => (
@@ -1158,6 +1152,13 @@ Click OK to open the case in ServiceNow.
               <DemoCallButton key={audioFile.id} audioFile={audioFile} />
             ))}
           </div>
+          
+          <button
+            onClick={testQuestionTrigger}
+            className="ml-4 px-3 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700"
+          >
+            🧪 Test Question
+          </button>  
           
           {isPlaying && selectedAudioFile && (
             <button

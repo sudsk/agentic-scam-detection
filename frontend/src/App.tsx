@@ -550,9 +550,18 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       console.error('Server error:', message.data);
       break;
 
+    // Add this debug code to your App.tsx in the handleWebSocketMessage function
+    // Replace the existing case for 'question_prompt_ready':
+    
     case 'question_prompt_ready':
+      console.log('🔍 QUESTION DEBUG - Raw message:', message);
+      console.log('🔍 QUESTION DEBUG - Message data:', message.data);
+      
       const questionData = message.data;
-      console.log('💡 Question prompt ready:', questionData);
+      console.log('🔍 QUESTION DEBUG - Question data:', questionData);
+      console.log('🔍 QUESTION DEBUG - Question text:', questionData.question);
+      console.log('🔍 QUESTION DEBUG - Context:', questionData.context);
+      console.log('🔍 QUESTION DEBUG - Urgency:', questionData.urgency);
       
       const newQuestion = {
         id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -563,8 +572,18 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
         riskLevel: questionData.risk_level || riskScore
       };
       
+      console.log('🔍 QUESTION DEBUG - New question object:', newQuestion);
+      console.log('🔍 QUESTION DEBUG - Current question state before:', currentQuestion);
+      
       setCurrentQuestion(newQuestion);
+      
+      console.log('🔍 QUESTION DEBUG - setCurrentQuestion called with:', newQuestion);
       setProcessingStage(`💡 Question suggested: ${newQuestion.question.slice(0, 30)}...`);
+      
+      // Test if state is actually set
+      setTimeout(() => {
+        console.log('🔍 QUESTION DEBUG - Current question state after timeout:', currentQuestion);
+      }, 100);
       break;
       
     default:
@@ -833,6 +852,24 @@ Click OK to open the case in ServiceNow.
       setProcessingStage('⏭️ Question skipped');
     }
   };
+
+  // Add this test function to your App.tsx (inside the component)
+  const testQuestionTrigger = () => {
+    console.log('🧪 TESTING: Manual question trigger');
+    
+    const testQuestion = {
+      id: `test_q_${Date.now()}`,
+      question: 'TEST: How long have you known this person?',
+      context: 'TEST: Manual trigger for debugging',
+      urgency: 'high' as const,
+      pattern: 'test_pattern',
+      riskLevel: 75
+    };
+    
+    console.log('🧪 TESTING: Setting test question:', testQuestion);
+    setCurrentQuestion(testQuestion);
+    setProcessingStage('🧪 TEST: Manual question triggered');
+  };  
   
   // ===== COMPONENT FUNCTIONS =====
 
@@ -863,6 +900,12 @@ Click OK to open the case in ServiceNow.
         </div>
       )}
     </button>
+    <button
+      onClick={testQuestionTrigger}
+      className="ml-4 px-3 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700"
+    >
+      🧪 Test Question
+    </button>    
   );
 
   const ProcessingStatus = () => (
@@ -913,9 +956,19 @@ Click OK to open the case in ServiceNow.
     };
   }, []);
 
-  // Question Prompt Card Component
+  // Add this debug version of QuestionPromptCard to your App.tsx
+  
   const QuestionPromptCard = () => {
-    if (!currentQuestion) return null;
+    console.log('🎨 RENDER DEBUG - QuestionPromptCard called');
+    console.log('🎨 RENDER DEBUG - currentQuestion:', currentQuestion);
+    console.log('🎨 RENDER DEBUG - currentQuestion is null?', currentQuestion === null);
+    
+    if (!currentQuestion) {
+      console.log('🎨 RENDER DEBUG - No question, returning null');
+      return null;
+    }
+  
+    console.log('🎨 RENDER DEBUG - Rendering question card for:', currentQuestion.question);
   
     const getUrgencyColor = (urgency: string) => {
       switch (urgency) {
@@ -946,7 +999,10 @@ Click OK to open the case in ServiceNow.
               </span>
             </div>
             <button 
-              onClick={() => setCurrentQuestion(null)}
+              onClick={() => {
+                console.log('🎨 RENDER DEBUG - Closing question card');
+                setCurrentQuestion(null);
+              }}
               className="text-gray-400 hover:text-gray-600"
             >
               ✕
@@ -967,13 +1023,19 @@ Click OK to open the case in ServiceNow.
           
           <div className="flex space-x-2">
             <button
-              onClick={handleQuestionAsked}
+              onClick={() => {
+                console.log('🎨 RENDER DEBUG - Question asked');
+                handleQuestionAsked();
+              }}
               className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-green-700 transition-colors"
             >
               ✓ Asked Customer
             </button>
             <button
-              onClick={handleQuestionSkipped}
+              onClick={() => {
+                console.log('🎨 RENDER DEBUG - Question skipped');
+                handleQuestionSkipped();
+              }}
               className="flex-1 bg-gray-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-gray-700 transition-colors"
             >
               Skip Question

@@ -1391,7 +1391,7 @@ Please provide professional incident summary for ServiceNow case documentation.
             # Select best question for current context
             best_question = select_best_question(detected_patterns, risk_score, customer_text)
 
-            print(f"  - best question: {best_question['question']}")  
+            print(f"  - best_question (full): {best_question}")
             
             if best_question and callback:
                 # Send question prompt to UI
@@ -1412,7 +1412,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                 logger.info(f"💡 Question prompt sent: {best_question['question'][:50]}...")
 
             # TEMPORARY: Manual question for romance scam testing
-            if 'romance' in customer_text.lower() or risk_score > 50:
+            if 'romance' in customer_text.lower() or risk_score > 20:
                 print(f"🔍 QUESTION DEBUG - Sending manual test question")
                 
                 if callback:

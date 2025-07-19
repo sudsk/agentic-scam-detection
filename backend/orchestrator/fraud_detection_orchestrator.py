@@ -1372,6 +1372,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                         self.accumulated_patterns.get(session_id, {}),
                         risk_score, callback
                     )
+                    print(f"🔥 QUESTION DEBUG - _trigger_question_prompt completed")
                 
         except Exception as e:
             logger.error(f"❌ Error processing customer speech: {e}")
@@ -1389,6 +1390,8 @@ Please provide professional incident summary for ServiceNow case documentation.
             
             # Select best question for current context
             best_question = select_best_question(detected_patterns, risk_score, customer_text)
+
+            print(f"  - best question: {best_question['question']}")  
             
             if best_question and callback:
                 # Send question prompt to UI
@@ -1407,6 +1410,25 @@ Please provide professional incident summary for ServiceNow case documentation.
                 })
                 
                 logger.info(f"💡 Question prompt sent: {best_question['question'][:50]}...")
+
+            # TEMPORARY: Manual question for romance scam testing
+            if 'romance' in customer_text.lower() or risk_score > 50:
+                print(f"🔍 QUESTION DEBUG - Sending manual test question")
+                
+                if callback:
+                    await callback({
+                        'type': 'question_prompt_ready',
+                        'data': {
+                            'session_id': session_id,
+                            'question': 'How long have you known this person?',
+                            'context': 'Romance scam pattern detected',
+                            'urgency': 'high',
+                            'pattern': 'romance_exploitation',
+                            'risk_level': risk_score,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    })
+                    print(f"🔍 QUESTION DEBUG - Manual question sent!")
                 
         except Exception as e:
             logger.error(f"❌ Error triggering question prompt: {e}")

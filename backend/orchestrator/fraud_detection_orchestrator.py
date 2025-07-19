@@ -1353,12 +1353,12 @@ Please provide professional incident summary for ServiceNow case documentation.
                             }
                         })
                         
-                # NEW: Trigger question prompt after analysis update
-                await self._trigger_question_prompt(
-                    session_id, accumulated_speech, 
-                    self.accumulated_patterns.get(session_id, {}),
-                    risk_score, callback
-                )
+                    # NEW: Trigger question prompt after analysis update
+                    await self._trigger_question_prompt(
+                        session_id, accumulated_speech, 
+                        self.accumulated_patterns.get(session_id, {}),
+                        risk_score, callback
+                    )
                 
         except Exception as e:
             logger.error(f"❌ Error processing customer speech: {e}")

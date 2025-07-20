@@ -247,11 +247,7 @@ const formatTime = (seconds: number): string => {
 };
 
 // Move this OUTSIDE the main App component and memoize it
-const QuestionPromptCard = memo(({ 
-  currentQuestion, 
-  onAsked, 
-  onSkipped 
-}: {
+const QuestionPromptCard = ({ currentQuestion, onAsked, onSkipped }: {
   currentQuestion: any;
   onAsked: () => void;
   onSkipped: () => void;

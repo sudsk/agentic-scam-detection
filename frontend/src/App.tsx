@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   AlertCircle, 
   CheckCircle, 
@@ -98,6 +98,15 @@ interface CustomerProfile {
     date: string;
     description: string;
   }[];
+}
+
+interface QuestionData {
+  id: string;
+  question: string;
+  context: string;
+  urgency: 'low' | 'medium' | 'high';
+  pattern: string;
+  riskLevel: number;
 }
 
 // ===== CONFIGURATION DATA =====
@@ -246,13 +255,16 @@ const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
-// Move this OUTSIDE the main App component and memoize it
-const QuestionPromptCard = ({ currentQuestion, onAsked, onSkipped }: {
-  currentQuestion: any;
+const QuestionPromptCard = ({ 
+  currentQuestion, 
+  onAsked, 
+  onSkipped 
+}: {
+  currentQuestion: QuestionData | null;
   onAsked: () => void;
   onSkipped: () => void;
 }) => {
-  console.log('🎨 RENDER DEBUG - QuestionPromptCard called (memoized)');
+  console.log('🎨 RENDER DEBUG - QuestionPromptCard called');
   
   if (!currentQuestion) {
     console.log('🎨 RENDER DEBUG - No question, returning null');
@@ -320,7 +332,7 @@ const QuestionPromptCard = ({ currentQuestion, onAsked, onSkipped }: {
       </div>
     </div>
   );
-});
+};
 
 function App() {
   // ===== CORE STATE =====
@@ -358,14 +370,7 @@ function App() {
   const [lastFinalSegmentTime, setLastFinalSegmentTime] = useState<number>(0);
 
   // ===== QUESTION PROMPT STATE =====
-  const [currentQuestion, setCurrentQuestion] = useState<{
-    id: string;
-    question: string;
-    context: string;
-    urgency: 'low' | 'medium' | 'high';
-    pattern: string;
-    riskLevel: number;
-  } | null>(null);
+  const [currentQuestion, setCurrentQuestion] = useState<QuestionData | null>(null);
 
   const lastQuestionRef = useRef<string>('');
   
@@ -627,30 +632,17 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     
     case 'question_prompt_ready':
       const questionData = message.data;
-      const questionText = questionData.question || 'Verify customer identity';
+      console.log('💡 QUESTION PROMPT - New question received');
       
-      console.log('💡 QUESTION PROMPT - Received question:', questionText);
-      console.log('💡 QUESTION PROMPT - Last question was:', lastQuestionRef.current);
-      
-      // PREVENT UI FLICKERING: Don't show same question text again
-      if (lastQuestionRef.current === questionText) {
-        console.log('💡 UI ANTI-FLICKER: Ignoring duplicate question text');
-        break;
-      }
-      
-      const newQuestion = {
+      const newQuestion: QuestionData = {
         id: questionData.question_id || `q_${Date.now()}`,
-        question: questionText,
+        question: questionData.question || 'Verify customer identity',
         context: questionData.context || 'Pattern detected',
         urgency: questionData.urgency || 'medium',
         pattern: questionData.pattern || 'unknown',
         riskLevel: questionData.risk_level || riskScore
       };
       
-      // Update ref BEFORE setting state
-      lastQuestionRef.current = questionText;
-      
-      console.log('💡 QUESTION PROMPT - Setting new question');
       setCurrentQuestion(newQuestion);
       setProcessingStage(`💡 Question: ${newQuestion.question.slice(0, 30)}...`);
       break;
@@ -887,7 +879,7 @@ Click OK to open the case in ServiceNow.
       setProcessingStage('✅ Question marked as asked');
     }
   }, [currentQuestion, ws, isConnected, sessionId]);
-
+  
   const handleQuestionSkipped = useCallback(() => {
     if (currentQuestion) {
       console.log('⏭️ UI: QUESTION SKIPPED - Sending to server');
@@ -989,96 +981,6 @@ Click OK to open the case in ServiceNow.
       }
     };
   }, []);
-
-  // Add this debug version of QuestionPromptCard to your App.tsx
-  
-  const QuestionPromptCard = () => {
-    console.log('🎨 RENDER DEBUG - QuestionPromptCard called');
-    console.log('🎨 RENDER DEBUG - currentQuestion:', currentQuestion);
-    console.log('🎨 RENDER DEBUG - currentQuestion is null?', currentQuestion === null);
-    
-    if (!currentQuestion) {
-      console.log('🎨 RENDER DEBUG - No question, returning null');
-      return null;
-    }
-  
-    console.log('🎨 RENDER DEBUG - Rendering question card for:', currentQuestion.question);
-  
-    const getUrgencyColor = (urgency: string) => {
-      switch (urgency) {
-        case 'high': return 'bg-red-50 border-red-300 text-red-800';
-        case 'medium': return 'bg-orange-50 border-orange-300 text-orange-800';
-        case 'low': return 'bg-yellow-50 border-yellow-300 text-yellow-800';
-        default: return 'bg-blue-50 border-blue-300 text-blue-800';
-      }
-    };
-  
-    const getUrgencyIcon = (urgency: string) => {
-      switch (urgency) {
-        case 'high': return '🚨';
-        case 'medium': return '⚠️';
-        case 'low': return '💡';
-        default: return '❓';
-      }
-    };
-  
-    return (
-      <div className="fixed top-4 right-4 z-50 w-96 animate-in slide-in-from-right duration-500">
-        <div className={`border-2 rounded-lg p-4 shadow-lg ${getUrgencyColor(currentQuestion.urgency)}`}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center space-x-2">
-              <span className="text-lg">{getUrgencyIcon(currentQuestion.urgency)}</span>
-              <span className="font-semibold text-sm">
-                SUGGESTED QUESTION - {currentQuestion.urgency.toUpperCase()} PRIORITY
-              </span>
-            </div>
-            <button 
-              onClick={() => {
-                console.log('🎨 RENDER DEBUG - Closing question card');
-                setCurrentQuestion(null);
-              }}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              ✕
-            </button>
-          </div>
-          
-          <div className="mb-3">
-            <p className="font-medium text-base leading-relaxed">
-              "{currentQuestion.question}"
-            </p>
-          </div>
-          
-          <div className="mb-4 text-xs">
-            <p><strong>Context:</strong> {currentQuestion.context}</p>
-            <p><strong>Triggered by:</strong> {currentQuestion.pattern.replace('_', ' ')} pattern</p>
-            <p><strong>Risk Level:</strong> {currentQuestion.riskLevel}%</p>
-          </div>
-          
-          <div className="flex space-x-2">
-            <button
-              onClick={() => {
-                console.log('🎨 RENDER DEBUG - Question asked');
-                handleQuestionAsked();
-              }}
-              className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-green-700 transition-colors"
-            >
-              ✓ Asked Customer
-            </button>
-            <button
-              onClick={() => {
-                console.log('🎨 RENDER DEBUG - Question skipped');
-                handleQuestionSkipped();
-              }}
-              className="flex-1 bg-gray-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-gray-700 transition-colors"
-            >
-              Skip Question
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
   
   // Enhanced transcript display component (simplified - no confidence/timestamps)
   const TranscriptDisplay = () => {
@@ -1181,7 +1083,6 @@ Click OK to open the case in ServiceNow.
       </header>
 
       {/* Question Prompt Card - Floating */}
-      {/* Use the memoized component */}
       <QuestionPromptCard 
         currentQuestion={currentQuestion}
         onAsked={handleQuestionAsked}

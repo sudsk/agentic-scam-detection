@@ -290,6 +290,8 @@ function App() {
     pattern: string;
     riskLevel: number;
   } | null>(null);
+
+  const lastQuestionRef = useRef<string>('');
   
   // ===== WEBSOCKET FUNCTIONS =====
 
@@ -549,18 +551,30 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     
     case 'question_prompt_ready':
       const questionData = message.data;
-      console.log('💡 QUESTION PROMPT - New question received');
+      const questionText = questionData.question || 'Verify customer identity';
+      
+      console.log('💡 QUESTION PROMPT - Received question:', questionText);
+      console.log('💡 QUESTION PROMPT - Last question was:', lastQuestionRef.current);
+      
+      // PREVENT UI FLICKERING: Don't show same question text again
+      if (lastQuestionRef.current === questionText) {
+        console.log('💡 UI ANTI-FLICKER: Ignoring duplicate question text');
+        break;
+      }
       
       const newQuestion = {
         id: questionData.question_id || `q_${Date.now()}`,
-        question: questionData.question || 'Verify customer identity',
+        question: questionText,
         context: questionData.context || 'Pattern detected',
         urgency: questionData.urgency || 'medium',
         pattern: questionData.pattern || 'unknown',
         riskLevel: questionData.risk_level || riskScore
       };
       
-      // LAYER 2: Simply replace current question (no duplicate checking)
+      // Update ref BEFORE setting state
+      lastQuestionRef.current = questionText;
+      
+      console.log('💡 QUESTION PROMPT - Setting new question');
       setCurrentQuestion(newQuestion);
       setProcessingStage(`💡 Question: ${newQuestion.question.slice(0, 30)}...`);
       break;
@@ -683,8 +697,9 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     setSessionId('');
     setServerProcessing(false);
 
-    // ADD these new lines to resetState function:
+    // Clear question state and ref
     setCurrentQuestion(null);
+    lastQuestionRef.current = '';
   };
 
   const loadAudioFiles = async (): Promise<void> => {
@@ -775,21 +790,29 @@ Click OK to open the case in ServiceNow.
 
   const handleQuestionAsked = () => {
     if (currentQuestion) {
-      console.log('✅ QUESTION ASKED:', currentQuestion.question);
+      console.log('✅ UI: QUESTION ASKED - Sending to server');
+      console.log('✅ UI: Question ID:', currentQuestion.id);
+      console.log('✅ UI: Session ID:', sessionId);
       
       // Send to server
       if (ws && isConnected && sessionId) {
-        ws.send(JSON.stringify({
+        const message = {
           type: 'agent_question_answered',
           data: {
             session_id: sessionId,
             question_id: currentQuestion.id,
             action: 'asked'
           }
-        }));
+        };
+        
+        console.log('✅ UI: Sending WebSocket message:', message);
+        ws.send(JSON.stringify(message));
+      } else {
+        console.log('❌ UI: Cannot send - WebSocket not connected');
       }
       
-      // Simply clear the question
+      // Clear the question and ref
+      lastQuestionRef.current = '';
       setCurrentQuestion(null);
       setProcessingStage('✅ Question marked as asked');
     }
@@ -797,21 +820,29 @@ Click OK to open the case in ServiceNow.
   
   const handleQuestionSkipped = () => {
     if (currentQuestion) {
-      console.log('⏭️ QUESTION SKIPPED:', currentQuestion.question);
+      console.log('⏭️ UI: QUESTION SKIPPED - Sending to server');
+      console.log('⏭️ UI: Question ID:', currentQuestion.id);
+      console.log('⏭️ UI: Session ID:', sessionId);
       
       // Send to server
       if (ws && isConnected && sessionId) {
-        ws.send(JSON.stringify({
+        const message = {
           type: 'agent_question_answered',
           data: {
             session_id: sessionId,
             question_id: currentQuestion.id,
             action: 'skipped'
           }
-        }));
+        };
+        
+        console.log('⏭️ UI: Sending WebSocket message:', message);
+        ws.send(JSON.stringify(message));
+      } else {
+        console.log('❌ UI: Cannot send - WebSocket not connected');
       }
       
-      // Simply clear the question
+      // Clear the question and ref
+      lastQuestionRef.current = '';
       setCurrentQuestion(null);
       setProcessingStage('⏭️ Question skipped');
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { 
   AlertCircle, 
   CheckCircle, 
@@ -245,6 +245,86 @@ const formatTime = (seconds: number): string => {
   const secs = Math.floor(seconds % 60);
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
+
+// Move this OUTSIDE the main App component and memoize it
+const QuestionPromptCard = memo(({ 
+  currentQuestion, 
+  onAsked, 
+  onSkipped 
+}: {
+  currentQuestion: any;
+  onAsked: () => void;
+  onSkipped: () => void;
+}) => {
+  console.log('🎨 RENDER DEBUG - QuestionPromptCard called (memoized)');
+  
+  if (!currentQuestion) {
+    console.log('🎨 RENDER DEBUG - No question, returning null');
+    return null;
+  }
+
+  console.log('🎨 RENDER DEBUG - Rendering question card for:', currentQuestion.question);
+
+  const getUrgencyColor = (urgency: string) => {
+    switch (urgency) {
+      case 'high': return 'bg-red-50 border-red-300 text-red-800';
+      case 'medium': return 'bg-orange-50 border-orange-300 text-orange-800';
+      case 'low': return 'bg-yellow-50 border-yellow-300 text-yellow-800';
+      default: return 'bg-blue-50 border-blue-300 text-blue-800';
+    }
+  };
+
+  const getUrgencyIcon = (urgency: string) => {
+    switch (urgency) {
+      case 'high': return '🚨';
+      case 'medium': return '⚠️';
+      case 'low': return '💡';
+      default: return '❓';
+    }
+  };
+
+  return (
+    <div className="fixed top-4 right-4 z-50 w-96">
+      <div className={`border-2 rounded-lg p-4 shadow-lg ${getUrgencyColor(currentQuestion.urgency)}`}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-2">
+            <span className="text-lg">{getUrgencyIcon(currentQuestion.urgency)}</span>
+            <span className="font-semibold text-sm">
+              SUGGESTED QUESTION - {currentQuestion.urgency.toUpperCase()} PRIORITY
+            </span>
+          </div>
+        </div>
+        
+        <div className="mb-3">
+          <p className="font-medium text-base leading-relaxed">
+            "{currentQuestion.question}"
+          </p>
+        </div>
+        
+        <div className="mb-4 text-xs">
+          <p><strong>Context:</strong> {currentQuestion.context}</p>
+          <p><strong>Triggered by:</strong> {currentQuestion.pattern.replace('_', ' ')} pattern</p>
+          <p><strong>Risk Level:</strong> {currentQuestion.riskLevel}%</p>
+        </div>
+        
+        <div className="flex space-x-2">
+          <button
+            onClick={onAsked}
+            className="flex-1 bg-green-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-green-700 transition-colors"
+          >
+            ✓ Asked Customer
+          </button>
+          <button
+            onClick={onSkipped}
+            className="flex-1 bg-gray-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-gray-700 transition-colors"
+          >
+            Skip Question
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 function App() {
   // ===== CORE STATE =====
@@ -788,13 +868,11 @@ Click OK to open the case in ServiceNow.
     }
   };
 
-  const handleQuestionAsked = () => {
+  // Memoize the question handlers to prevent re-creation
+  const handleQuestionAsked = useCallback(() => {
     if (currentQuestion) {
       console.log('✅ UI: QUESTION ASKED - Sending to server');
-      console.log('✅ UI: Question ID:', currentQuestion.id);
-      console.log('✅ UI: Session ID:', sessionId);
       
-      // Send to server
       if (ws && isConnected && sessionId) {
         const message = {
           type: 'agent_question_answered',
@@ -807,24 +885,17 @@ Click OK to open the case in ServiceNow.
         
         console.log('✅ UI: Sending WebSocket message:', message);
         ws.send(JSON.stringify(message));
-      } else {
-        console.log('❌ UI: Cannot send - WebSocket not connected');
       }
       
-      // Clear the question and ref
-      lastQuestionRef.current = '';
       setCurrentQuestion(null);
       setProcessingStage('✅ Question marked as asked');
     }
-  };
-  
-  const handleQuestionSkipped = () => {
+  }, [currentQuestion, ws, isConnected, sessionId]);
+
+  const handleQuestionSkipped = useCallback(() => {
     if (currentQuestion) {
       console.log('⏭️ UI: QUESTION SKIPPED - Sending to server');
-      console.log('⏭️ UI: Question ID:', currentQuestion.id);
-      console.log('⏭️ UI: Session ID:', sessionId);
       
-      // Send to server
       if (ws && isConnected && sessionId) {
         const message = {
           type: 'agent_question_answered',
@@ -837,35 +908,13 @@ Click OK to open the case in ServiceNow.
         
         console.log('⏭️ UI: Sending WebSocket message:', message);
         ws.send(JSON.stringify(message));
-      } else {
-        console.log('❌ UI: Cannot send - WebSocket not connected');
       }
       
-      // Clear the question and ref
-      lastQuestionRef.current = '';
       setCurrentQuestion(null);
       setProcessingStage('⏭️ Question skipped');
     }
-  };
+  }, [currentQuestion, ws, isConnected, sessionId]);
 
-  // Add this test function to your App.tsx (inside the component)
-  const testQuestionTrigger = () => {
-    console.log('🧪 TESTING: Manual question trigger');
-    
-    const testQuestion = {
-      id: `test_q_${Date.now()}`,
-      question: 'TEST: How long have you known this person?',
-      context: 'TEST: Manual trigger for debugging',
-      urgency: 'high' as const,
-      pattern: 'test_pattern',
-      riskLevel: 75
-    };
-    
-    console.log('🧪 TESTING: Setting test question:', testQuestion);
-    setCurrentQuestion(testQuestion);
-    setProcessingStage('🧪 TEST: Manual question triggered');
-  };  
-  
   // ===== COMPONENT FUNCTIONS =====
 
   const DemoCallButton = ({ audioFile }: { audioFile: RealAudioFile }) => (
@@ -1136,7 +1185,12 @@ Click OK to open the case in ServiceNow.
       </header>
 
       {/* Question Prompt Card - Floating */}
-      <QuestionPromptCard />
+      {/* Use the memoized component */}
+      <QuestionPromptCard 
+        currentQuestion={currentQuestion}
+        onAsked={handleQuestionAsked}
+        onSkipped={handleQuestionSkipped}
+      />
       
       {/* Simplified Demo Call Selection */}
       <div className="bg-white border-b border-gray-200 px-6 py-3">

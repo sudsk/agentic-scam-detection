@@ -37,30 +37,6 @@ class WarningSuppressionContext:
             'Check the full candidates.content.parts accessor'
         ]
 
-        # Simplified question tracking
-        self.session_questions: Dict[str, Dict] = {}  # session_id -> question state
-        
-    def _get_question_key(self, question: Dict) -> str:
-        """Generate unique key for a question"""
-        return f"{question.get('pattern', 'unknown')}_{question.get('urgency', 'medium')}_{hash(question.get('question', ''))}"
-    
-    def mark_question_answered(self, session_id: str, question_id: str, action: str):
-        """Mark question as answered/dismissed to allow new questions"""
-        if session_id in self.session_questions:
-            session_q = self.session_questions[session_id]
-            session_q['current_question_active'] = False
-            print(f"🔍 QUESTION {action.upper()}: {question_id[:20]}... - allowing new questions")
-    
-    async def _auto_deactivate_question(self, session_id: str, question_key: str, delay: float):
-        """Auto-deactivate question after delay"""
-        await asyncio.sleep(delay)
-        
-        if session_id in self.session_questions:
-            session_q = self.session_questions[session_id]
-            if session_q.get('last_question_key') == question_key:
-                session_q['current_question_active'] = False
-                print(f"🔍 AUTO-DEACTIVATE: Question {question_key[:20]}... auto-deactivated after {delay}s")
-    
     def __enter__(self):
         sys.stderr = self.suppressed_stderr
         return self
@@ -1405,59 +1381,45 @@ Please provide professional incident summary for ServiceNow case documentation.
             logger.error(f"❌ Error processing customer speech: {e}")
 
     async def _trigger_question_prompt(self, session_id: str, customer_text: str, detected_patterns: Dict, risk_score: float, callback: Optional[Callable]):
-        """Trigger question prompt with anti-flicker (no time delay)"""
+        """Trigger question prompt based on detected patterns with rate limiting"""
         try:
-            current_time = time.time()
-            
-            # Initialize session question tracking
-            if session_id not in self.session_questions:
-                self.session_questions[session_id] = {
-                    'sent_questions': set(),  # Track question keys already sent
-                    'current_question_active': False,
-                    'last_question_key': None
-                }
-            
-            session_q = self.session_questions[session_id]
-            
-            # RULE 1: Don't send if a question is currently active
-            if session_q['current_question_active']:
-                print(f"🔍 ANTI-FLICKER: Skipping - question currently active")
-                return
-            
-            print(f"🔍 QUESTION DEBUG - Proceeding with question check")
+            print(f"🔍 QUESTION DEBUG - _trigger_question_prompt called")
+            print(f"  - session_id: {session_id}")
             print(f"  - patterns: {list(detected_patterns.keys())}")
             print(f"  - risk_score: {risk_score}")
             
-            # Import and get question
+            # Rate limiting: Don't send questions too frequently
+            current_time = time.time()
+            last_question = self.last_question_sent.get(session_id, {})
+            
+            if last_question and (current_time - last_question.get('timestamp', 0)) < 5.0:
+                print(f"🔍 QUESTION DEBUG - Rate limited: Last question sent {current_time - last_question.get('timestamp', 0):.1f}s ago")
+                return
+            
+            # Import question triggers
             from ..config.question_triggers import select_best_question
+            
+            # Select best question for current context
+            print(f"🔍 QUESTION DEBUG - Calling select_best_question with:")
+            print(f"  - detected_patterns: {detected_patterns}")
+            print(f"  - risk_score: {risk_score}")
+            print(f"  - customer_text: '{customer_text[:50]}...'")
+            
             best_question = select_best_question(detected_patterns, risk_score, customer_text)
             
-            if not best_question:
-                print(f"🔍 QUESTION DEBUG - No question returned")
-                return
+            print(f"🔍 QUESTION DEBUG - select_best_question returned: {best_question}")
             
-            # Generate unique key for this question
-            question_key = self._get_question_key(best_question)
-            
-            # RULE 2: Don't send duplicate questions
-            if question_key in session_q['sent_questions']:
-                print(f"🔍 ANTI-FLICKER: Skipping duplicate question: {question_key}")
-                return
-            
-            # RULE 3: Don't send same question type too soon
-            if session_q['last_question_key'] == question_key:
-                print(f"🔍 ANTI-FLICKER: Skipping - same question as last: {question_key}")
-                return
-            
-            print(f"🔍 QUESTION DEBUG - Sending NEW question: {best_question['question'][:50]}...")
-            
-            if callback:
-                # Mark question as active BEFORE sending
-                session_q['current_question_active'] = True
-                session_q['sent_questions'].add(question_key)
-                session_q['last_question_key'] = question_key
+            if best_question and callback:
+                # Check if we already sent this exact question
+                question_id = f"{best_question['pattern']}_{best_question['question'][:20]}"
                 
-                # Send question to UI
+                if last_question.get('question_id') == question_id:
+                    print(f"🔍 QUESTION DEBUG - Duplicate question prevented: {question_id}")
+                    return
+                
+                print(f"🔍 QUESTION DEBUG - Sending new question: {best_question['question']}")
+                
+                # Send question prompt to UI
                 await callback({
                     'type': 'question_prompt_ready',
                     'data': {
@@ -1468,21 +1430,30 @@ Please provide professional incident summary for ServiceNow case documentation.
                         'pattern': best_question['pattern'],
                         'risk_level': risk_score,
                         'matched_phrases': best_question.get('matched_phrases', []),
-                        'question_id': question_key,  # Add unique ID
                         'timestamp': datetime.now().isoformat()
                     }
                 })
                 
-                print(f"✅ QUESTION SENT: {best_question['question'][:30]}... (key: {question_key})")
+                # Track this question to prevent duplicates
+                self.last_question_sent[session_id] = {
+                    'question_id': question_id,
+                    'timestamp': current_time,
+                    'question': best_question['question']
+                }
                 
-                # Auto-deactivate after 30 seconds (in case UI doesn't respond)
-                asyncio.create_task(self._auto_deactivate_question(session_id, question_key, 30.0))
-            
+                print(f"🔍 QUESTION DEBUG - Question sent successfully: {best_question['question'][:30]}...")
+                
+            else:
+                print(f"🔍 QUESTION DEBUG - No question to send:")
+                print(f"  - best_question exists: {best_question is not None}")
+                print(f"  - callback exists: {callback is not None}")
+                if best_question:
+                    print(f"  - question would be: {best_question.get('question', 'No question')}")
+                
         except Exception as e:
-            print(f"❌ QUESTION ERROR: {e}")
-            # Reset question state on error
-            if session_id in self.session_questions:
-                self.session_questions[session_id]['current_question_active'] = False
+            print(f"❌ QUESTION DEBUG - Error triggering question prompt: {e}")
+            import traceback
+            print(f"❌ TRACEBACK: {traceback.format_exc()}")
         
     async def _run_case_management(self, session_id: str, analysis: Dict, callback: Optional[Callable]):
         """Run case management with proper UI updates"""
@@ -1584,6 +1555,7 @@ Please provide professional incident summary for ServiceNow case documentation.
             # Clean up question tracking
             if session_id in self.last_question_sent:
                 del self.last_question_sent[session_id]
+                print(f"🧹 Cleaned up question tracking for {session_id}")                
                 
         except Exception as e:
             logger.error(f"❌ Cleanup error: {e}")

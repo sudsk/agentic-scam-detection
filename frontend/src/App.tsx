@@ -290,12 +290,6 @@ function App() {
     pattern: string;
     riskLevel: number;
   } | null>(null);
-  const [questionHistory, setQuestionHistory] = useState<Array<{
-    id: string;
-    question: string;
-    status: 'asked' | 'skipped' | 'pending';
-    timestamp: string;
-  }>>([]);
   
   // ===== WEBSOCKET FUNCTIONS =====
 
@@ -554,17 +548,11 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     // Replace the existing case for 'question_prompt_ready':
     
     case 'question_prompt_ready':
-      console.log('🔍 QUESTION DEBUG - Raw message:', message);
-      console.log('🔍 QUESTION DEBUG - Message data:', message.data);
-      
       const questionData = message.data;
-      console.log('🔍 QUESTION DEBUG - Question data:', questionData);
-      console.log('🔍 QUESTION DEBUG - Question text:', questionData.question);
-      console.log('🔍 QUESTION DEBUG - Context:', questionData.context);
-      console.log('🔍 QUESTION DEBUG - Urgency:', questionData.urgency);
+      console.log('💡 QUESTION PROMPT - New question received');
       
       const newQuestion = {
-        id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        id: questionData.question_id || `q_${Date.now()}`,
         question: questionData.question || 'Verify customer identity',
         context: questionData.context || 'Pattern detected',
         urgency: questionData.urgency || 'medium',
@@ -572,18 +560,9 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
         riskLevel: questionData.risk_level || riskScore
       };
       
-      console.log('🔍 QUESTION DEBUG - New question object:', newQuestion);
-      console.log('🔍 QUESTION DEBUG - Current question state before:', currentQuestion);
-      
+      // LAYER 2: Simply replace current question (no duplicate checking)
       setCurrentQuestion(newQuestion);
-      
-      console.log('🔍 QUESTION DEBUG - setCurrentQuestion called with:', newQuestion);
-      setProcessingStage(`💡 Question suggested: ${newQuestion.question.slice(0, 30)}...`);
-      
-      // Test if state is actually set
-      setTimeout(() => {
-        console.log('🔍 QUESTION DEBUG - Current question state after timeout:', currentQuestion);
-      }, 100);
+      setProcessingStage(`💡 Question: ${newQuestion.question.slice(0, 30)}...`);
       break;
       
     default:
@@ -706,7 +685,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
 
     // ADD these new lines to resetState function:
     setCurrentQuestion(null);
-    setQuestionHistory([]);    
   };
 
   const loadAudioFiles = async (): Promise<void> => {
@@ -797,28 +775,21 @@ Click OK to open the case in ServiceNow.
 
   const handleQuestionAsked = () => {
     if (currentQuestion) {
-      // Add to history
-      setQuestionHistory(prev => [...prev, {
-        id: currentQuestion.id,
-        question: currentQuestion.question,
-        status: 'asked',
-        timestamp: new Date().toISOString()
-      }]);
+      console.log('✅ QUESTION ASKED:', currentQuestion.question);
       
-      // Send to server if WebSocket connected
+      // Send to server
       if (ws && isConnected && sessionId) {
         ws.send(JSON.stringify({
-          type: 'agent_question_asked',
+          type: 'agent_question_answered',
           data: {
             session_id: sessionId,
             question_id: currentQuestion.id,
-            question: currentQuestion.question,
             action: 'asked'
           }
         }));
       }
       
-      // Clear current question
+      // Simply clear the question
       setCurrentQuestion(null);
       setProcessingStage('✅ Question marked as asked');
     }
@@ -826,28 +797,21 @@ Click OK to open the case in ServiceNow.
   
   const handleQuestionSkipped = () => {
     if (currentQuestion) {
-      // Add to history
-      setQuestionHistory(prev => [...prev, {
-        id: currentQuestion.id,
-        question: currentQuestion.question,
-        status: 'skipped',
-        timestamp: new Date().toISOString()
-      }]);
+      console.log('⏭️ QUESTION SKIPPED:', currentQuestion.question);
       
-      // Send to server if WebSocket connected
+      // Send to server
       if (ws && isConnected && sessionId) {
         ws.send(JSON.stringify({
-          type: 'agent_question_skipped',
+          type: 'agent_question_answered',
           data: {
             session_id: sessionId,
             question_id: currentQuestion.id,
-            question: currentQuestion.question,
             action: 'skipped'
           }
         }));
       }
       
-      // Clear current question
+      // Simply clear the question
       setCurrentQuestion(null);
       setProcessingStage('⏭️ Question skipped');
     }

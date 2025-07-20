@@ -1381,13 +1381,21 @@ Please provide professional incident summary for ServiceNow case documentation.
             logger.error(f"❌ Error processing customer speech: {e}")
 
     async def _trigger_question_prompt(self, session_id: str, customer_text: str, detected_patterns: Dict, risk_score: float, callback: Optional[Callable]):
-        """Simple question triggering - one question at a time"""
+        """Simple question triggering with debug logging"""
         try:
+            # DEBUG: Check current state
+            current_active = self.active_questions.get(session_id)
+            print(f"🔍 QUESTION STATE DEBUG:")
+            print(f"  - session_id: {session_id}")
+            print(f"  - current_active_question: {current_active}")
+            print(f"  - active_questions dict: {self.active_questions}")
+            
             # LAYER 1: Only one question active per session
-            if self.active_questions.get(session_id) is not None:
+            if current_active is not None:
+                print(f"❌ QUESTION BLOCKED: Active question exists: {current_active}")
                 return  # Question already active, don't send another
             
-            print(f"🔍 QUESTION CHECK - No active question, checking patterns")
+            print(f"✅ QUESTION CHECK - No active question, proceeding")
             print(f"  - patterns: {list(detected_patterns.keys())}")
             print(f"  - risk_score: {risk_score}")
             
@@ -1395,7 +1403,12 @@ Please provide professional incident summary for ServiceNow case documentation.
             from ..config.question_triggers import select_best_question
             best_question = select_best_question(detected_patterns, risk_score, customer_text)
             
-            if not best_question or not callback:
+            if not best_question:
+                print(f"❌ NO QUESTION FOUND")
+                return
+                
+            if not callback:
+                print(f"❌ NO CALLBACK AVAILABLE")
                 return
             
             # Generate simple question ID
@@ -1403,8 +1416,10 @@ Please provide professional incident summary for ServiceNow case documentation.
             
             # Mark as active BEFORE sending
             self.active_questions[session_id] = question_id
+            print(f"✅ MARKED ACTIVE: {question_id} for session {session_id}")
+            print(f"✅ Updated active_questions: {self.active_questions}")
             
-            print(f"✅ SENDING QUESTION: {best_question['question'][:50]}...")
+            print(f"✅ SENDING QUESTION: {best_question['question']}")
             
             # Send to UI
             await callback({
@@ -1421,16 +1436,32 @@ Please provide professional incident summary for ServiceNow case documentation.
                 }
             })
             
+            print(f"✅ QUESTION SENT SUCCESSFULLY")
+            
         except Exception as e:
             print(f"❌ QUESTION ERROR: {e}")
             # Clear active question on error
-            self.active_questions[session_id] = None
-
-    def mark_question_answered(self, session_id: str, question_id: str, action: str):
-        """Clear active question when answered/skipped"""
-        self.active_questions[session_id] = None
-        print(f"✅ QUESTION {action.upper()}: Cleared active question for {session_id}")
+            if session_id in self.active_questions:
+                self.active_questions[session_id] = None
+                print(f"🧹 CLEARED ACTIVE QUESTION due to error")
     
+    def mark_question_answered(self, session_id: str, question_id: str, action: str):
+        """Clear active question when answered/skipped with debug logging"""
+        print(f"🔄 MARK_QUESTION_ANSWERED called:")
+        print(f"  - session_id: {session_id}")
+        print(f"  - question_id: {question_id}")
+        print(f"  - action: {action}")
+        print(f"  - before: active_questions = {self.active_questions}")
+        
+        if session_id in self.active_questions:
+            self.active_questions[session_id] = None
+            print(f"✅ CLEARED active question for {session_id}")
+        else:
+            print(f"⚠️ Session {session_id} not found in active_questions")
+        
+        print(f"  - after: active_questions = {self.active_questions}")
+        print(f"✅ QUESTION {action.upper()}: Ready for new questions in {session_id}")
+
     async def _run_case_management(self, session_id: str, analysis: Dict, callback: Optional[Callable]):
         """Run case management with proper UI updates"""
         try:
@@ -1608,6 +1639,47 @@ class FraudDetectionWebSocketHandler:
         self.connection_manager = connection_manager
         self.orchestrator = FraudDetectionOrchestrator(connection_manager)
         logger.info("🔌 WebSocket Handler initialized with fixed ADK orchestrator")
+
+    async def handle_question_answered(self, websocket, client_id: str, data: Dict) -> None:
+        """Handle agent question answered/skipped"""
+        session_id = data.get('session_id')
+        question_id = data.get('question_id') 
+        action = data.get('action')  # 'asked' or 'skipped'
+        
+        print(f"🔄 WEBSOCKET: handle_question_answered called")
+        print(f"  - session_id: {session_id}")
+        print(f"  - question_id: {question_id}")
+        print(f"  - action: {action}")
+        
+        if not session_id or not question_id:
+            print(f"❌ WEBSOCKET: Missing session_id or question_id")
+            await self.send_error(websocket, client_id, "Missing session_id or question_id")
+            return
+        
+        try:
+            print(f"🔄 WEBSOCKET: Calling orchestrator.mark_question_answered")
+            
+            # THIS IS THE KEY CALL - Make sure it happens
+            self.orchestrator.mark_question_answered(session_id, question_id, action)
+            
+            print(f"✅ WEBSOCKET: mark_question_answered completed")
+            
+            # Send confirmation back
+            await self.send_message(websocket, client_id, {
+                'type': 'question_answer_acknowledged',
+                'data': {
+                    'session_id': session_id,
+                    'question_id': question_id,
+                    'action': action,
+                    'timestamp': datetime.now().isoformat()
+                }
+            })
+            
+            print(f"✅ WEBSOCKET: Confirmation sent")
+            
+        except Exception as e:
+            print(f"❌ WEBSOCKET: Error handling question answer: {e}")
+            await self.send_error(websocket, client_id, f"Failed to handle question answer: {str(e)}")
     
     async def handle_message(self, websocket, client_id: str, message: Dict[str, Any]) -> None:
         """Handle WebSocket messages"""
@@ -1625,7 +1697,10 @@ class FraudDetectionWebSocketHandler:
             #elif message_type == 'create_manual_case':
             #    await self.handle_manual_case_creation(websocket, client_id, data)
             elif message_type == 'processing_complete':
-                await self.handle_audio_completion(websocket, client_id, data)                
+                await self.handle_audio_completion(websocket, client_id, data)      
+            elif message_type == 'agent_question_answered':  # MAKE SURE THIS IS HERE
+                print(f"🔄 WEBSOCKET: Routing to handle_question_answered")
+                await self.handle_question_answered(websocket, client_id, data)                
             else:
                 await self.send_error(websocket, client_id, f"Unknown message type: {message_type}")
                 

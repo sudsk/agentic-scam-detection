@@ -222,7 +222,16 @@ class FraudDetectionOrchestrator:
             except Exception as e:
                 logger.warning(f"⚠️ Case management agent not available: {e}")
                 self.case_management_agent = None
+
+            # ADD THIS DEBUG CHECK:
+            logger.info(f"🔧 ADK Debug: agents={list(self.agents.keys())}")
+            logger.info(f"🔧 ADK Debug: runners={list(self.runners.keys())}")
+            logger.info(f"🔧 ADK Debug: session_service={self.session_service is not None}")
             
+            if not self.agents:
+                logger.error("❌ NO ADK AGENTS LOADED!")
+                return False
+        
             success = len(self.agents) > 0 and len(self.runners) > 0
             if success:
                 logger.info(f"✅ ADK system initialized with pre-defined agents: {len(self.agents)} agents, {len(self.runners)} runners")

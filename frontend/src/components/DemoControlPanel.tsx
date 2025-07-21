@@ -1,7 +1,3 @@
-## File: frontend/src/components/DemoControlPanel.tsx
-
-```typescript
-// frontend/src/components/DemoControlPanel.tsx - Enhanced Demo Control Panel
 import React from 'react';
 import { Play, Pause, Square, Settings, Eye, EyeOff, Zap, ZapOff } from 'lucide-react';
 
@@ -184,4 +180,3 @@ export const DemoControlPanel: React.FC<DemoControlPanelProps> = ({
 };
 
 export default DemoControlPanel;
-```

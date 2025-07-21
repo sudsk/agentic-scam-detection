@@ -1,6 +1,3 @@
-## File: frontend/src/components/DemoExplanationOverlay.tsx
-
-```typescript
 // frontend/src/components/DemoExplanationOverlay.tsx - Enhanced Demo Explanation UI
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Info, CheckCircle, Shield, FileText, X } from 'lucide-react';
@@ -192,4 +189,3 @@ export const DemoExplanationOverlay: React.FC<DemoExplanationOverlayProps> = ({
 };
 
 export default DemoExplanationOverlay;
-```

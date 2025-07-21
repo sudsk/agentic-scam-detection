@@ -1,4 +1,8 @@
-// Risk Score Breakdown Component for Banking Compliance
+// frontend/src/components/RiskScoreBreakdown.tsx
+// Complete Risk Score Breakdown Component for Banking Compliance
+
+import React, { useState, useEffect } from 'react';
+import { AlertTriangle, FileText, Info, CheckCircle } from 'lucide-react';
 
 interface RiskFactor {
   id: string;

@@ -1377,6 +1377,15 @@ Click OK to open the case in ServiceNow.
 
           {/* Live Alerts */}
           {/* Enhanced Live Alerts with Risk Factor Breakdown */}
+          console.log('🔍 LIVE ALERTS DEBUG:');
+          console.log('  - riskScore:', riskScore);
+          console.log('  - riskScore >= 40:', riskScore >= 40);
+          console.log('  - detectedPatterns:', detectedPatterns);
+          console.log('  - Object.keys(detectedPatterns):', Object.keys(detectedPatterns));
+          console.log('  - Object.keys(detectedPatterns).length:', Object.keys(detectedPatterns).length);
+          console.log('  - Object.keys(detectedPatterns).length > 0:', Object.keys(detectedPatterns).length > 0);
+          console.log('  - Final condition:', (riskScore >= 40 || Object.keys(detectedPatterns).length > 0));
+
           {(riskScore >= 40 || Object.keys(detectedPatterns).length > 0) && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">

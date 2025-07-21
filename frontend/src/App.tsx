@@ -268,11 +268,8 @@ const QuestionPromptCard = ({
 }) => {
   
   if (!currentQuestion) {
-    console.log('🎨 RENDER DEBUG - No question, returning null');
     return null;
   }
-
-  console.log('🎨 RENDER DEBUG - Rendering question card for:', currentQuestion.question);
 
   const getUrgencyColor = (urgency: string) => {
     switch (urgency) {
@@ -293,8 +290,8 @@ const QuestionPromptCard = ({
   };
 
   return (
-    <div className="fixed top-4 right-4 z-50 w-96">
-      <div className={`border-2 rounded-lg p-4 shadow-lg ${getUrgencyColor(currentQuestion.urgency)}`}>
+    <div className="absolute inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
+      <div className={`w-96 border-2 rounded-lg p-4 shadow-lg ${getUrgencyColor(currentQuestion.urgency)}`}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center space-x-2">
             <span className="text-lg">{getUrgencyIcon(currentQuestion.urgency)}</span>
@@ -533,6 +530,11 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       
     case 'fraud_analysis_update':
       const analysis = message.data;
+      
+      // ADD DEBUG HERE:
+      console.log('🔍 FRONTEND DEBUG: analysis.detected_patterns:', analysis.detected_patterns);
+      console.log('🔍 FRONTEND DEBUG: analysis.risk_score:', analysis.risk_score);
+      
       setRiskScore(analysis.risk_score || 0);
       setRiskLevel(analysis.risk_level || 'MINIMAL');
       setScamType(analysis.scam_type || 'unknown');
@@ -1104,13 +1106,6 @@ Click OK to open the case in ServiceNow.
         </div>
       </header>
 
-      {/* Question Prompt Card - Floating */}
-      <QuestionPromptCard 
-        currentQuestion={currentQuestion}
-        onAsked={handleQuestionAsked}
-        onSkipped={handleQuestionSkipped}
-      />
-      
       {/* Simplified Demo Call Selection */}
       <div className="bg-white border-b border-gray-200 px-6 py-3">
         <div className="flex items-center space-x-4">
@@ -1310,6 +1305,13 @@ Click OK to open the case in ServiceNow.
           </div>
           
           <TranscriptDisplay />
+
+          {/* Question Prompt Card - Now positioned over transcription */}
+          <QuestionPromptCard 
+            currentQuestion={currentQuestion}
+            onAsked={handleQuestionAsked}
+            onSkipped={handleQuestionSkipped}
+          />
           
         </div>
 

@@ -28,8 +28,6 @@ import {
 } from 'lucide-react';
 
 import RiskScoreBreakdown from './components/RiskScoreBreakdown';
-import DemoExplanationOverlay from './components/DemoExplanationOverlay';
-import DemoControlPanel from './components/DemoControlPanel';
 
 // Environment configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -385,7 +383,7 @@ function App() {
     demoEnhancements: false,
     coordination: false
   });
-  
+
   // ===== WEBSOCKET FUNCTIONS =====
 
   const connectWebSocket = (): void => {
@@ -668,19 +666,7 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       });
       setProcessingStage(`🎭 Hybrid Demo: ${message.data.script_title} (Real + Enhanced)`);
       break;
-    
-    case 'demo_explanation':
-      if (message.data.mode === 'hybrid') {
-        setDemoExplanation({
-          title: 'Demo Enhancement',
-          message: `${message.data.explanation.message} (Real processing + demo timing)`,
-          type: message.data.explanation.type,
-          riskLevel: message.data.explanation.riskLevel,
-          duration: message.data.explanation.duration
-        });
-      }
-      break;
-    
+   
     case 'demo_question_enhancement':
       // Show demo question as enhancement, not replacement
       setProcessingStage(`💡 Demo suggests: "${message.data.suggested_question}"`);
@@ -690,6 +676,7 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       setHybridMode(prev => ({ ...prev, enabled: false }));
       setProcessingStage(`✅ Hybrid demo complete: Real analysis + demo enhancements`);
       break;
+      
     default:
       console.log('❓ Unknown message type:', message.type);
       // Don't update processing stage for unknown messages to avoid confusion
@@ -982,7 +969,7 @@ Click OK to open the case in ServiceNow.
       {hybridMode.enabled ? (
         <div className="flex items-center space-x-1 text-purple-600">
           <Server className="w-4 h-4 animate-pulse" />
-          <span>Hybrid Demo (Real + Enhanced)</span>
+          <span>Hybrid Demo</span>
         </div>
       ) : serverProcessing ? (
         <div className="flex items-center space-x-1 text-blue-600">
@@ -1400,6 +1387,7 @@ Click OK to open the case in ServiceNow.
           </div>
 
           {/* Live Alerts */}
+          {/* Enhanced Live Alerts with Risk Factor Breakdown */}
           {(riskScore >= 40 || Object.keys(detectedPatterns).length > 0) && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
@@ -1407,6 +1395,7 @@ Click OK to open the case in ServiceNow.
                 Live Alerts
               </h4>
               
+              {/* Critical Risk Alert */}
               {riskScore >= 80 && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
                   <div className="flex items-center space-x-2">
@@ -1419,30 +1408,82 @@ Click OK to open the case in ServiceNow.
                        'FRAUD DETECTED'}
                     </span>
                   </div>
-                  <p className="text-xs text-red-700 mt-1">
-                    Analysis: {Object.keys(detectedPatterns).join(', ') || 'Multiple fraud indicators detected'}
+                  
+                  {/* Risk Factor Breakdown */}
+                  <div className="mt-2 space-y-1">
+                    {Object.entries(detectedPatterns).map(([patternName, pattern]) => (
+                      <div key={patternName} className="flex justify-between items-center text-xs">
+                        <span className="text-red-700">{patternName.replace('_', ' ')}</span>
+                        <span className="text-red-600 font-medium">
+                          {pattern.weight || 15}% ({pattern.count || 1}x)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <p className="text-xs text-red-700 mt-2">
+                    Total Risk: {riskScore}% - Immediate intervention required
                   </p>
                 </div>
               )}
               
+              {/* High Risk Alert */}
               {riskScore >= 60 && riskScore < 80 && (
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
                   <div className="flex items-center space-x-2">
                     <AlertCircle className="w-4 h-4 text-orange-600" />
                     <span className="text-sm font-medium text-orange-800">
-                      {scamType === 'romance_scam' ? 'EMOTIONAL MANIPULATION' :
-                       scamType === 'investment_scam' ? 'URGENCY PRESSURE' :
-                       'SUSPICIOUS ACTIVITY'}
+                      HIGH RISK INDICATORS DETECTED
                     </span>
                   </div>
-                  <p className="text-xs text-orange-700 mt-1">
-                    Server detected: {Object.keys(detectedPatterns).slice(0, 2).join(', ')} patterns  
+                  
+                  {/* Risk Factor Breakdown */}
+                  <div className="mt-2 space-y-1">
+                    {Object.entries(detectedPatterns).map(([patternName, pattern]) => (
+                      <div key={patternName} className="flex justify-between items-center text-xs">
+                        <span className="text-orange-700">{patternName.replace('_', ' ')}</span>
+                        <span className="text-orange-600 font-medium">
+                          {pattern.weight || 15}% ({pattern.count || 1}x)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <p className="text-xs text-orange-700 mt-2">
+                    Total Risk: {riskScore}% - Enhanced monitoring required
+                  </p>
+                </div>
+              )}
+              
+              {/* Medium Risk Alert */}
+              {riskScore >= 40 && riskScore < 60 && Object.keys(detectedPatterns).length > 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
+                  <div className="flex items-center space-x-2">
+                    <AlertCircle className="w-4 h-4 text-yellow-600" />
+                    <span className="text-sm font-medium text-yellow-800">
+                      POTENTIAL RISK INDICATORS
+                    </span>
+                  </div>
+                  
+                  {/* Risk Factor Breakdown */}
+                  <div className="mt-2 space-y-1">
+                    {Object.entries(detectedPatterns).map(([patternName, pattern]) => (
+                      <div key={patternName} className="flex justify-between items-center text-xs">
+                        <span className="text-yellow-700">{patternName.replace('_', ' ')}</span>
+                        <span className="text-yellow-600 font-medium">
+                          {pattern.weight || 10}% ({pattern.count || 1}x)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <p className="text-xs text-yellow-700 mt-2">
+                    Total Risk: {riskScore}% - Monitoring recommended
                   </p>
                 </div>
               )}
             </div>
           )}
-
           {/* Recommended Actions */}
           {policyGuidance && safeLength(policyGuidance.recommended_actions) > 0 && (
             <div className="p-4 border-b border-gray-200">
@@ -1500,10 +1541,9 @@ Click OK to open the case in ServiceNow.
               </div>
             </div>
           )}
-
-          {/* REMOVED: Key Questions section - now handled by floating prompts */}
           
           {/* Customer Education */}
+          {/* REMOVED: Customer Education
           {policyGuidance && safeLength(policyGuidance.customer_education) > 0 && (
             <div className="p-4 flex-1">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">

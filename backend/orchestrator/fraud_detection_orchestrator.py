@@ -1117,6 +1117,9 @@ Please provide professional incident summary for ServiceNow case documentation.
                 elif isinstance(parsed['detected_patterns'], str):
                     # Handle comma-separated or other formats
                     raw_patterns = [p.strip() for p in parsed['detected_patterns'].split(',')]
+
+            # After extracting raw_patterns, add:
+            logger.info(f"🔍 RAW PATTERNS from ADK: {raw_patterns}")
             
             # STEP 1: Map raw patterns to clean names using config
             clean_patterns = {}
@@ -1149,11 +1152,13 @@ Please provide professional incident summary for ServiceNow case documentation.
                     clean_name = matched_config['name']
                     weight = matched_config['weight']
                     severity = matched_config['severity']
+                    logger.info(f"   ✅ Matched to: {matched_config['name']} ({matched_config['weight']}%)")
                 else:
                     # Fallback for unrecognized patterns
                     clean_name = raw_pattern.replace('_', ' ').title()
                     weight = 10  # Default weight
                     severity = 'low'
+                    logger.info(f"   ❌ No match found, using fallback")
                 
                 # STEP 2: Deduplicate and accumulate counts
                 if clean_name in clean_patterns:

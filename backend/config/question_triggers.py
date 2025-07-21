@@ -93,41 +93,41 @@ QUESTION_TRIGGERS = {
 
 def get_questions_for_pattern(pattern_name: str, risk_score: float, customer_text: str) -> List[Dict[str, Any]]:
     """Get relevant questions for a detected pattern with enhanced debugging"""
-    print(f"🔍 PATTERN DEBUG - get_questions_for_pattern called:")
-    print(f"  - pattern_name: '{pattern_name}'")
-    print(f"  - risk_score: {risk_score}")
-    print(f"  - customer_text: '{customer_text[:100]}...'")
+    #print(f"🔍 PATTERN DEBUG - get_questions_for_pattern called:")
+    #print(f"  - pattern_name: '{pattern_name}'")
+    #print(f"  - risk_score: {risk_score}")
+    #print(f"  - customer_text: '{customer_text[:100]}...'")
     
     pattern_questions = QUESTION_TRIGGERS.get(pattern_name, [])
-    print(f"🔍 PATTERN DEBUG - Found {len(pattern_questions)} potential questions for '{pattern_name}'")
+    #print(f"🔍 PATTERN DEBUG - Found {len(pattern_questions)} potential questions for '{pattern_name}'")
     
     if not pattern_questions:
-        print(f"🔍 PATTERN DEBUG - No questions found for pattern '{pattern_name}'")
-        print(f"🔍 PATTERN DEBUG - Available patterns: {list(QUESTION_TRIGGERS.keys())}")
+        #print(f"🔍 PATTERN DEBUG - No questions found for pattern '{pattern_name}'")
+        #print(f"🔍 PATTERN DEBUG - Available patterns: {list(QUESTION_TRIGGERS.keys())}")
         return []
     
     relevant_questions = []
     customer_text_lower = customer_text.lower()
     
     for i, question_config in enumerate(pattern_questions):
-        print(f"🔍 PATTERN DEBUG - Checking question {i+1}:")
-        print(f"  - question: {question_config['question']}")
-        print(f"  - risk_threshold: {question_config['risk_threshold']}")
-        print(f"  - trigger_phrases: {question_config['trigger_phrases']}")
+        #print(f"🔍 PATTERN DEBUG - Checking question {i+1}:")
+        #print(f"  - question: {question_config['question']}")
+        #print(f"  - risk_threshold: {question_config['risk_threshold']}")
+        #print(f"  - trigger_phrases: {question_config['trigger_phrases']}")
         
         # Check if risk threshold is met
         if risk_score >= question_config['risk_threshold']:
-            print(f"  ✅ Risk threshold met: {risk_score} >= {question_config['risk_threshold']}")
+            #print(f"  ✅ Risk threshold met: {risk_score} >= {question_config['risk_threshold']}")
             
             # Check if trigger phrases are present
             phrase_matches = []
             for phrase in question_config['trigger_phrases']:
                 if phrase.lower() in customer_text_lower:
                     phrase_matches.append(phrase)
-                    print(f"  ✅ Found trigger phrase: '{phrase}'")
+                    #print(f"  ✅ Found trigger phrase: '{phrase}'")
             
             if phrase_matches:
-                print(f"  ✅ Question qualifies! Matched phrases: {phrase_matches}")
+                #print(f"  ✅ Question qualifies! Matched phrases: {phrase_matches}")
                 relevant_questions.append({
                     **question_config,
                     'matched_phrases': phrase_matches,
@@ -138,29 +138,29 @@ def get_questions_for_pattern(pattern_name: str, risk_score: float, customer_tex
         else:
             print(f"  ❌ Risk threshold not met: {risk_score} < {question_config['risk_threshold']}")
     
-    print(f"🔍 PATTERN DEBUG - Returning {len(relevant_questions)} relevant questions")
+    #print(f"🔍 PATTERN DEBUG - Returning {len(relevant_questions)} relevant questions")
     return relevant_questions
 
 def select_best_question(detected_patterns: Dict, risk_score: float, customer_text: str) -> Dict[str, Any]:
     """Select the best question to show based on patterns and risk with enhanced debugging"""
-    print(f"🔍 QUESTION SELECT DEBUG - select_best_question called:")
-    print(f"  - detected_patterns: {detected_patterns}")
-    print(f"  - detected_patterns keys: {list(detected_patterns.keys()) if detected_patterns else 'None'}")
-    print(f"  - risk_score: {risk_score}")
-    print(f"  - customer_text: '{customer_text[:100]}...'")
+    #print(f"🔍 QUESTION SELECT DEBUG - select_best_question called:")
+    #print(f"  - detected_patterns: {detected_patterns}")
+    #print(f"  - detected_patterns keys: {list(detected_patterns.keys()) if detected_patterns else 'None'}")
+    #print(f"  - risk_score: {risk_score}")
+    #print(f"  - customer_text: '{customer_text[:100]}...'")
     
     all_questions = []
     
     for pattern_name in detected_patterns.keys():
-        print(f"🔍 QUESTION SELECT DEBUG - Processing pattern: '{pattern_name}'")
+        #print(f"🔍 QUESTION SELECT DEBUG - Processing pattern: '{pattern_name}'")
         questions = get_questions_for_pattern(pattern_name, risk_score, customer_text)
-        print(f"🔍 QUESTION SELECT DEBUG - Got {len(questions)} questions for '{pattern_name}'")
+        #print(f"🔍 QUESTION SELECT DEBUG - Got {len(questions)} questions for '{pattern_name}'")
         all_questions.extend(questions)
     
-    print(f"🔍 QUESTION SELECT DEBUG - Total questions collected: {len(all_questions)}")
+    #print(f"🔍 QUESTION SELECT DEBUG - Total questions collected: {len(all_questions)}")
     
     if not all_questions:
-        print(f"🔍 QUESTION SELECT DEBUG - No questions found, returning None")
+        #print(f"🔍 QUESTION SELECT DEBUG - No questions found, returning None")
         return None
     
     # Sort by urgency and risk threshold
@@ -171,10 +171,10 @@ def select_best_question(detected_patterns: Dict, risk_score: float, customer_te
     )
     
     selected_question = all_questions[0]
-    print(f"🔍 QUESTION SELECT DEBUG - Selected question:")
-    print(f"  - question: {selected_question['question']}")
-    print(f"  - urgency: {selected_question['urgency']}")
-    print(f"  - pattern: {selected_question['pattern']}")
-    print(f"  - matched_phrases: {selected_question.get('matched_phrases', [])}")
+    #print(f"🔍 QUESTION SELECT DEBUG - Selected question:")
+    #print(f"  - question: {selected_question['question']}")
+    #print(f"  - urgency: {selected_question['urgency']}")
+    #print(f"  - pattern: {selected_question['pattern']}")
+    #print(f"  - matched_phrases: {selected_question.get('matched_phrases', [])}")
     
     return selected_question

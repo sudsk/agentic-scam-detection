@@ -18,7 +18,6 @@ from io import StringIO
 
 # Import demo functionality
 from ..config.demo_scripts import getDemoScript, DEMO_CONFIG
-from .demo_orchestrator import DemoOrchestrator
 from .demo_orchestrator import DemoOrchestrator, getDemoScript
 
 # Suppress warnings at the top
@@ -111,7 +110,7 @@ class FraudDetectionOrchestrator:
 
         # Initialize demo orchestrator
         self.demo_orchestrator = DemoOrchestrator(self)
-        self.demo_mode_enabled = settings.demo_mode if hasattr(settings, 'demo_mode') else True
+        self.demo_mode_enabled = getattr(settings, 'demo_mode', True)
         logger.info(f"🎭 Demo orchestrator initialized - enabled: {self.demo_mode_enabled}")
      
     def _initialize_servicenow(self):

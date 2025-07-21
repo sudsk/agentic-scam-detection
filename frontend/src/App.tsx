@@ -28,8 +28,8 @@ import {
 } from 'lucide-react';
 
 import RiskScoreBreakdown from './components/RiskScoreBreakdown';
-import RiskScoreBreakdown from './components/RiskScoreBreakdown';
-import RiskScoreBreakdown from './components/RiskScoreBreakdown';
+import DemoExplanationOverlay from './components/DemoExplanationOverlay';
+import DemoControlPanel from './components/DemoControlPanel';
 
 // Environment configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';

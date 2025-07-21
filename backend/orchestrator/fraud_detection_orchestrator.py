@@ -1611,6 +1611,9 @@ Please provide professional incident summary for ServiceNow case documentation.
                     scam_analysis = analysis_result.get('scam_analysis', {})
                     risk_score = scam_analysis.get('risk_score', 0)
 
+                    logger.info(f"🔍 WEBSOCKET SEND: detected_patterns type = {type(self.accumulated_patterns.get(session_id, {}))}")
+                    logger.info(f"🔍 WEBSOCKET SEND: detected_patterns = {self.accumulated_patterns.get(session_id, {})}")
+                    
                     await callback({
                         'type': 'fraud_analysis_update',
                         'data': {

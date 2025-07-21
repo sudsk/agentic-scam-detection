@@ -1,6 +1,3 @@
-## File: backend/orchestrator/demo_orchestrator.ts
-
-```typescript
 // backend/orchestrator/demo_orchestrator.ts - Demo Mode Integration
 """
 Demo orchestrator that integrates scripted demo events with the main fraud detection orchestrator
@@ -359,4 +356,4 @@ export class DemoOrchestrator {
 }
 
 export default DemoOrchestrator;
-```
+

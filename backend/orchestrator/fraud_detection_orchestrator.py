@@ -16,6 +16,10 @@ from typing import Dict, Any, Optional, List, Callable
 import uuid
 from io import StringIO
 
+# Import demo functionality
+from ..config.demo_scripts import getDemoScript, DEMO_CONFIG
+from .demo_orchestrator import DemoOrchestrator
+
 # Suppress warnings at the top
 warnings.filterwarnings('ignore')
 os.environ['GRPC_VERBOSITY'] = 'ERROR'
@@ -103,6 +107,11 @@ class FraudDetectionOrchestrator:
 
         # SIMPLE: Just track if a question is currently shown
         self.active_questions: Dict[str, Optional[str]] = {}  # session_id -> current_question_id or None
+
+        # Initialize demo orchestrator
+        self.demo_orchestrator = DemoOrchestrator(self)
+        self.demo_mode_enabled = settings.demo_mode if hasattr(settings, 'demo_mode') else True
+        logger.info(f"🎭 Demo orchestrator initialized - enabled: {self.demo_mode_enabled}")
      
     def _initialize_servicenow(self):
         """Initialize ServiceNow service"""
@@ -275,11 +284,44 @@ class FraudDetectionOrchestrator:
             
             # Initialize session
             await self._initialize_session(session_id, filename, callback)
+
+            # 🎭 HYBRID DEMO: Start demo overlay but continue with real processing
+            demo_script = getDemoScript(filename)
+            if demo_script and self.demo_mode_enabled:
+                logger.info(f"🎭 Hybrid Demo Mode: Real processing + scripted enhancements for {filename}")
+                
+                # Start demo orchestrator in background (non-blocking)
+                demo_task = asyncio.create_task(
+                    self.demo_orchestrator.start_demo_overlay(
+                        demo_script, 
+                        callback,
+                        session_id  # Pass session_id for coordination
+                    )
+                )
+                
+                # Store demo task for cleanup
+                if not hasattr(self, 'demo_tasks'):
+                    self.demo_tasks = {}
+                self.demo_tasks[session_id] = demo_task
+                
+                # Send hybrid demo started message
+                if callback:
+                    await callback({
+                        'type': 'hybrid_demo_started',
+                        'data': {
+                            'session_id': session_id,
+                            'script_title': demo_script.title,
+                            'mode': 'hybrid',
+                            'real_processing': True,
+                            'demo_enhancements': True,
+                            'timestamp': get_current_timestamp()
+                        }
+                    })
             
-            # Create callback
-            audio_callback = self._create_audio_callback(session_id, callback)
+            # Create enhanced callback that coordinates with demo
+            audio_callback = self._create_hybrid_audio_callback(session_id, callback)
             
-            # Start audio processing
+            # 🎵 REAL AUDIO PROCESSING HAPPENS
             try:
                 from ..agents.audio_processor.agent import audio_processor_agent
                 result = await audio_processor_agent.start_realtime_processing(
@@ -299,16 +341,66 @@ class FraudDetectionOrchestrator:
                 'success': True,
                 'session_id': session_id,
                 'orchestrator': 'FraudDetectionOrchestrator',
+                'mode': 'hybrid_demo' if demo_script else 'production',
                 'agents_available': len(self.agents) > 0,
                 'adk_session_service': self.session_service is not None,
-                'audio_duration': result.get('audio_duration', 0)
+                'audio_duration': result.get('audio_duration', 0),
+                'demo_script': demo_script.title if demo_script else None
             }
             
         except Exception as e:
             logger.error(f"❌ Orchestrator error: {e}")
             await self._cleanup_session(session_id)
             return {'success': False, 'error': str(e)}
+            
+    def _create_hybrid_audio_callback(self, session_id: str, external_callback: Optional[Callable]) -> Callable:
+        """Create audio callback that coordinates with demo orchestrator"""
+        async def hybrid_callback(message_data: Dict) -> None:
+            try:
+                # Send to external callback first
+                if external_callback:
+                    await external_callback(message_data)
     
+                # Handle processing_complete in orchestrator
+                if message_data.get('type') == 'processing_complete':
+                    logger.info(f"🔍 HYBRID: Real audio processing complete for {session_id}")
+                    
+                    # Stop demo overlay if running
+                    if hasattr(self, 'demo_tasks') and session_id in self.demo_tasks:
+                        demo_task = self.demo_tasks[session_id]
+                        if not demo_task.done():
+                            await self.demo_orchestrator.coordinate_completion(session_id)
+                    
+                    # Continue with call completion
+                    await self.handle_call_completion(session_id, external_callback)
+            
+                # Coordinate with demo for customer speech
+                await self._handle_hybrid_audio_message(session_id, message_data)
+                
+            except Exception as e:
+                logger.error(f"❌ Hybrid callback error: {e}")
+        
+        return hybrid_callback
+
+    async def _handle_hybrid_audio_message(self, session_id: str, message_data: Dict):
+        """Handle audio messages with demo coordination"""
+        message_type = message_data.get('type')
+        data = message_data.get('data', {})
+        
+        if message_type == 'transcription_segment':
+            speaker = data.get('speaker')
+            text = data.get('text', '')
+            
+            if speaker == 'customer' and text.strip():
+                # Notify demo orchestrator of real customer speech
+                if hasattr(self, 'demo_tasks') and session_id in self.demo_tasks:
+                    await self.demo_orchestrator.handle_real_customer_speech(
+                        session_id, text, data
+                    )
+                
+                # Continue with normal processing
+                await self._process_customer_speech(session_id, text, data)
+            
     async def orchestrate_text_analysis(
         self,
         customer_text: str,
@@ -1550,6 +1642,18 @@ Please provide professional incident summary for ServiceNow case documentation.
     async def _cleanup_session(self, session_id: str):
         """Clean up session data"""
         try:
+            # Cleanup demo task
+            if hasattr(self, 'demo_tasks') and session_id in self.demo_tasks:
+                demo_task = self.demo_tasks[session_id]
+                if not demo_task.done():
+                    demo_task.cancel()
+                del self.demo_tasks[session_id]
+            
+            # Stop demo orchestrator for this session
+            if hasattr(self, 'demo_orchestrator'):
+                await self.demo_orchestrator.stop_session_demo(session_id)      
+                
+            # Existing cleanup code
             if session_id in self.active_sessions:
                 del self.active_sessions[session_id]
             if session_id in self.customer_speech_buffer:
@@ -1558,10 +1662,8 @@ Please provide professional incident summary for ServiceNow case documentation.
                 del self.session_analysis_history[session_id]
             if session_id in self.accumulated_patterns:
                 del self.accumulated_patterns[session_id]
-
-            # Clear active question            
             if session_id in self.active_questions:
-                del self.active_questions[session_id]            
+                del self.active_questions[session_id]       
                 
         except Exception as e:
             logger.error(f"❌ Cleanup error: {e}")

@@ -304,20 +304,6 @@ class FraudDetectionOrchestrator:
                     self.demo_tasks = {}
                 self.demo_tasks[session_id] = demo_task
                 
-                # Send hybrid demo started message
-                if callback:
-                    await callback({
-                        'type': 'hybrid_demo_started',
-                        'data': {
-                            'session_id': session_id,
-                            'script_title': demo_script.title,
-                            'mode': 'hybrid',
-                            'real_processing': True,
-                            'demo_enhancements': True,
-                            'timestamp': get_current_timestamp()
-                        }
-                    })
-            
             # Create enhanced callback that coordinates with demo
             audio_callback = self._create_hybrid_audio_callback(session_id, callback)
             

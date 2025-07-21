@@ -113,6 +113,9 @@ class FraudDetectionOrchestrator:
         self.demo_orchestrator = DemoOrchestrator(self)
         self.demo_mode_enabled = getattr(self.settings, 'demo_mode', True)
         logger.info(f"🎭 Demo orchestrator initialized - enabled: {self.demo_mode_enabled}")
+
+        # ADD THIS LINE: Track analyzed speech to prevent duplicates
+        self.analyzed_speech_segments: Dict[str, List[str]] = {}
      
     def _initialize_servicenow(self):
         """Initialize ServiceNow service"""
@@ -1224,13 +1227,14 @@ Please provide professional incident summary for ServiceNow case documentation.
             # STEP 5: Calculate total risk score
             total_pattern_risk = 0
             for pattern in session_patterns.values():
-                # Risk = weight * count, with diminishing returns
-                pattern_risk = pattern['weight']
-                if pattern['count'] > 1:
-                    # Diminishing returns: 50% for subsequent occurrences
-                    pattern_risk += (pattern['count'] - 1) * (pattern['weight'] * 0.5)
-                total_pattern_risk += pattern_risk
-            
+                base_weight = pattern['weight']
+                extra_occurrences = max(0, pattern['count'] - 1)
+                diminishing_weight = extra_occurrences * (base_weight * 0.5)
+                pattern_total_risk = base_weight + diminishing_weight
+                total_pattern_risk += pattern_total_risk
+                # Debug log to verify math
+                logger.info(f"   MATH CHECK: {pattern['pattern_name']} = {base_weight}% + ({extra_occurrences} × {base_weight * 0.5}%) = {pattern_total_risk}%")
+
             # Cap at maximum and add baseline
             baseline_risk = 5
             calculated_risk = min(baseline_risk + total_pattern_risk, 100)
@@ -1244,8 +1248,12 @@ Please provide professional incident summary for ServiceNow case documentation.
             # Enhanced logging
             logger.info(f"🧹 CLEAN PATTERNS: {session_id} - {len(session_patterns)} unique patterns, {calculated_risk:.0f}% total risk")
             for name, data in session_patterns.items():
-                effective_weight = data['weight'] + ((data['count'] - 1) * data['weight'] * 0.5) if data['count'] > 1 else data['weight']
-                logger.info(f"   • {name}: {data['weight']}% x{data['count']} = {effective_weight:.0f}% [{data['severity']}]")
+                base_weight = data['weight']
+                extra_occurrences = max(0, data['count'] - 1)
+                diminishing_weight = extra_occurrences * (base_weight * 0.5)
+                total_weight = base_weight + diminishing_weight
+                
+                logger.info(f"   • {name}: {base_weight}% + ({extra_occurrences} × {base_weight * 0.5}%) = {total_weight:.0f}% [{data['severity']}]")
             
             return parsed
             
@@ -1553,19 +1561,46 @@ Please provide professional incident summary for ServiceNow case documentation.
         try:
             if session_id not in self.customer_speech_buffer:
                 self.customer_speech_buffer[session_id] = []
-            
+
+            # Add to speech buffer            
             self.customer_speech_buffer[session_id].append({
                 'text': customer_text,
                 'timestamp': segment_data.get('start', 0),
                 'confidence': segment_data.get('confidence', 0.0)
             })
-            
-            # Trigger analysis for meaningful speech
+
+            # DEDUPLICATION: Check if this speech segment is new enough to analyze
+            if session_id not in self.analyzed_speech_segments:
+                self.analyzed_speech_segments[session_id] = []
+                
+            # Get accumulated speech
             accumulated_speech = " ".join([
                 segment['text'] for segment in self.customer_speech_buffer[session_id]
             ])
+
+            # DEDUPLICATION: Only analyze if we have significant new content
+            should_analyze = False
+
+            if len(self.analyzed_speech_segments[session_id]) == 0:
+                # First analysis
+                should_analyze = True
+                logger.info(f"🔍 ANALYSIS TRIGGER: First customer speech")
             
-            if len(accumulated_speech.strip()) >= 15:
+            elif len(accumulated_speech.strip()) >= 15:
+                # Check if we have enough new content since last analysis
+                last_analyzed_length = len(" ".join(self.analyzed_speech_segments[session_id]))
+                new_content_length = len(accumulated_speech) - last_analyzed_length
+
+                if new_content_length >= 10:  # At least 10 new characters
+                    should_analyze = True
+                    logger.info(f"🔍 ANALYSIS TRIGGER: {new_content_length} new characters")
+                else:
+                    logger.info(f"🔍 ANALYSIS SKIPPED: Only {new_content_length} new characters")
+
+            if should_analyze:
+                # Store what we're analyzing to prevent re-analysis
+                self.analyzed_speech_segments[session_id].append(customer_text)
+            
                 # Get callback for this session
                 session_data = self.active_sessions.get(session_id, {})
                 callback = session_data.get('callback')
@@ -1577,6 +1612,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                         'data': {
                             'session_id': session_id,
                             'customer_text': customer_text,
+                            'accumulated_length': len(accumulated_speech),
                             'timestamp': datetime.now().isoformat()
                         }
                     })
@@ -1589,11 +1625,6 @@ Please provide professional incident summary for ServiceNow case documentation.
                     scam_analysis = analysis_result.get('scam_analysis', {})
                     risk_score = scam_analysis.get('risk_score', 0)
 
-                    print(f"🎙️ CUSTOMER SPEECH DEBUG - Sending fraud analysis update")
-                    print(f"🎙️ CUSTOMER SPEECH DEBUG - Risk score: {risk_score}")
-                    print(f"🎙️ CUSTOMER SPEECH DEBUG - Patterns: {self.accumulated_patterns.get(session_id, {})}")
-                      
-                    
                     await callback({
                         'type': 'fraud_analysis_update',
                         'data': {
@@ -1603,6 +1634,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                             'scam_type': scam_analysis.get('scam_type', 'unknown'),
                             'detected_patterns': self.accumulated_patterns.get(session_id, {}),
                             'confidence': scam_analysis.get('confidence', 0.0),
+                            'analysis_trigger': 'new_content',                            
                             'timestamp': datetime.now().isoformat()
                         }
                     })
@@ -1619,22 +1651,16 @@ Please provide professional incident summary for ServiceNow case documentation.
                             }
                         })
 
-                    # *** THIS IS THE KEY PART - ADD DEBUG HERE ***
-                    print(f"🔥 QUESTION DEBUG - About to call _trigger_question_prompt")
-                    print(f"🔥 QUESTION DEBUG - Session ID: {session_id}")
-                    print(f"🔥 QUESTION DEBUG - Accumulated speech: {accumulated_speech[:50]}...")
-                    print(f"🔥 QUESTION DEBUG - Patterns: {self.accumulated_patterns.get(session_id, {})}")
-                    print(f"🔥 QUESTION DEBUG - Risk score: {risk_score}")
-                    print(f"🔥 QUESTION DEBUG - Callback: {callback is not None}")
-                    
                     # NEW: Trigger question prompt after analysis update
                     await self._trigger_question_prompt(
                         session_id, accumulated_speech, 
                         self.accumulated_patterns.get(session_id, {}),
                         risk_score, callback
                     )
-                    print(f"🔥 QUESTION DEBUG - _trigger_question_prompt completed")
-                
+
+            else:
+                logger.info(f"🔍 SPEECH DEDUPLICATION: Skipped analysis for similar content")
+         
         except Exception as e:
             logger.error(f"❌ Error processing customer speech: {e}")
 
@@ -1830,7 +1856,10 @@ Please provide professional incident summary for ServiceNow case documentation.
                 del self.accumulated_patterns[session_id]
             if session_id in self.active_questions:
                 del self.active_questions[session_id]       
-                
+
+            if session_id in self.analyzed_speech_segments:
+                del self.analyzed_speech_segments[session_id]
+            
         except Exception as e:
             logger.error(f"❌ Cleanup error: {e}")
     

@@ -19,6 +19,7 @@ from io import StringIO
 # Import demo functionality
 from ..config.demo_scripts import getDemoScript, DEMO_CONFIG
 from .demo_orchestrator import DemoOrchestrator, getDemoScript
+from ..config.fraud_patterns import FRAUD_PATTERN_CONFIG
 
 # Suppress warnings at the top
 warnings.filterwarnings('ignore')
@@ -1095,46 +1096,130 @@ Please provide professional incident summary for ServiceNow case documentation.
         
         return str(input_data)
 
-# ===== PARSING METHODS =====
+    # ===== PARSING METHODS =====
     
     async def _parse_and_accumulate_patterns(self, session_id: str, analysis_result: str) -> Dict[str, Any]:
-        """Parse analysis and accumulate patterns"""
+        """
+        ENHANCED: Parse analysis and accumulate CLEAN, DEDUPLICATED patterns with realistic weights
+        """
         try:
+            # Parse the raw ADK result
             parsed = self._parse_agent_result('scam_detection', analysis_result)
             
-            # Extract patterns
-            current_patterns = []
+            # Extract raw patterns from ADK response
+            raw_patterns = []
             if 'detected_patterns' in parsed:
                 if isinstance(parsed['detected_patterns'], list):
-                    current_patterns = parsed['detected_patterns']
+                    raw_patterns = parsed['detected_patterns']
                 elif isinstance(parsed['detected_patterns'], str):
-                    current_patterns = [p.strip() for p in parsed['detected_patterns'].split(',')]
+                    # Handle comma-separated or other formats
+                    raw_patterns = [p.strip() for p in parsed['detected_patterns'].split(',')]
             
-            # Accumulate patterns
-            session_patterns = self.accumulated_patterns.get(session_id, {})
+            # STEP 1: Map raw patterns to clean names with weights
+            clean_patterns = {}
             
-            for pattern_name in current_patterns:
-                if pattern_name and pattern_name != 'unknown':
-                    if pattern_name in session_patterns:
-                        session_patterns[pattern_name]['count'] += 1
-                    else:
-                        session_patterns[pattern_name] = {
-                            'pattern_name': pattern_name,
-                            'count': 1,
-                            'weight': 25,
-                            'severity': 'medium',
-                            'confidence': 0.7,
-                            'matches': [pattern_name]
-                        }
+            for raw_pattern in raw_patterns:
+                if not raw_pattern or raw_pattern == 'unknown':
+                    continue
+                    
+                # Normalize for matching
+                normalized_pattern = raw_pattern.lower().strip()
+                
+                # Find matching clean pattern
+                matched_clean_pattern = None
+                for pattern_key, pattern_config in CLEAN_PATTERN_MAPPING.items():
+                    if (pattern_key.lower() in normalized_pattern or 
+                        normalized_pattern in pattern_key.lower() or
+                        pattern_key.lower() == normalized_pattern):
+                        matched_clean_pattern = pattern_config
+                        break
+                
+                # Use matched pattern or create generic one
+                if matched_clean_pattern:
+                    clean_name = matched_clean_pattern['name']
+                    weight = matched_clean_pattern['weight']
+                else:
+                    # Fallback for unrecognized patterns
+                    clean_name = raw_pattern.replace('_', ' ').title()
+                    weight = 10  # Default weight
+                
+                # STEP 2: Deduplicate and accumulate counts
+                if clean_name in clean_patterns:
+                    # Increment count for existing pattern
+                    clean_patterns[clean_name]['count'] += 1
+                else:
+                    # Create new clean pattern entry
+                    clean_patterns[clean_name] = {
+                        'pattern_name': clean_name,
+                        'count': 1,
+                        'weight': weight,
+                        'severity': self._get_pattern_severity(weight),
+                        'confidence': 0.8,  # Default confidence
+                        'matches': [raw_pattern]  # Keep track of original matches
+                    }
+            
+            # STEP 3: Store clean patterns in session accumulation
+            if session_id not in self.accumulated_patterns:
+                self.accumulated_patterns[session_id] = {}
+            
+            # Merge with existing session patterns (accumulate across multiple detections)
+            session_patterns = self.accumulated_patterns[session_id]
+            
+            for clean_name, pattern_data in clean_patterns.items():
+                if clean_name in session_patterns:
+                    # Update existing pattern
+                    session_patterns[clean_name]['count'] += pattern_data['count']
+                    session_patterns[clean_name]['matches'].extend(pattern_data['matches'])
+                else:
+                    # Add new pattern
+                    session_patterns[clean_name] = pattern_data
             
             self.accumulated_patterns[session_id] = session_patterns
+            
+            # STEP 4: Update analysis history
+            if session_id not in self.session_analysis_history:
+                self.session_analysis_history[session_id] = []
+            
             self.session_analysis_history[session_id].append(parsed)
+            
+            # STEP 5: Calculate total risk score from clean patterns
+            total_pattern_risk = sum(
+                pattern['weight'] * pattern['count'] 
+                for pattern in session_patterns.values()
+            )
+            
+            # Cap at reasonable maximum and add baseline
+            baseline_risk = 5  # Base risk for any transaction
+            calculated_risk = min(baseline_risk + total_pattern_risk, 100)
+            
+            # Update parsed result with calculated risk
+            parsed['risk_score'] = calculated_risk
+            parsed['pattern_count'] = len(session_patterns)
+            parsed['total_pattern_weight'] = total_pattern_risk
+            
+            logger.info(f"🧹 CLEAN PATTERNS: {session_id} - {len(session_patterns)} unique patterns, {calculated_risk}% total risk")
+            for name, data in session_patterns.items():
+                logger.info(f"   • {name}: {data['weight']}% x{data['count']} = {data['weight'] * data['count']}%")
             
             return parsed
             
         except Exception as e:
             logger.error(f"❌ Pattern parsing error: {e}")
             return {'risk_score': 0.0, 'error': str(e)}
+    
+    # ===== ADD THIS HELPER METHOD =====
+    
+    def _get_pattern_severity(self, weight: int) -> str:
+        """Get pattern severity based on weight"""
+        if weight >= 25:
+            return 'critical'
+        elif weight >= 20:
+            return 'high'  
+        elif weight >= 15:
+            return 'medium'
+        else:
+            return 'low'
+
     
     def _parse_agent_result(self, agent_name: str, result_text: str) -> Dict:
         """Parse agent result text"""

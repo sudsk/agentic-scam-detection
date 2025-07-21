@@ -331,7 +331,7 @@ class FraudDetectionOrchestrator:
                 'agents_available': len(self.agents) > 0,
                 'adk_session_service': self.session_service is not None,
                 'audio_duration': result.get('audio_duration', 0),
-                'demo_script': demo_script.title if demo_script else None
+                'demo_script': demo_script.get('title', 'Demo Script') if demo_script else None
             }
             
         except Exception as e:

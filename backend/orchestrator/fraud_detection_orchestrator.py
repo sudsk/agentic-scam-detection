@@ -19,7 +19,7 @@ from io import StringIO
 # Import demo functionality
 from ..config.demo_scripts import getDemoScript, DEMO_CONFIG
 from .demo_orchestrator import DemoOrchestrator, getDemoScript
-from ..config.fraud_patterns import FRAUD_PATTERN_CONFIG
+from ..config.fraud_patterns import create_keyword_mapping, FRAUD_PATTERN_CONFIG
 
 # Suppress warnings at the top
 warnings.filterwarnings('ignore')
@@ -1100,11 +1100,14 @@ Please provide professional incident summary for ServiceNow case documentation.
     
     async def _parse_and_accumulate_patterns(self, session_id: str, analysis_result: str) -> Dict[str, Any]:
         """
-        ENHANCED: Parse analysis and accumulate CLEAN, DEDUPLICATED patterns with realistic weights
+        ENHANCED: Parse analysis and accumulate CLEAN, DEDUPLICATED patterns using config
         """
         try:
             # Parse the raw ADK result
             parsed = self._parse_agent_result('scam_detection', analysis_result)
+            
+            # Get keyword mapping from config
+            keyword_mapping = create_keyword_mapping()
             
             # Extract raw patterns from ADK response
             raw_patterns = []
@@ -1115,7 +1118,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                     # Handle comma-separated or other formats
                     raw_patterns = [p.strip() for p in parsed['detected_patterns'].split(',')]
             
-            # STEP 1: Map raw patterns to clean names with weights
+            # STEP 1: Map raw patterns to clean names using config
             clean_patterns = {}
             
             for raw_pattern in raw_patterns:
@@ -1125,37 +1128,47 @@ Please provide professional incident summary for ServiceNow case documentation.
                 # Normalize for matching
                 normalized_pattern = raw_pattern.lower().strip()
                 
-                # Find matching clean pattern
-                matched_clean_pattern = None
-                for pattern_key, pattern_config in CLEAN_PATTERN_MAPPING.items():
-                    if (pattern_key.lower() in normalized_pattern or 
-                        normalized_pattern in pattern_key.lower() or
-                        pattern_key.lower() == normalized_pattern):
-                        matched_clean_pattern = pattern_config
-                        break
+                # Find matching pattern in config
+                matched_config = None
                 
-                # Use matched pattern or create generic one
-                if matched_clean_pattern:
-                    clean_name = matched_clean_pattern['name']
-                    weight = matched_clean_pattern['weight']
+                # Direct lookup first
+                if normalized_pattern in keyword_mapping:
+                    matched_config = keyword_mapping[normalized_pattern]
+                else:
+                    # Fuzzy matching - check if any keyword contains or is contained in the pattern
+                    for keyword, config in keyword_mapping.items():
+                        if (keyword in normalized_pattern or 
+                            normalized_pattern in keyword or
+                            any(word in keyword for word in normalized_pattern.split()) or
+                            any(word in normalized_pattern for word in keyword.split())):
+                            matched_config = config
+                            break
+                
+                # Use matched config or create fallback
+                if matched_config:
+                    clean_name = matched_config['name']
+                    weight = matched_config['weight']
+                    severity = matched_config['severity']
                 else:
                     # Fallback for unrecognized patterns
                     clean_name = raw_pattern.replace('_', ' ').title()
                     weight = 10  # Default weight
+                    severity = 'low'
                 
                 # STEP 2: Deduplicate and accumulate counts
                 if clean_name in clean_patterns:
                     # Increment count for existing pattern
                     clean_patterns[clean_name]['count'] += 1
+                    clean_patterns[clean_name]['raw_matches'].append(raw_pattern)
                 else:
                     # Create new clean pattern entry
                     clean_patterns[clean_name] = {
                         'pattern_name': clean_name,
                         'count': 1,
                         'weight': weight,
-                        'severity': self._get_pattern_severity(weight),
+                        'severity': severity,
                         'confidence': 0.8,  # Default confidence
-                        'matches': [raw_pattern]  # Keep track of original matches
+                        'raw_matches': [raw_pattern]  # Track original patterns
                     }
             
             # STEP 3: Store clean patterns in session accumulation
@@ -1167,9 +1180,12 @@ Please provide professional incident summary for ServiceNow case documentation.
             
             for clean_name, pattern_data in clean_patterns.items():
                 if clean_name in session_patterns:
-                    # Update existing pattern
+                    # Update existing pattern - increment count
                     session_patterns[clean_name]['count'] += pattern_data['count']
-                    session_patterns[clean_name]['matches'].extend(pattern_data['matches'])
+                    session_patterns[clean_name]['raw_matches'].extend(pattern_data['raw_matches'])
+                    # Keep highest severity if updating
+                    if pattern_data['severity'] == 'critical' or session_patterns[clean_name]['severity'] != 'critical':
+                        session_patterns[clean_name]['severity'] = pattern_data['severity']
                 else:
                     # Add new pattern
                     session_patterns[clean_name] = pattern_data
@@ -1183,23 +1199,30 @@ Please provide professional incident summary for ServiceNow case documentation.
             self.session_analysis_history[session_id].append(parsed)
             
             # STEP 5: Calculate total risk score from clean patterns
-            total_pattern_risk = sum(
-                pattern['weight'] * pattern['count'] 
-                for pattern in session_patterns.values()
-            )
+            total_pattern_risk = 0
+            for pattern in session_patterns.values():
+                # Risk = weight * count, but with diminishing returns for multiple occurrences
+                pattern_risk = pattern['weight']
+                if pattern['count'] > 1:
+                    # Diminishing returns: first occurrence = full weight, subsequent = 50%
+                    pattern_risk += (pattern['count'] - 1) * (pattern['weight'] * 0.5)
+                total_pattern_risk += pattern_risk
             
             # Cap at reasonable maximum and add baseline
             baseline_risk = 5  # Base risk for any transaction
             calculated_risk = min(baseline_risk + total_pattern_risk, 100)
             
             # Update parsed result with calculated risk
-            parsed['risk_score'] = calculated_risk
+            parsed['risk_score'] = int(calculated_risk)
             parsed['pattern_count'] = len(session_patterns)
-            parsed['total_pattern_weight'] = total_pattern_risk
+            parsed['total_pattern_weight'] = int(total_pattern_risk)
+            parsed['baseline_risk'] = baseline_risk
             
-            logger.info(f"🧹 CLEAN PATTERNS: {session_id} - {len(session_patterns)} unique patterns, {calculated_risk}% total risk")
+            # Enhanced logging with config-based patterns
+            logger.info(f"🧹 CLEAN PATTERNS: {session_id} - {len(session_patterns)} unique patterns, {calculated_risk:.0f}% total risk")
             for name, data in session_patterns.items():
-                logger.info(f"   • {name}: {data['weight']}% x{data['count']} = {data['weight'] * data['count']}%")
+                effective_weight = data['weight'] + ((data['count'] - 1) * data['weight'] * 0.5) if data['count'] > 1 else data['weight']
+                logger.info(f"   • {name}: {data['weight']}% x{data['count']} = {effective_weight:.0f}% [{data['severity']}]")
             
             return parsed
             
@@ -1207,19 +1230,13 @@ Please provide professional incident summary for ServiceNow case documentation.
             logger.error(f"❌ Pattern parsing error: {e}")
             return {'risk_score': 0.0, 'error': str(e)}
     
-    # ===== ADD THIS HELPER METHOD =====
-    
-    def _get_pattern_severity(self, weight: int) -> str:
-        """Get pattern severity based on weight"""
-        if weight >= 25:
-            return 'critical'
-        elif weight >= 20:
-            return 'high'  
-        elif weight >= 15:
-            return 'medium'
-        else:
-            return 'low'
-
+    # Also add this helper method to get pattern severity from config:
+    def _get_pattern_severity_from_config(self, pattern_name: str) -> str:
+        """Get pattern severity from config"""
+        for pattern_id, config in FRAUD_PATTERN_CONFIG.items():
+            if config['name'] == pattern_name:
+                return config['severity']
+        return 'low'  # Default
     
     def _parse_agent_result(self, agent_name: str, result_text: str) -> Dict:
         """Parse agent result text"""

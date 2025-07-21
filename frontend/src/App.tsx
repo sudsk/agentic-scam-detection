@@ -1084,15 +1084,7 @@ Click OK to open the case in ServiceNow.
     );
   };
 
-  console.log('🔍 LIVE ALERTS DEBUG:');
-  console.log('  - riskScore:', riskScore);
-  console.log('  - riskScore >= 40:', riskScore >= 40);
-  console.log('  - detectedPatterns:', detectedPatterns);
-  console.log('  - Object.keys(detectedPatterns):', Object.keys(detectedPatterns));
-  console.log('  - Object.keys(detectedPatterns).length:', Object.keys(detectedPatterns).length);
-  console.log('  - Object.keys(detectedPatterns).length > 0:', Object.keys(detectedPatterns).length > 0);
-  console.log('  - Final condition:', (riskScore >= 40 || Object.keys(detectedPatterns).length > 0));  
-  
+ 
   // ===== RENDER =====
 
   return (
@@ -1480,6 +1472,33 @@ Click OK to open the case in ServiceNow.
                   </p>
                 </div>
               )}
+              {/* Low Risk Alert */}
+              {riskScore >= 1 && riskScore < 40 && Object.keys(detectedPatterns).length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                  <div className="flex items-center space-x-2">
+                    <AlertCircle className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-800">
+                      RISK INDICATORS DETECTED
+                    </span>
+                  </div>
+                  
+                  {/* Risk Factor Breakdown */}
+                  <div className="mt-2 space-y-1">
+                    {Object.entries(detectedPatterns).map(([patternName, pattern]) => (
+                      <div key={patternName} className="flex justify-between items-center text-xs">
+                        <span className="text-blue-700">{patternName.replace('_', ' ')}</span>
+                        <span className="text-blue-600 font-medium">
+                          {pattern.weight || 10}% ({pattern.count || 1}x)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <p className="text-xs text-blue-700 mt-2">
+                    Total Risk: {riskScore}% - Early detection monitoring
+                  </p>
+                </div>
+              )}              
             </div>
           )}
           {/* Recommended Actions */}

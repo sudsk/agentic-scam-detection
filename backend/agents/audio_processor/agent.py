@@ -70,7 +70,7 @@ class StereoAudioBuffer:
                 empty_count += 1
                 continue
         
-        logger.info(f"🎵 Stereo buffer generator completed after {empty_count} empty reads")
+        #logger.info(f"🎵 Stereo buffer generator completed after {empty_count} empty reads")
     
     def mark_completed(self):
         """Mark audio as completed"""
@@ -103,7 +103,7 @@ class NativeStereoTracker:
         # Track speaker pattern for fallback
         self.last_detected_speaker = "agent"  # Agent always starts
         
-        logger.info(f"🎯 Native STT mapping: Channel 0/2 (LEFT)=Customer, Channel 1/3 (RIGHT)=Agent")
+        #logger.info(f"🎯 Native STT mapping: Channel 0/2 (LEFT)=Customer, Channel 1/3 (RIGHT)=Agent")
         
     def detect_speaker_from_channel(self, channel: Optional[int]) -> str:
         """FIXED: Detect speaker from Google STT channel information"""
@@ -122,13 +122,13 @@ class NativeStereoTracker:
             else:
                 # Unknown channel - use alternation logic
                 detected_speaker = "customer" if self.last_detected_speaker == "agent" else "agent"
-                logger.warning(f"🎯 Unknown channel {channel}, alternating to: {detected_speaker}")
+                #logger.warning(f"🎯 Unknown channel {channel}, alternating to: {detected_speaker}")
         
         # RULE 3: No channel info - use simple alternation
         else:
             # Simple alternation: agent -> customer -> agent -> customer
             detected_speaker = "customer" if self.last_detected_speaker == "agent" else "agent"
-            logger.info(f"🎯 No channel info, alternating: {self.last_detected_speaker} -> {detected_speaker}")
+            #logger.info(f"🎯 No channel info, alternating: {self.last_detected_speaker} -> {detected_speaker}")
         
         # Update tracking
         self.turn_count[detected_speaker] += 1
@@ -170,8 +170,8 @@ class AudioProcessorAgent(BaseAgent):
         self._initialize_google_stt()
         agent_registry.register_agent(self)
         
-        logger.info(f"🎵 {self.agent_name} initialized - NATIVE STEREO MODE")
-        logger.info(f"🎯 Stereo chunk size: {self.stereo_chunk_size} bytes")
+        #logger.info(f"🎵 {self.agent_name} initialized - NATIVE STEREO MODE")
+        #logger.info(f"🎯 Stereo chunk size: {self.stereo_chunk_size} bytes")
     
     def _get_default_config(self) -> Dict[str, Any]:
         settings = get_settings()
@@ -195,7 +195,7 @@ class AudioProcessorAgent(BaseAgent):
             from google.cloud import speech_v1p1beta1 as speech
             self.google_client = speech.SpeechClient()
             self.speech_types = speech
-            logger.info("✅ Google Speech-to-Text v1p1beta1 initialized for native stereo")
+            #logger.info("✅ Google Speech-to-Text v1p1beta1 initialized for native stereo")
         except ImportError as e:
             logger.error(f"❌ Google STT import failed: {e}")
             self.google_client = None
@@ -249,7 +249,7 @@ class AudioProcessorAgent(BaseAgent):
         self.audio_buffers[session_id] = StereoAudioBuffer(self.stereo_chunk_size)
         self.speaker_trackers[session_id] = NativeStereoTracker()
         
-        logger.info(f"✅ Session {session_id} prepared for native stereo")
+        #logger.info(f"✅ Session {session_id} prepared for native stereo")
         
         return {
             "session_id": session_id,
@@ -277,7 +277,7 @@ class AudioProcessorAgent(BaseAgent):
     async def start_realtime_processing(self, session_id: str, audio_filename: str, websocket_callback: Callable) -> Dict[str, Any]:
         """Start native stereo processing with UI sync"""
         try:
-            logger.info(f"🎵 Starting NATIVE STEREO processing: {audio_filename}")
+            #logger.info(f"🎵 Starting NATIVE STEREO processing: {audio_filename}")
             
             prepare_result = self._prepare_live_call({"session_id": session_id})
             if "error" in prepare_result:
@@ -293,13 +293,13 @@ class AudioProcessorAgent(BaseAgent):
                 frames = wav_file.getnframes()
                 duration = frames / sample_rate
                 
-                logger.info(f"📁 Audio: {duration:.1f}s, {sample_rate}Hz, {channels}ch")
+                #logger.info(f"📁 Audio: {duration:.1f}s, {sample_rate}Hz, {channels}ch")
             
             if channels != 2:
                 return {"error": f"Only stereo audio supported. File has {channels} channels."}
             
             processing_mode = "native_google_stereo"
-            logger.info("🎯 NATIVE STEREO: Using Google STT multi-channel support")
+            #logger.info("🎯 NATIVE STEREO: Using Google STT multi-channel support")
             
             # Send UI player start signal
             await websocket_callback({
@@ -347,7 +347,7 @@ class AudioProcessorAgent(BaseAgent):
     async def _process_native_stereo_audio(self, session_id: str, audio_path: Path, websocket_callback: Callable):
         """Process stereo audio natively (no conversion to mono)"""
         try:
-            logger.info(f"🎵 Starting NATIVE stereo audio processing for {session_id}")
+            #logger.info(f"🎵 Starting NATIVE stereo audio processing for {session_id}")
             
             with wave.open(str(audio_path), 'rb') as wav_file:
                 sample_rate = wav_file.getframerate()
@@ -361,18 +361,18 @@ class AudioProcessorAgent(BaseAgent):
                 total_frames = wav_file.getnframes()
                 total_chunks = total_frames // frames_per_chunk
                 
-                logger.info(f"🎵 Processing {total_chunks} NATIVE stereo chunks")
+                #logger.info(f"🎵 Processing {total_chunks} NATIVE stereo chunks")
                 
                 while chunk_count < total_chunks:
                     # Check if processing was stopped
                     if self.active_sessions[session_id].get("processing_stopped", False):
-                        logger.info(f"🛑 Native stereo processing stopped by user for {session_id}")
+                        #logger.info(f"🛑 Native stereo processing stopped by user for {session_id}")
                         break
                     
                     # Read stereo frames DIRECTLY (no channel separation)
                     stereo_chunk = wav_file.readframes(frames_per_chunk)
                     if not stereo_chunk:
-                        logger.info(f"📁 Reached end of stereo audio file at chunk {chunk_count}")
+                        #logger.info(f"📁 Reached end of stereo audio file at chunk {chunk_count}")
                         break
                     
                     # Send stereo chunk directly to buffer (NO CONVERSION)
@@ -391,7 +391,7 @@ class AudioProcessorAgent(BaseAgent):
                     if chunk_count % 100 == 0:
                         progress = (chunk_count / total_chunks) * 100
                         elapsed = chunk_count * self.chunk_duration_ms / 1000
-                        logger.info(f"🎵 Native stereo progress: {progress:.1f}% ({elapsed:.1f}s) - {chunk_count}/{total_chunks}")
+                        #logger.info(f"🎵 Native stereo progress: {progress:.1f}% ({elapsed:.1f}s) - {chunk_count}/{total_chunks}")
                         
                         await websocket_callback({
                             "type": "processing_progress",
@@ -409,7 +409,7 @@ class AudioProcessorAgent(BaseAgent):
             self.active_sessions[session_id]["audio_completed"] = True
             audio_buffer.mark_completed()
             
-            logger.info(f"✅ Native stereo audio processing complete: {chunk_count}/{total_chunks} chunks")
+            #logger.info(f"✅ Native stereo audio processing complete: {chunk_count}/{total_chunks} chunks")
             
             # Wait for transcription to finish
             await asyncio.sleep(4.0)
@@ -428,7 +428,7 @@ class AudioProcessorAgent(BaseAgent):
                         "timestamp": get_current_timestamp()
                     }
                 })
-                logger.info(f"✅ AUDIO PROCESSOR: Sent processing_complete for {session_id}")
+                #logger.info(f"✅ AUDIO PROCESSOR: Sent processing_complete for {session_id}")
                 
         except Exception as e:
             logger.error(f"❌ Error in native stereo audio processing: {e}")
@@ -437,7 +437,7 @@ class AudioProcessorAgent(BaseAgent):
     async def _start_native_stereo_transcription(self, session_id: str, websocket_callback: Callable):
         """Start transcription with native stereo support"""
         try:
-            logger.info(f"🎙️ Starting NATIVE STEREO transcription for {session_id}")
+            #logger.info(f"🎙️ Starting NATIVE STEREO transcription for {session_id}")
             
             streaming_result = await self.start_streaming(session_id, websocket_callback)
             if "error" in streaming_result:
@@ -457,7 +457,7 @@ class AudioProcessorAgent(BaseAgent):
     async def start_streaming(self, session_id: str, websocket_callback: Callable) -> Dict[str, Any]:
         """Start streaming recognition with native stereo support"""
         try:
-            logger.info(f"🎙️ Starting NATIVE STEREO streaming recognition for {session_id}")
+            #logger.info(f"🎙️ Starting NATIVE STEREO streaming recognition for {session_id}")
             
             if session_id not in self.active_sessions:
                 raise ValueError(f"Session {session_id} not prepared")
@@ -504,11 +504,11 @@ class AudioProcessorAgent(BaseAgent):
         while session_id in self.active_sessions and session.get("status") == "streaming":
             # Check if processing was stopped or audio completed
             if session.get("processing_stopped", False):
-                logger.info(f"🛑 Native stereo streaming stopped by user for {session_id}")
+                #logger.info(f"🛑 Native stereo streaming stopped by user for {session_id}")
                 break
                 
             if session.get("audio_completed", False):
-                logger.info(f"🏁 Audio completed, ending streaming for {session_id}")
+                #logger.info(f"🏁 Audio completed, ending streaming for {session_id}")
 
                 # Send completion only once
                 if not session.get("completion_sent", False):
@@ -523,7 +523,7 @@ class AudioProcessorAgent(BaseAgent):
                                     "timestamp": get_current_timestamp()
                                 }
                             })
-                            logger.info(f"✅ Sent processing_complete from streaming restart for {session_id}")
+                            #logger.info(f"✅ Sent processing_complete from streaming restart for {session_id}")
                         except Exception as e:
                             logger.error(f"❌ Failed to send processing_complete from restart: {e}")
                 else:
@@ -540,7 +540,7 @@ class AudioProcessorAgent(BaseAgent):
                 )
             except asyncio.TimeoutError:
                 session["restart_count"] += 1
-                logger.info(f"🔄 Native stereo restart #{session['restart_count']} for {session_id}")
+                #logger.info(f"🔄 Native stereo restart #{session['restart_count']} for {session_id}")
                 
                 if session["restart_count"] > 5:
                     logger.warning(f"Too many restarts for {session_id}")
@@ -562,7 +562,7 @@ class AudioProcessorAgent(BaseAgent):
         audio_buffer = self.audio_buffers[session_id]
         speaker_tracker = self.speaker_trackers[session_id]
         
-        logger.info(f"🎙️ Starting NATIVE STEREO Google STT for {session_id}")
+        #logger.info(f"🎙️ Starting NATIVE STEREO Google STT for {session_id}")
         
         # ENHANCED: More explicit stereo configuration
         recognition_config = self.speech_types.RecognitionConfig(
@@ -625,10 +625,10 @@ class AudioProcessorAgent(BaseAgent):
                 request.audio_content = stereo_chunk
                 yield request
                 
-            logger.info(f"🎵 Native stereo generator sent {chunk_count} stereo chunks")
+            #logger.info(f"🎵 Native stereo generator sent {chunk_count} stereo chunks")
         
         try:
-            logger.info(f"🚀 Starting Google STT with ENHANCED NATIVE STEREO for {session_id}")
+            #logger.info(f"🚀 Starting Google STT with ENHANCED NATIVE STEREO for {session_id}")
             
             responses = self.google_client.streaming_recognize(
                 config=streaming_config,
@@ -659,7 +659,7 @@ class AudioProcessorAgent(BaseAgent):
                 if processed and processed.get("is_final"):
                     last_final_text = processed.get("text", "")
             
-            logger.info(f"✅ Native stereo streaming completed: {response_count} responses")
+            #logger.info(f"✅ Native stereo streaming completed: {response_count} responses")
                 
         except Exception as e:
             if "timeout" in str(e).lower():
@@ -710,7 +710,7 @@ class AudioProcessorAgent(BaseAgent):
                     if word_channels:
                         # Use most common channel from words
                         channel_tag = max(set(word_channels), key=word_channels.count)
-                        logger.info(f"🔍 Extracted from words, channel: {channel_tag}")
+                        #logger.info(f"🔍 Extracted from words, channel: {channel_tag}")
                 
                 # Method 3: Check if result has channel attribute
                 elif hasattr(result, 'channel') and result.channel is not None:
@@ -754,7 +754,7 @@ class AudioProcessorAgent(BaseAgent):
                     
                     # IMPROVED: Better logging with channel info
                     channel_display = f"Ch{channel_tag}" if channel_tag is not None else "ChNone"
-                    logger.info(f"📝 NATIVE [{detected_speaker.upper()}] {channel_display}: '{transcript[:50]}...'")
+                    #logger.info(f"📝 NATIVE [{detected_speaker.upper()}] {channel_display}: '{transcript[:50]}...'")
                     
                     if detected_speaker == "customer":
                         await self._trigger_fraud_analysis(session_id, transcript, websocket_callback)
@@ -777,8 +777,8 @@ class AudioProcessorAgent(BaseAgent):
         """Debug helper to understand Google STT response structure"""
         try:
             for result in response.results:
-                logger.info(f"🔍 DEBUG Response for '{transcript[:20]}...':")
-                logger.info(f"  - result attributes: {[attr for attr in dir(result) if not attr.startswith('_')]}")
+                #logger.info(f"🔍 DEBUG Response for '{transcript[:20]}...':")
+                #logger.info(f"  - result attributes: {[attr for attr in dir(result) if not attr.startswith('_')]}")
                 
                 if hasattr(result, 'channel_tag'):
                     logger.info(f"  - result.channel_tag: {result.channel_tag}")
@@ -833,7 +833,7 @@ class AudioProcessorAgent(BaseAgent):
     async def stop_streaming(self, session_id: str) -> Dict[str, Any]:
         """Stop native stereo processing"""
         try:
-            logger.info(f"🛑 STOP native stereo session {session_id}")
+            #logger.info(f"🛑 STOP native stereo session {session_id}")
             
             if session_id not in self.active_sessions:
                 return {"error": "Session not found"}
@@ -903,7 +903,7 @@ class AudioProcessorAgent(BaseAgent):
                     }
                 })
             
-            logger.info(f"✅ Native stereo session {session_id} stopped completely")
+            #logger.info(f"✅ Native stereo session {session_id} stopped completely")
             
             return {
                 "session_id": session_id, 

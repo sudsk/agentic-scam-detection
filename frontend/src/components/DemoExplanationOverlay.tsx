@@ -1,4 +1,4 @@
-// frontend/src/components/DemoExplanationOverlay.tsx - Enhanced Demo Explanation UI
+// frontend/src/components/DemoExplanationOverlay.tsx - Fixed CSS Animation
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Info, CheckCircle, Shield, FileText, X } from 'lucide-react';
 
@@ -114,77 +114,82 @@ export const DemoExplanationOverlay: React.FC<DemoExplanationOverlayProps> = ({
 
   const typeConfig = getTypeConfig(explanation.type);
 
+  // FIXED: Create inline styles for the animation
+  const progressBarStyle: React.CSSProperties = explanation.duration && explanation.duration > 0 ? {
+    animation: `shrinkProgress ${explanation.duration}ms linear forwards`
+  } : {};
+
   return (
-    <div className="fixed top-20 left-4 z-50 w-96 animate-in slide-in-from-left duration-300">
-      <div className={`${typeConfig.bgColor} ${typeConfig.borderColor} border-2 rounded-lg shadow-lg overflow-hidden`}>
-        {/* Header */}
-        <div className={`${typeConfig.color} text-white p-3`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              {typeConfig.icon}
-              <h4 className="font-semibold text-sm">{explanation.title}</h4>
-            </div>
-            <div className="flex items-center space-x-2">
-              {explanation.riskLevel !== undefined && showRiskBreakdown && (
-                <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded">
-                  {explanation.riskLevel}% Risk
-                </span>
-              )}
-              <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded">
-                DEMO
-              </span>
-              <button
-                onClick={handleDismiss}
-                className="text-white hover:bg-white hover:bg-opacity-20 rounded p-1 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="p-4">
-          <p className={`text-sm leading-relaxed ${typeConfig.textColor}`}>
-            {explanation.message}
-          </p>
-          
-          {explanation.riskLevel !== undefined && showRiskBreakdown && (
-            <div className="mt-3 pt-3 border-t border-current border-opacity-20">
-              <div className="text-xs">
-                <div className="font-medium mb-1">Banking Compliance:</div>
-                <div className="opacity-90">
-                  {explanation.riskLevel >= 80 ? 'CRITICAL - Mandatory intervention required (FCA Guidelines)' :
-                   explanation.riskLevel >= 60 ? 'HIGH RISK - Enhanced due diligence required' :
-                   explanation.riskLevel >= 40 ? 'MEDIUM RISK - Additional verification recommended' :
-                   'LOW RISK - Standard processing permitted'}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Progress Bar (if duration is set) */}
-        {explanation.duration && explanation.duration > 0 && (
-          <div className="h-1 bg-white bg-opacity-30">
-            <div 
-              className="h-full bg-white bg-opacity-60 transition-all linear"
-              style={{
-                animation: `shrink ${explanation.duration}ms linear`,
-                width: '100%'
-              }}
-            />
-          </div>
-        )}
-      </div>
-      
-      <style jsx>{`
-        @keyframes shrink {
+    <>
+      {/* FIXED: Add CSS animation using a style tag in the document head */}
+      <style>{`
+        @keyframes shrinkProgress {
           from { width: 100%; }
           to { width: 0%; }
         }
       `}</style>
-    </div>
+      
+      <div className="fixed top-20 left-4 z-50 w-96 animate-in slide-in-from-left duration-300">
+        <div className={`${typeConfig.bgColor} ${typeConfig.borderColor} border-2 rounded-lg shadow-lg overflow-hidden`}>
+          {/* Header */}
+          <div className={`${typeConfig.color} text-white p-3`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                {typeConfig.icon}
+                <h4 className="font-semibold text-sm">{explanation.title}</h4>
+              </div>
+              <div className="flex items-center space-x-2">
+                {explanation.riskLevel !== undefined && showRiskBreakdown && (
+                  <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded">
+                    {explanation.riskLevel}% Risk
+                  </span>
+                )}
+                <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded">
+                  DEMO
+                </span>
+                <button
+                  onClick={handleDismiss}
+                  className="text-white hover:bg-white hover:bg-opacity-20 rounded p-1 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-4">
+            <p className={`text-sm leading-relaxed ${typeConfig.textColor}`}>
+              {explanation.message}
+            </p>
+            
+            {explanation.riskLevel !== undefined && showRiskBreakdown && (
+              <div className="mt-3 pt-3 border-t border-current border-opacity-20">
+                <div className="text-xs">
+                  <div className="font-medium mb-1">Banking Compliance:</div>
+                  <div className="opacity-90">
+                    {explanation.riskLevel >= 80 ? 'CRITICAL - Mandatory intervention required (FCA Guidelines)' :
+                     explanation.riskLevel >= 60 ? 'HIGH RISK - Enhanced due diligence required' :
+                     explanation.riskLevel >= 40 ? 'MEDIUM RISK - Additional verification recommended' :
+                     'LOW RISK - Standard processing permitted'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Progress Bar (if duration is set) - FIXED */}
+          {explanation.duration && explanation.duration > 0 && (
+            <div className="h-1 bg-white bg-opacity-30">
+              <div 
+                className="h-full bg-white bg-opacity-60"
+                style={progressBarStyle}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 };
 

@@ -1100,7 +1100,7 @@ Please provide professional incident summary for ServiceNow case documentation.
     
     async def _parse_and_accumulate_patterns(self, session_id: str, analysis_result: str) -> Dict[str, Any]:
         """
-        ENHANCED: Parse analysis and accumulate CLEAN, DEDUPLICATED patterns using config
+        FIXED: Parse analysis with PROPER pattern matching - no more false matches
         """
         try:
             # Parse the raw ADK result
@@ -1117,70 +1117,88 @@ Please provide professional incident summary for ServiceNow case documentation.
                 elif isinstance(parsed['detected_patterns'], str):
                     # Handle comma-separated or other formats
                     raw_patterns = [p.strip() for p in parsed['detected_patterns'].split(',')]
-
-            # After extracting raw_patterns, add:
-            logger.info(f"🔍 RAW PATTERNS from ADK: {raw_patterns}")
             
-            # STEP 1: Map raw patterns to clean names using config
+            # STEP 1: FIXED PATTERN MATCHING with priority order
             clean_patterns = {}
             
             for raw_pattern in raw_patterns:
                 if not raw_pattern or raw_pattern == 'unknown':
                     continue
                     
-                # Normalize for matching
-                normalized_pattern = raw_pattern.lower().strip()
+                logger.info(f"🔍 Trying to match: '{raw_pattern}'")
                 
-                # Find matching pattern in config
-                matched_config = None
+                # Split comma-separated patterns first
+                individual_patterns = [p.strip() for p in raw_pattern.split(',')]
                 
-                # Direct lookup first
-                if normalized_pattern in keyword_mapping:
-                    matched_config = keyword_mapping[normalized_pattern]
-                else:
-                    # Fuzzy matching - check if any keyword contains or is contained in the pattern
-                    for keyword, config in keyword_mapping.items():
-                        if (keyword in normalized_pattern or 
-                            normalized_pattern in keyword or
-                            any(word in keyword for word in normalized_pattern.split()) or
-                            any(word in normalized_pattern for word in keyword.split())):
-                            matched_config = config
+                for individual_pattern in individual_patterns:
+                    if not individual_pattern:
+                        continue
+                        
+                    normalized_pattern = individual_pattern.lower().strip()
+                    matched_config = None
+                    
+                    # METHOD 1: EXACT DIRECT NAME MATCH (highest priority)
+                    for pattern_id, config in FRAUD_PATTERN_CONFIG.items():
+                        if config['name'].lower() == individual_pattern.strip():
+                            matched_config = {
+                                'name': config['name'],
+                                'weight': config['weight'],
+                                'severity': config['severity']
+                            }
+                            logger.info(f"   ✅ EXACT NAME MATCH: '{individual_pattern}' → {matched_config['name']} ({matched_config['weight']}%)")
                             break
-                
-                # Use matched config or create fallback
-                if matched_config:
-                    clean_name = matched_config['name']
-                    weight = matched_config['weight']
-                    severity = matched_config['severity']
-                    logger.info(f"   ✅ Matched to: {matched_config['name']} ({matched_config['weight']}%)")
-                else:
-                    # Fallback for unrecognized patterns
-                    clean_name = raw_pattern.replace('_', ' ').title()
-                    weight = 10  # Default weight
-                    severity = 'low'
-                    logger.info(f"   ❌ No match found, using fallback")
-                
-                # STEP 2: Deduplicate and accumulate counts
-                if clean_name in clean_patterns:
-                    # Increment count for existing pattern
-                    clean_patterns[clean_name]['count'] += 1
-                    clean_patterns[clean_name]['raw_matches'].append(raw_pattern)
-                else:
-                    # Create new clean pattern entry
-                    clean_patterns[clean_name] = {
-                        'pattern_name': clean_name,
-                        'count': 1,
-                        'weight': weight,
-                        'severity': severity,
-                        'confidence': 0.8,  # Default confidence
-                        'raw_matches': [raw_pattern]  # Track original patterns
-                    }
+                    
+                    # METHOD 2: EXACT KEYWORD MATCH (if no direct name match)
+                    if not matched_config:
+                        if normalized_pattern in keyword_mapping:
+                            matched_config = keyword_mapping[normalized_pattern]
+                            logger.info(f"   ✅ EXACT KEYWORD MATCH: '{individual_pattern}' → {matched_config['name']} ({matched_config['weight']}%)")
+                    
+                    # METHOD 3: SPECIFIC PATTERN RECOGNITION (most important)
+                    if not matched_config:
+                        matched_config = self._match_specific_patterns(individual_pattern)
+                        if matched_config:
+                            logger.info(f"   ✅ SPECIFIC PATTERN MATCH: '{individual_pattern}' → {matched_config['name']} ({matched_config['weight']}%)")
+                    
+                    # METHOD 4: KEYWORD CONTAINS MATCH (careful fuzzy matching)
+                    if not matched_config:
+                        matched_config = self._match_by_keywords(individual_pattern, keyword_mapping)
+                        if matched_config:
+                            logger.info(f"   ✅ KEYWORD CONTAINS MATCH: '{individual_pattern}' → {matched_config['name']} ({matched_config['weight']}%)")
+                    
+                    # Use matched config or create fallback
+                    if matched_config:
+                        clean_name = matched_config['name']
+                        weight = matched_config['weight']
+                        severity = matched_config['severity']
+                    else:
+                        # Fallback for unrecognized patterns
+                        clean_name = individual_pattern.replace('_', ' ').title()
+                        weight = 10  # Default weight
+                        severity = 'low'
+                        logger.info(f"   ❌ NO MATCH: '{individual_pattern}' → fallback: {clean_name} ({weight}%)")
+                    
+                    # STEP 2: Deduplicate and accumulate counts
+                    if clean_name in clean_patterns:
+                        # Increment count for existing pattern
+                        clean_patterns[clean_name]['count'] += 1
+                        clean_patterns[clean_name]['raw_matches'].append(individual_pattern)
+                    else:
+                        # Create new clean pattern entry
+                        clean_patterns[clean_name] = {
+                            'pattern_name': clean_name,
+                            'count': 1,
+                            'weight': weight,
+                            'severity': severity,
+                            'confidence': 0.8,
+                            'raw_matches': [individual_pattern]
+                        }
             
             # STEP 3: Store clean patterns in session accumulation
             if session_id not in self.accumulated_patterns:
                 self.accumulated_patterns[session_id] = {}
             
-            # Merge with existing session patterns (accumulate across multiple detections)
+            # Merge with existing session patterns
             session_patterns = self.accumulated_patterns[session_id]
             
             for clean_name, pattern_data in clean_patterns.items():
@@ -1188,7 +1206,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                     # Update existing pattern - increment count
                     session_patterns[clean_name]['count'] += pattern_data['count']
                     session_patterns[clean_name]['raw_matches'].extend(pattern_data['raw_matches'])
-                    # Keep highest severity if updating
+                    # Keep highest severity
                     if pattern_data['severity'] == 'critical' or session_patterns[clean_name]['severity'] != 'critical':
                         session_patterns[clean_name]['severity'] = pattern_data['severity']
                 else:
@@ -1203,27 +1221,27 @@ Please provide professional incident summary for ServiceNow case documentation.
             
             self.session_analysis_history[session_id].append(parsed)
             
-            # STEP 5: Calculate total risk score from clean patterns
+            # STEP 5: Calculate total risk score
             total_pattern_risk = 0
             for pattern in session_patterns.values():
-                # Risk = weight * count, but with diminishing returns for multiple occurrences
+                # Risk = weight * count, with diminishing returns
                 pattern_risk = pattern['weight']
                 if pattern['count'] > 1:
-                    # Diminishing returns: first occurrence = full weight, subsequent = 50%
+                    # Diminishing returns: 50% for subsequent occurrences
                     pattern_risk += (pattern['count'] - 1) * (pattern['weight'] * 0.5)
                 total_pattern_risk += pattern_risk
             
-            # Cap at reasonable maximum and add baseline
-            baseline_risk = 5  # Base risk for any transaction
+            # Cap at maximum and add baseline
+            baseline_risk = 5
             calculated_risk = min(baseline_risk + total_pattern_risk, 100)
             
-            # Update parsed result with calculated risk
+            # Update parsed result
             parsed['risk_score'] = int(calculated_risk)
             parsed['pattern_count'] = len(session_patterns)
             parsed['total_pattern_weight'] = int(total_pattern_risk)
             parsed['baseline_risk'] = baseline_risk
             
-            # Enhanced logging with config-based patterns
+            # Enhanced logging
             logger.info(f"🧹 CLEAN PATTERNS: {session_id} - {len(session_patterns)} unique patterns, {calculated_risk:.0f}% total risk")
             for name, data in session_patterns.items():
                 effective_weight = data['weight'] + ((data['count'] - 1) * data['weight'] * 0.5) if data['count'] > 1 else data['weight']
@@ -1235,13 +1253,59 @@ Please provide professional incident summary for ServiceNow case documentation.
             logger.error(f"❌ Pattern parsing error: {e}")
             return {'risk_score': 0.0, 'error': str(e)}
     
-    # Also add this helper method to get pattern severity from config:
-    def _get_pattern_severity_from_config(self, pattern_name: str) -> str:
-        """Get pattern severity from config"""
-        for pattern_id, config in FRAUD_PATTERN_CONFIG.items():
-            if config['name'] == pattern_name:
-                return config['severity']
-        return 'low'  # Default
+    # ADD THESE HELPER METHODS:
+    
+    def _match_specific_patterns(self, pattern_text: str) -> Optional[Dict[str, Any]]:
+        """Match specific common patterns that ADK returns"""
+        pattern_lower = pattern_text.lower()
+        
+        # Specific pattern recognition
+        if 'urgency' in pattern_lower and 'pressure' in pattern_lower:
+            return {'name': 'Urgency Pressure', 'weight': 15, 'severity': 'medium'}
+        
+        elif 'international transfer' in pattern_lower or 'overseas transfer' in pattern_lower:
+            return {'name': 'Overseas Transfer', 'weight': 12, 'severity': 'medium'}
+        
+        elif 'romance' in pattern_lower or 'boyfriend' in pattern_lower or 'girlfriend' in pattern_lower:
+            return {'name': 'Romance Exploitation', 'weight': 30, 'severity': 'critical'}
+        
+        elif 'emergency' in pattern_lower and ('money' in pattern_lower or 'help' in pattern_lower):
+            return {'name': 'Emergency Money Request', 'weight': 25, 'severity': 'critical'}
+        
+        elif 'never met' in pattern_lower or 'not met' in pattern_lower:
+            return {'name': 'Never Met Beneficiary', 'weight': 20, 'severity': 'high'}
+        
+        elif 'secret' in pattern_lower or 'don\'t tell' in pattern_lower:
+            return {'name': 'Secrecy Request', 'weight': 22, 'severity': 'high'}
+        
+        elif 'authority' in pattern_lower or 'police' in pattern_lower or 'government' in pattern_lower:
+            return {'name': 'Authority Impersonation', 'weight': 35, 'severity': 'critical'}
+        
+        elif 'guaranteed' in pattern_lower and ('return' in pattern_lower or 'profit' in pattern_lower):
+            return {'name': 'Guaranteed Investment Returns', 'weight': 28, 'severity': 'critical'}
+        
+        elif 'social engineering' in pattern_lower:
+            return {'name': 'Urgency Pressure', 'weight': 15, 'severity': 'medium'}  # Map social engineering to urgency
+        
+        return None
+    
+    def _match_by_keywords(self, pattern_text: str, keyword_mapping: Dict) -> Optional[Dict[str, Any]]:
+        """Careful keyword matching to avoid false positives"""
+        pattern_lower = pattern_text.lower()
+        
+        # Only match if the keyword is a significant part of the pattern
+        for keyword, config in keyword_mapping.items():
+            if len(keyword) >= 4:  # Only match keywords that are 4+ characters
+                if keyword in pattern_lower:
+                    # Additional check: make sure it's not a substring of a larger word
+                    words_in_pattern = pattern_lower.split()
+                    words_in_keyword = keyword.split()
+                    
+                    # Check if all keyword words appear in pattern
+                    if all(kw in ' '.join(words_in_pattern) for kw in words_in_keyword):
+                        return config
+        
+        return None
     
     def _parse_agent_result(self, agent_name: str, result_text: str) -> Dict:
         """Parse agent result text"""

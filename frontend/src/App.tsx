@@ -266,7 +266,6 @@ const QuestionPromptCard = ({
   onAsked: () => void;
   onSkipped: () => void;
 }) => {
-  console.log('🎨 RENDER DEBUG - QuestionPromptCard called');
   
   if (!currentQuestion) {
     console.log('🎨 RENDER DEBUG - No question, returning null');
@@ -534,14 +533,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       
     case 'fraud_analysis_update':
       const analysis = message.data;
-      
-      // DEBUG: Log analysis data structure
-      console.log('🔍 Fraud Analysis Update:');
-      console.log('  - risk_score:', analysis.risk_score);
-      console.log('  - detected_patterns:', analysis.detected_patterns);
-      console.log('  - detected_patterns type:', typeof analysis.detected_patterns);
-      console.log('  - detected_patterns keys:', Object.keys(analysis.detected_patterns || {}));        
-     
       setRiskScore(analysis.risk_score || 0);
       setRiskLevel(analysis.risk_level || 'MINIMAL');
       setScamType(analysis.scam_type || 'unknown');
@@ -561,9 +552,7 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       
     case 'policy_guidance_ready':
       const policyMessage = message.data;
-      console.log('📚 Policy Guidance Ready - Enhanced Debug:');
       console.log('  - Full message data:', policyMessage);
-      console.log('  - policy_guidance property:', policyMessage.policy_guidance);
       
       // Check if data is nested
       const actualPolicyData = policyMessage.policy_guidance || policyMessage;
@@ -642,8 +631,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     
     case 'question_prompt_ready':
       const questionData = message.data;
-      console.log('💡 QUESTION PROMPT - New question received');
-      
       const newQuestion: QuestionData = {
         id: questionData.question_id || `q_${Date.now()}`,
         question: questionData.question || 'Verify customer identity',
@@ -664,7 +651,7 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
         demoEnhancements: true,
         coordination: true
       });
-      setProcessingStage(`🎭 Hybrid Demo: ${message.data.script_title} (Real + Enhanced)`);
+      setProcessingStage(`🎭 Hybrid Demo: ${message.data.script_title}`);
       break;
    
     case 'demo_question_enhancement':

@@ -110,7 +110,7 @@ class FraudDetectionOrchestrator:
 
         # Initialize demo orchestrator
         self.demo_orchestrator = DemoOrchestrator(self)
-        self.demo_mode_enabled = getattr(settings, 'demo_mode', True)
+        self.demo_mode_enabled = getattr(self.settings, 'demo_mode', True)
         logger.info(f"🎭 Demo orchestrator initialized - enabled: {self.demo_mode_enabled}")
      
     def _initialize_servicenow(self):

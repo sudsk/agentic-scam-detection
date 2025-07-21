@@ -73,13 +73,9 @@ class FraudDetectionOrchestrator:
         self.session_analysis_history: Dict[str, List[Dict]] = {}
         self.accumulated_patterns: Dict[str, Dict] = {}
         
-        # Initialize settings with fallback
-        try:
-            from ..config.settings import get_settings
-            self.settings = get_settings()
-        except ImportError:
-            logger.warning("Settings import failed, using defaults")
-            self.settings = self._get_default_settings()
+        # Initialize settings 
+        from ..config.settings import get_settings
+        self.settings = get_settings()
         
         # Initialize all attributes to prevent AttributeError
         self.session_service = None
@@ -168,9 +164,7 @@ class FraudDetectionOrchestrator:
             project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
             location = os.getenv("GOOGLE_CLOUD_LOCATION")
             use_vertexai = os.getenv("GOOGLE_GENAI_USE_VERTEXAI")
-            
-            logger.info(f"🔧 Environment: PROJECT={project_id}, LOCATION={location}, USE_VERTEXAI={use_vertexai}")
-            
+           
             # Create session service
             try:
                 self.session_service = InMemorySessionService()
@@ -213,7 +207,6 @@ class FraudDetectionOrchestrator:
                         session_service=self.session_service
                     )
                     self.runners[agent_key] = runner
-                    logger.info(f"✅ Runner created: {agent_key}")
                 except Exception as runner_error:
                     logger.error(f"❌ Failed to create runner for {agent_key}: {runner_error}")
                     continue
@@ -222,16 +215,10 @@ class FraudDetectionOrchestrator:
             try:
                 from ..agents.case_management.agent import create_case_management_agent
                 self.case_management_agent = create_case_management_agent()
-                logger.info("✅ Case management agent initialized")
             except Exception as e:
                 logger.warning(f"⚠️ Case management agent not available: {e}")
                 self.case_management_agent = None
 
-            # ADD THIS DEBUG CHECK:
-            logger.info(f"🔧 ADK Debug: agents={list(self.agents.keys())}")
-            logger.info(f"🔧 ADK Debug: runners={list(self.runners.keys())}")
-            logger.info(f"🔧 ADK Debug: session_service={self.session_service is not None}")
-            
             if not self.agents:
                 logger.error("❌ NO ADK AGENTS LOADED!")
                 return False
@@ -239,7 +226,6 @@ class FraudDetectionOrchestrator:
             success = len(self.agents) > 0 and len(self.runners) > 0
             if success:
                 logger.info(f"✅ ADK system initialized with pre-defined agents: {len(self.agents)} agents, {len(self.runners)} runners")
-                logger.info(f"✅ Available agents: {list(self.agents.keys())}")
             else:
                 logger.error("❌ Failed to initialize with pre-defined agents")
                 

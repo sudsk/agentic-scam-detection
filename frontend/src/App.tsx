@@ -373,6 +373,14 @@ function App() {
   const [currentQuestion, setCurrentQuestion] = useState<QuestionData | null>(null);
 
   const lastQuestionRef = useRef<string>('');
+
+  // Add to existing state declarations
+  const [hybridMode, setHybridMode] = useState({
+    enabled: false,
+    realProcessing: false,
+    demoEnhancements: false,
+    coordination: false
+  });
   
   // ===== WEBSOCKET FUNCTIONS =====
 
@@ -646,7 +654,38 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       setCurrentQuestion(newQuestion);
       setProcessingStage(`💡 Question: ${newQuestion.question.slice(0, 30)}...`);
       break;
-      
+
+    case 'hybrid_demo_started':
+      setHybridMode({
+        enabled: true,
+        realProcessing: true,
+        demoEnhancements: true,
+        coordination: true
+      });
+      setProcessingStage(`🎭 Hybrid Demo: ${message.data.script_title} (Real + Enhanced)`);
+      break;
+    
+    case 'demo_explanation':
+      if (message.data.mode === 'hybrid') {
+        setDemoExplanation({
+          title: 'Demo Enhancement',
+          message: `${message.data.explanation.message} (Real processing + demo timing)`,
+          type: message.data.explanation.type,
+          riskLevel: message.data.explanation.riskLevel,
+          duration: message.data.explanation.duration
+        });
+      }
+      break;
+    
+    case 'demo_question_enhancement':
+      // Show demo question as enhancement, not replacement
+      setProcessingStage(`💡 Demo suggests: "${message.data.suggested_question}"`);
+      break;
+    
+    case 'hybrid_demo_complete':
+      setHybridMode(prev => ({ ...prev, enabled: false }));
+      setProcessingStage(`✅ Hybrid demo complete: Real analysis + demo enhancements`);
+      break;
     default:
       console.log('❓ Unknown message type:', message.type);
       // Don't update processing stage for unknown messages to avoid confusion
@@ -936,15 +975,20 @@ Click OK to open the case in ServiceNow.
 
   const ProcessingStatus = () => (
     <div className="flex items-center space-x-2 text-xs">
-      {serverProcessing ? (
+      {hybridMode.enabled ? (
+        <div className="flex items-center space-x-1 text-purple-600">
+          <Server className="w-4 h-4 animate-pulse" />
+          <span>Hybrid Demo (Real + Enhanced)</span>
+        </div>
+      ) : serverProcessing ? (
         <div className="flex items-center space-x-1 text-blue-600">
           <Server className="w-4 h-4 animate-pulse" />
-          <span>Server Processing</span>
+          <span>Real Processing</span>
         </div>
       ) : (
         <div className="flex items-center space-x-1 text-gray-500">
           <Server className="w-4 h-4" />
-          <span>Server Ready</span>
+          <span>Ready</span>
         </div>
       )}
     </div>

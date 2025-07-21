@@ -19,6 +19,7 @@ from io import StringIO
 # Import demo functionality
 from ..config.demo_scripts import getDemoScript, DEMO_CONFIG
 from .demo_orchestrator import DemoOrchestrator
+from .demo_orchestrator import DemoOrchestrator, getDemoScript
 
 # Suppress warnings at the top
 warnings.filterwarnings('ignore')

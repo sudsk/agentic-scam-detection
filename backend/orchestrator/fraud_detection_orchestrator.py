@@ -112,6 +112,10 @@ class FraudDetectionOrchestrator:
 
         # ADD THIS LINE: Track analyzed speech to prevent duplicates
         self.analyzed_speech_segments: Dict[str, List[str]] = {}
+
+        # ADD THIS TOGGLE:
+        self.enable_agent_questions = False  # Set to False to disable agent-generated questions
+        self.asked_questions: Dict[str, Set[str]] = {}
      
     def _initialize_servicenow(self):
         """Initialize ServiceNow service"""
@@ -1544,44 +1548,35 @@ Please provide professional incident summary for ServiceNow case documentation.
     async def _trigger_question_prompt(self, session_id: str, customer_text: str, detected_patterns: Dict, risk_score: float, callback: Optional[Callable]):
         """Simple question triggering with debug logging"""
         try:
-            # DEBUG: Check current state
+            # CHECK TOGGLE - Exit early if agent questions disabled
+            if not self.enable_agent_questions:
+                return  # Skip all agent-generated questions   
+
+            # Check if question already active
             current_active = self.active_questions.get(session_id)
-            print(f"🔍 QUESTION STATE DEBUG:")
-            print(f"  - session_id: {session_id}")
-            print(f"  - current_active_question: {current_active}")
-            print(f"  - active_questions dict: {self.active_questions}")
-            
-            # LAYER 1: Only one question active per session
             if current_active is not None:
-                print(f"❌ QUESTION BLOCKED: Active question exists: {current_active}")
-                return  # Question already active, don't send another
+                return  # Question already active
             
-            print(f"✅ QUESTION CHECK - No active question, proceeding")
-            print(f"  - patterns: {list(detected_patterns.keys())}")
-            print(f"  - risk_score: {risk_score}")
+            # GET RECENT QUESTIONS FOR THIS SESSION
+            asked_questions_set = self.asked_questions.get(session_id, set())
+            asked_questions_list = list(asked_questions_set)
             
-            # Get best question
+            # Get best question (avoiding duplicates)
             from ..config.question_triggers import select_best_question
-            best_question = select_best_question(detected_patterns, risk_score, customer_text)
+            best_question = select_best_question(detected_patterns, risk_score, customer_text, asked_questions_list)
             
-            if not best_question:
-                print(f"❌ NO QUESTION FOUND")
+            if not best_question or not callback:
                 return
-                
-            if not callback:
-                print(f"❌ NO CALLBACK AVAILABLE")
-                return
-            
-            # Generate simple question ID
+
+            # TRACK THE QUESTION BEFORE SENDING
+            if session_id not in self.asked_questions:
+                self.asked_questions[session_id] = set()
+            self.asked_questions[session_id].add(best_question['question'])
+        
+            # Generate question ID and send
             question_id = f"q_{session_id}_{int(time.time())}"
-            
-            # Mark as active BEFORE sending
             self.active_questions[session_id] = question_id
-            print(f"✅ MARKED ACTIVE: {question_id} for session {session_id}")
-            print(f"✅ Updated active_questions: {self.active_questions}")
-            
-            print(f"✅ SENDING QUESTION: {best_question['question']}")
-            
+           
             # Send to UI
             await callback({
                 'type': 'question_prompt_ready',
@@ -1597,14 +1592,8 @@ Please provide professional incident summary for ServiceNow case documentation.
                 }
             })
             
-            print(f"✅ QUESTION SENT SUCCESSFULLY")
-            
         except Exception as e:
-            print(f"❌ QUESTION ERROR: {e}")
-            # Clear active question on error
-            if session_id in self.active_questions:
-                self.active_questions[session_id] = None
-                print(f"🧹 CLEARED ACTIVE QUESTION due to error")
+            logger.error(f"❌ Question error: {e}")
     
     def mark_question_answered(self, session_id: str, question_id: str, action: str):
         """Clear active question when answered/skipped with debug logging"""
@@ -1733,9 +1722,10 @@ Please provide professional incident summary for ServiceNow case documentation.
                 del self.accumulated_patterns[session_id]
             if session_id in self.active_questions:
                 del self.active_questions[session_id]       
-
             if session_id in self.analyzed_speech_segments:
                 del self.analyzed_speech_segments[session_id]
+            if session_id in self.asked_questions:
+                del self.asked_questions[session_id]                
             
         except Exception as e:
             logger.error(f"❌ Cleanup error: {e}")

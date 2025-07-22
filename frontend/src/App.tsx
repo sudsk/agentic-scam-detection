@@ -2,8 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   AlertCircle, 
   CheckCircle, 
-  Upload, 
-  Mic, 
   Shield, 
   FileText, 
   Users, 
@@ -13,21 +11,14 @@ import {
   PhoneCall,
   TrendingUp,
   AlertTriangle,
-  Eye,
   Brain,
   Wifi,
   WifiOff,
   Phone,
   User,
-  Clock,
-  Hash,
-  Settings,
   Server,
-  UserCheck,
-  Headphones
+  UserCheck
 } from 'lucide-react';
-
-import RiskScoreBreakdown from './components/RiskScoreBreakdown';
 
 // Environment configuration
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -776,7 +767,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     setPolicyGuidance(null);
     setProcessingStage('');
     setShowingSegments([]);
-    // ADD these new lines:
     setTranscriptSegments([]);
     setCurrentInterimSegment(null);
     setLastFinalSegmentTime(0);
@@ -784,7 +774,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     setSessionId('');
     setServerProcessing(false);
 
-    // Clear question state and ref
     setCurrentQuestion(null);
     lastQuestionRef.current = '';
   };
@@ -804,74 +793,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       console.error('Error loading audio files:', error);
     } finally {
       setIsLoadingFiles(false);
-    }
-  };
-
-  const createServiceNowCase = async () => {
-    try {
-      setProcessingStage('📋 Creating ServiceNow case...');
-      
-      const caseData = {
-        customer_name: currentCustomer.name,
-        customer_account: currentCustomer.account,
-        risk_score: riskScore,
-        scam_type: scamType,
-        session_id: sessionId,
-        confidence_score: riskScore / 100,
-        transcript_segments: showingSegments.map(segment => ({
-          speaker: segment.speaker,
-          start: segment.start,
-          text: segment.text,
-          confidence: segment.confidence
-        })),
-        detected_patterns: detectedPatterns,
-        recommended_actions: policyGuidance?.recommended_actions || [
-          "Review customer interaction",
-          "Verify transaction details",
-          "Follow standard fraud procedures"
-        ]
-      };
-
-      const response = await fetch(`${API_BASE_URL}/api/v1/cases/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(caseData),
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.status === 'success') {
-        const caseInfo = result.data;
-        
-        setProcessingStage(`✅ ServiceNow case created: ${caseInfo.case_number}`);
-        
-        const successMessage = `
-ServiceNow Case Created Successfully!
-
-Case Number: ${caseInfo.case_number}
-Priority: ${caseInfo.priority}
-Risk Score: ${riskScore}%
-Scam Type: ${scamType.replace('_', ' ').toUpperCase()}
-
-Click OK to open the case in ServiceNow.
-        `.trim();
-        
-        if (window.confirm(successMessage)) {
-          window.open(caseInfo.case_url, '_blank');
-        }
-        
-      } else {
-        const errorMessage = result.error || 'Failed to create case';
-        setProcessingStage(`❌ Error: ${errorMessage}`);
-        alert(`Failed to create ServiceNow case: ${errorMessage}`);
-      }
-      
-    } catch (error) {
-      console.error('Error creating ServiceNow case:', error);
-      setProcessingStage(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      alert(`Error creating ServiceNow case: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -1220,34 +1141,23 @@ Click OK to open the case in ServiceNow.
                 <span>Verify Identity</span>
               </button>
               
-              {/* ServiceNow Case Creation Button */}
-              <button 
-                onClick={createServiceNowCase}
-                disabled={riskScore < 40}
-                className={`w-full flex items-center space-x-2 px-3 py-2 text-left text-sm rounded ${
-                  riskScore < 40 
-                    ? 'text-gray-400 cursor-not-allowed' 
-                    : 'text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <FileText className="w-4 h-4" />
-                <span>Create ServiceNow Case</span>
-                {riskScore >= 80 && (
-                  <span className="ml-auto text-xs bg-red-100 text-red-700 px-2 py-1 rounded">
-                    Auto
-                  </span>
-                )}
-              </button>
+              {/* Case Status Display */}
+              {riskScore >= 50 && (
+                <div className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm bg-green-100 text-green-700 rounded">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>ServiceNow Case Auto-Created</span>
+                </div>
+              )}
               
-              {/* High Risk Auto-Escalation */}
+              {/* High Risk Escalation Status */}
               {riskScore >= 80 && (
-                <button 
-                  onClick={createServiceNowCase}
-                  className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
-                >
+                <div className="w-full flex items-center space-x-2 px-3 py-2 text-left text-sm bg-red-100 text-red-700 rounded">
                   <AlertTriangle className="w-4 h-4" />
-                  <span>ESCALATE to Fraud Team</span>
-                </button>
+                  <span>ESCALATED to Fraud Team</span>
+                  <span className="ml-auto text-xs bg-red-200 text-red-800 px-2 py-1 rounded">
+                    AUTO
+                  </span>
+                </div>
               )}
             </div>
           </div>

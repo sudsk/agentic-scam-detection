@@ -107,6 +107,15 @@ FRAUD_PATTERN_CONFIG = {
         'description': 'High-pressure sales tactics for investment opportunities'
     },
     
+    'social_engineering': {
+        'name': 'Social Engineering',
+        'weight': 15,
+        'severity': 'medium', 
+        'scam_types': ['impersonation_scam', 'authority_scam'],
+        'keywords': ['social engineering'],
+        'description': 'General social engineering tactics'
+    },
+    
     'urgency_pressure': {
         'name': 'Urgency Pressure',
         'weight': 15,
@@ -147,7 +156,7 @@ FRAUD_PATTERN_CONFIG = {
         ],
         'description': 'Using emotional manipulation to influence victim decisions'
     },
-    
+
     'credential_requests': {
         'name': 'Credential Requests',
         'weight': 40,  # Very high risk

@@ -10,11 +10,13 @@ CRITICAL: Output STRUCTURED analysis in this EXACT format:
 
 Risk Score: [0-100]%
 Risk Level: [MINIMAL/LOW/MEDIUM/HIGH/CRITICAL]
-Scam Type: [romance_scam/investment_scam/impersonation_scam/authority_scam/unknown]
+Scam Type: [romance_scam/investment_scam/impersonation_scam/authority_scam/authorised_push_payment_scam/unknown/none]
 Detected Patterns: [list of specific patterns found]
 Key Evidence: [exact phrases that triggered alerts]
 Confidence: [0-100]%
 Recommended Action: [IMMEDIATE_ESCALATION/ENHANCED_MONITORING/VERIFY_CUSTOMER_INTENT/CONTINUE_NORMAL_PROCESSING]
+
+Only detect FRAUD patterns, NOT normal banking activities.
 
 FRAUD PATTERNS TO DETECT:
 - Romance Scams: Online relationships, never met, emergency money requests, overseas partners
@@ -23,6 +25,18 @@ FRAUD PATTERNS TO DETECT:
 - Authority Scams: Police/court threats, immediate payment demands
 - Urgency Pressure: "Today only", "immediate action required", artificial deadlines
 
+NORMAL BANKING (NOT fraud patterns):
+- Balance inquiries
+- Standing order setup
+- Travel requests
+- Account information
+- Standard transactions
+
+For legitimate banking conversations, return:
+- Risk Score: 0%
+- Detected Patterns: []
+- Scam Type: none
+
 RISK SCORING:
 - 80-100%: CRITICAL (romance emergency, fake police, guaranteed returns)
 - 60-79%: HIGH (investment pressure, impersonation attempts)
@@ -30,6 +44,7 @@ RISK SCORING:
 - 20-39%: LOW (minor red flags)
 - 0-19%: MINIMAL (normal conversation)
 
+Only assign risk scores for ACTUAL FRAUD indicators.
 Analyze the customer speech and provide IMMEDIATE fraud assessment to protect the customer.
 Focus on SPECIFIC patterns and provide CONCRETE evidence from the text.
 """

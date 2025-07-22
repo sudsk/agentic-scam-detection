@@ -257,6 +257,16 @@ const QuestionPromptCard = ({
   onAsked: () => void;
   onSkipped: () => void;
 }) => {
+
+  useEffect(() => {
+    if (currentQuestion) {
+      const timer = setTimeout(() => {
+        onSkipped(); // Auto-skip after 5 seconds
+      }, 5000); // 5 seconds
+      
+      return () => clearTimeout(timer); // Cleanup on unmount or new question
+    }
+  }, [currentQuestion, onSkipped]);
   
   if (!currentQuestion) {
     return null;

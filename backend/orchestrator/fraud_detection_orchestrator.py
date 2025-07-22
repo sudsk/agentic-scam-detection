@@ -1174,19 +1174,18 @@ Please provide professional incident summary for ServiceNow case documentation.
             
             # STEP 3: Calculate total risk score (simple addition)
             total_pattern_risk = sum(pattern['weight'] for pattern in session_patterns.values())
-            baseline_risk = 5
-            calculated_risk = min(baseline_risk + total_pattern_risk, 100)
+            calculated_risk = min(total_pattern_risk, 100)
             
             # Update parsed result
             parsed['risk_score'] = calculated_risk
             parsed['pattern_count'] = len(session_patterns)
             parsed['total_pattern_weight'] = total_pattern_risk
-            parsed['total_raw_risk'] = baseline_risk + total_pattern_risk  # Store uncapped for UI
+            parsed['total_raw_risk'] = total_pattern_risk  # Store uncapped for UI
             
             logger.info(f"🧹 FIXED PATTERNS: {session_id} - {len(session_patterns)} total patterns, {calculated_risk}% risk")
             for name, data in session_patterns.items():
                 logger.info(f"   • {name}: {data['weight']}% [{data['severity']}]")
-            logger.info(f"🎯 CALCULATION: {baseline_risk}% baseline + {total_pattern_risk}% patterns = {baseline_risk + total_pattern_risk}% (capped at {calculated_risk}%)")
+            logger.info(f"🎯 CALCULATION: {total_pattern_risk}% patterns = {total_pattern_risk}% (capped at {calculated_risk}%)")
             
             return parsed
             

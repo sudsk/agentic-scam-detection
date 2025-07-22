@@ -1547,15 +1547,15 @@ Please provide professional incident summary for ServiceNow case documentation.
         try:
             if session_id not in self.customer_speech_buffer:
                 self.customer_speech_buffer[session_id] = []
-
-            # Add to speech buffer            
+            
+            # Add to speech buffer
             self.customer_speech_buffer[session_id].append({
                 'text': customer_text,
                 'timestamp': segment_data.get('start', 0),
                 'confidence': segment_data.get('confidence', 0.0)
             })
 
-            # DEDUPLICATION: Check if this speech segment is new enough to analyze
+            # IMPROVED DEDUPLICATION: Check if this speech segment is substantially new
             if session_id not in self.analyzed_speech_segments:
                 self.analyzed_speech_segments[session_id] = []
                 
@@ -1566,42 +1566,51 @@ Please provide professional incident summary for ServiceNow case documentation.
 
             # DEDUPLICATION: Only analyze if we have significant new content
             should_analyze = False
+            analysis_reason = ""
 
             if len(self.analyzed_speech_segments[session_id]) == 0:
-                # First analysis
+                # First analysis - always analyze
                 should_analyze = True
-                logger.info(f"🔍 ANALYSIS TRIGGER: First customer speech")
+                analysis_reason = "First customer speech"
             
-            elif len(accumulated_speech.strip()) >= 15:
-                # Check if we have enough new content since last analysis
-                last_analyzed_length = len(" ".join(self.analyzed_speech_segments[session_id]))
-                new_content_length = len(accumulated_speech) - last_analyzed_length
-
-                if new_content_length >= 10:  # At least 10 new characters
-                    should_analyze = True
-                    logger.info(f"🔍 ANALYSIS TRIGGER: {new_content_length} new characters")
+            elif len(accumulated_speech.strip()) >= 20:  # Increased minimum threshold
+                # Get the last analyzed content
+                last_analyzed_speech = " ".join(self.analyzed_speech_segments[session_id])
+                
+                # Calculate NEW content only
+                if accumulated_speech.startswith(last_analyzed_speech):
+                    new_content = accumulated_speech[len(last_analyzed_speech):].strip()
                 else:
-                    logger.info(f"🔍 ANALYSIS SKIPPED: Only {new_content_length} new characters")
+                    # Fallback: check for substantial new words
+                    analyzed_words = set(last_analyzed_speech.lower().split())
+                    current_words = set(accumulated_speech.lower().split())
+                    new_words = current_words - analyzed_words
+                    new_content = " ".join(new_words)
+                
+                # STRICTER THRESHOLDS for new analysis
+                new_word_count = len(new_content.split()) if new_content else 0
+                new_char_count = len(new_content)
+                
+                if new_word_count >= 5 and new_char_count >= 25:  # At least 5 new words AND 25 characters
+                    should_analyze = True
+                    analysis_reason = f"{new_word_count} new words, {new_char_count} new chars"
+                else:
+                    analysis_reason = f"Insufficient new content: {new_word_count} words, {new_char_count} chars"
+            else:
+                analysis_reason = f"Insufficient total length: {len(accumulated_speech)} chars"
 
+            # DEBUG LOG
+            logger.info(f"🔍 DEDUPLICATION: {analysis_reason}")
+            
             if should_analyze:
                 # Store what we're analyzing to prevent re-analysis
-                self.analyzed_speech_segments[session_id].append(customer_text)
-            
+                self.analyzed_speech_segments[session_id] = accumulated_speech.split()  # Store as word list
+                
                 # Get callback for this session
                 session_data = self.active_sessions.get(session_id, {})
                 callback = session_data.get('callback')
                 
-                # Send analysis started message
-                if callback:
-                    await callback({
-                        'type': 'fraud_analysis_started',
-                        'data': {
-                            'session_id': session_id,
-                            'customer_text': customer_text,
-                            'accumulated_length': len(accumulated_speech),
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    })
+                logger.info(f"🔍 ANALYSIS TRIGGERED: {analysis_reason}")
                 
                 # Run analysis pipeline
                 analysis_result = await self._run_adk_agent_pipeline(session_id, accumulated_speech, callback)
@@ -1610,10 +1619,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                 if callback and analysis_result:
                     scam_analysis = analysis_result.get('scam_analysis', {})
                     risk_score = scam_analysis.get('risk_score', 0)
-
-                    logger.info(f"🔍 WEBSOCKET SEND: detected_patterns type = {type(self.accumulated_patterns.get(session_id, {}))}")
-                    logger.info(f"🔍 WEBSOCKET SEND: detected_patterns = {self.accumulated_patterns.get(session_id, {})}")
-                    
+                
                     await callback({
                         'type': 'fraud_analysis_update',
                         'data': {
@@ -1623,11 +1629,11 @@ Please provide professional incident summary for ServiceNow case documentation.
                             'scam_type': scam_analysis.get('scam_type', 'unknown'),
                             'detected_patterns': self.accumulated_patterns.get(session_id, {}),
                             'confidence': scam_analysis.get('confidence', 0.0),
-                            'analysis_trigger': 'new_content',                            
+                            'analysis_trigger': analysis_reason,
                             'timestamp': datetime.now().isoformat()
                         }
                     })
-                    
+                
                     # Send policy guidance if available
                     policy_guidance = analysis_result.get('policy_guidance')
                     if policy_guidance:
@@ -1639,17 +1645,16 @@ Please provide professional incident summary for ServiceNow case documentation.
                                 'timestamp': datetime.now().isoformat()
                             }
                         })
-
-                    # NEW: Trigger question prompt after analysis update
+                    
+                    # Trigger question prompt after analysis update
                     await self._trigger_question_prompt(
                         session_id, accumulated_speech, 
                         self.accumulated_patterns.get(session_id, {}),
                         risk_score, callback
                     )
-
             else:
-                logger.info(f"🔍 SPEECH DEDUPLICATION: Skipped analysis for similar content")
-         
+                logger.info(f"🔍 ANALYSIS SKIPPED: {analysis_reason}")
+            
         except Exception as e:
             logger.error(f"❌ Error processing customer speech: {e}")
 

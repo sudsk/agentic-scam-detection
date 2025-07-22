@@ -1117,7 +1117,10 @@ Please provide professional incident summary for ServiceNow case documentation.
                 for individual_pattern in individual_patterns:
                     if not individual_pattern:
                         continue
-                        
+
+                    if individual_pattern.lower() in ['none', 'none detected', 'no suspicious patterns detected']:
+                        continue  # Skip these entirely
+
                     matched_config = None
                     
                     # Pattern matching (same as before)
@@ -1143,7 +1146,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                         severity = matched_config['severity']
                     else:
                         clean_name = individual_pattern.replace('_', ' ').title()
-                        weight = 10
+                        weight = 0
                         severity = 'low'
                     
                     # Store unique patterns (no counts, just base weight)

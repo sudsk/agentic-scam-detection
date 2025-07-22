@@ -317,7 +317,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 63,
                 'riskScore': 80,
                 'suggestedQuestion': {
-                    'question': 'What's the name of their solicitor firm and the account name for the new bank details?',
+                    'question': "What's the name of their solicitor firm and the account name for the new bank details?",
                     'context': 'Relationship verification needed',
                     'urgency': 'high'
                 }

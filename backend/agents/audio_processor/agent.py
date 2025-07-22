@@ -22,7 +22,6 @@ from collections import deque
 import io
 import numpy as np
 
-from ..shared.base_agent import BaseAgent, AgentCapability, agent_registry
 from ...config.settings import get_settings
 from ...utils import get_current_timestamp
 
@@ -143,15 +142,13 @@ class NativeStereoTracker:
             "channel_mapping": self.channel_mapping.copy()
         }
 
-class AudioProcessorAgent(BaseAgent):
+class AudioProcessorAgent:
     """Native Google STT Stereo Audio Processor"""
     
     def __init__(self):
-        super().__init__(
-            agent_type="audio_processor",
-            agent_name="Native Google STT Stereo Processor (v1p1beta1)"
-        )
-        
+        self.agent_type="audio_processor"
+        self.agent_name="Native Google STT Stereo Processor (v1p1beta1)"
+
         self.active_sessions: Dict[str, Dict] = {}
         self.streaming_tasks: Dict[str, asyncio.Task] = {}
         self.audio_buffers: Dict[str, StereoAudioBuffer] = {}
@@ -168,7 +165,6 @@ class AudioProcessorAgent(BaseAgent):
         self.processing_speed_factor = 1.05
         
         self._initialize_google_stt()
-        agent_registry.register_agent(self)
         
         #logger.info(f"🎵 {self.agent_name} initialized - NATIVE STEREO MODE")
         #logger.info(f"🎯 Stereo chunk size: {self.stereo_chunk_size} bytes")
@@ -182,12 +178,6 @@ class AudioProcessorAgent(BaseAgent):
             "max_streaming_duration": 300,
             "restart_timeout": 45
         }
-    
-    def _get_capabilities(self) -> List[AgentCapability]:
-        return [
-            AgentCapability.AUDIO_PROCESSING,
-            AgentCapability.REAL_TIME_PROCESSING
-        ]
     
     def _initialize_google_stt(self):
         """Initialize Google Speech-to-Text v1p1beta1"""

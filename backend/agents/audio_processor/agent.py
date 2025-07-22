@@ -148,6 +148,7 @@ class AudioProcessorAgent:
     def __init__(self):
         self.agent_type="audio_processor"
         self.agent_name="Native Google STT Stereo Processor (v1p1beta1)"
+        self.config = self._get_default_config()
 
         self.active_sessions: Dict[str, Dict] = {}
         self.streaming_tasks: Dict[str, asyncio.Task] = {}

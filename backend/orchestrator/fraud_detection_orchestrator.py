@@ -1115,15 +1115,17 @@ Please provide professional incident summary for ServiceNow case documentation.
                 for individual_pattern in individual_patterns:
                     if not individual_pattern:
                         continue
-
-                    if individual_pattern.lower() in ['none', 'none detected', 'no suspicious patterns detected']:
+                       
+                    clean_pattern = individual_pattern.strip().rstrip('.,!?()').strip()
+                    
+                    if clean_pattern.lower() in ['none', 'none detected', 'no suspicious patterns detected']:
                         continue  # Skip these entirely
 
                     matched_config = None
                     
                     # Pattern matching (same as before)
                     for pattern_id, config in FRAUD_PATTERN_CONFIG.items():
-                        if config['name'].lower() == individual_pattern.strip().lower():
+                        if config['name'].lower() == clean_pattern.lower():
                             matched_config = {
                                 'name': config['name'],
                                 'weight': config['weight'],
@@ -1132,7 +1134,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                             break
                     
                     if not matched_config:
-                        matched_config = self._match_by_keywords(individual_pattern, keyword_mapping)
+                        matched_config = self._match_by_keywords(clean_pattern, keyword_mapping)
                     
                     # Use matched config or fallback
                     if matched_config:
@@ -1140,7 +1142,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                         weight = matched_config['weight']
                         severity = matched_config['severity']
                     else:
-                        clean_name = individual_pattern.replace('_', ' ').title()
+                        clean_name = clean_pattern.replace('_', ' ').title()
                         weight = 0
                         severity = 'low'
                     
@@ -1192,41 +1194,6 @@ Please provide professional incident summary for ServiceNow case documentation.
             return {'risk_score': 0.0, 'error': str(e)}
     
     # ADD THESE HELPER METHODS:
-    
-    def _match_specific_patterns(self, pattern_text: str) -> Optional[Dict[str, Any]]:
-        """Match specific common patterns that ADK returns"""
-        pattern_lower = pattern_text.lower()
-        
-        # Specific pattern recognition
-        if 'urgency' in pattern_lower and 'pressure' in pattern_lower:
-            return {'name': 'Urgency Pressure', 'weight': 15, 'severity': 'medium'}
-        
-        elif 'international transfer' in pattern_lower or 'overseas transfer' in pattern_lower:
-            return {'name': 'Overseas Transfer', 'weight': 12, 'severity': 'medium'}
-        
-        elif 'romance' in pattern_lower or 'boyfriend' in pattern_lower or 'girlfriend' in pattern_lower:
-            return {'name': 'Romance Exploitation', 'weight': 30, 'severity': 'critical'}
-        
-        elif 'emergency' in pattern_lower and ('money' in pattern_lower or 'help' in pattern_lower):
-            return {'name': 'Emergency Money Request', 'weight': 25, 'severity': 'critical'}
-        
-        elif 'never met' in pattern_lower or 'not met' in pattern_lower:
-            return {'name': 'Never Met Beneficiary', 'weight': 20, 'severity': 'high'}
-        
-        elif 'secret' in pattern_lower or 'don\'t tell' in pattern_lower:
-            return {'name': 'Secrecy Request', 'weight': 22, 'severity': 'high'}
-        
-        elif 'authority' in pattern_lower or 'police' in pattern_lower or 'government' in pattern_lower:
-            return {'name': 'Authority Impersonation', 'weight': 35, 'severity': 'critical'}
-        
-        elif 'guaranteed' in pattern_lower and ('return' in pattern_lower or 'profit' in pattern_lower):
-            return {'name': 'Guaranteed Investment Returns', 'weight': 28, 'severity': 'critical'}
-        
-        elif 'social engineering' in pattern_lower:
-            return {'name': 'Urgency Pressure', 'weight': 15, 'severity': 'medium'}  # Map social engineering to urgency
-        
-        return None
-    
     def _match_by_keywords(self, pattern_text: str, keyword_mapping: Dict) -> Optional[Dict[str, Any]]:
         """Careful keyword matching to avoid false positives"""
         pattern_lower = pattern_text.lower()

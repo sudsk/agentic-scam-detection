@@ -79,21 +79,75 @@ DEMO_SCRIPTS = {
         'title': 'Romance Scam Demo',
         'timeline': [
             {
-                'triggerAtSeconds': 15,
+                'triggerAtSeconds': 23,
                 'riskScore': 25,
                 'suggestedQuestion': {
-                    'question': 'What makes this transaction urgent?',
-                    'context': 'Urgency detected',
+                    'question': 'What is the purpose of the transfer?',
+                    'context': 'Urgent transfer detected',
                     'urgency': 'medium'
                 }
             },
             {
-                'triggerAtSeconds': 35,
+                'triggerAtSeconds': 49,
                 'riskScore': 65,
                 'suggestedQuestion': {
-                    'question': 'Have you met this person in person?',
+                    'question': 'Has the person contacted his family for help?',
                     'context': 'Romance scam indicators',
                     'urgency': 'high'
+                }
+            },
+            {
+                'triggerAtSeconds': 64,
+                'riskScore': 80,
+                'suggestedQuestion': {
+                    'question': 'Have you met the person in person?',
+                    'context': 'Relationship verification needed',
+                    'urgency': 'high'
+                }
+            },
+            {
+                'triggerAtSeconds': 76,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'How the person contacted you?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            },
+            {
+                'triggerAtSeconds': 93,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Raise concern about potential Romance scam',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            },
+            {
+                'triggerAtSeconds': 110,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Have you been able to video call?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            },
+            {
+                'triggerAtSeconds': 125,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Has the person asked money before?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            },
+            {
+                'triggerAtSeconds': 145,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Recommend temporary hold and escalate to fraud team.',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
                 }
             }
         ]

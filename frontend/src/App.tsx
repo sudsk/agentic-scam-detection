@@ -1385,122 +1385,66 @@ Click OK to open the case in ServiceNow.
                 Live Alerts
               </h4>
               
-              {/* Critical Risk Alert */}
-              {riskScore >= 80 && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
-                  <div className="flex items-center space-x-2">
-                    <AlertTriangle className="w-4 h-4 text-red-600" />
-                    <span className="text-sm font-medium text-red-800">
-                      {scamType === 'romance_scam' ? 'ROMANCE SCAM DETECTED' :
-                       scamType === 'investment_scam' ? 'INVESTMENT SCAM DETECTED' :
-                       scamType === 'impersonation_scam' ? 'IMPERSONATION SCAM DETECTED' :
-                       scamType === 'app_scam' ? 'APP SCAM DETECTED' :                        
-                       'FRAUD DETECTED'}
-                    </span>
-                  </div>
-                  
-                  {/* Risk Factor Breakdown */}
-                  <div className="mt-2 space-y-1">
-                    {Object.entries(detectedPatterns).map(([patternName, pattern]) => (
-                      <div key={patternName} className="flex justify-between items-center text-xs">
-                        <span className="text-red-700">{patternName.replace('_', ' ')}</span>
-                        <span className="text-red-600 font-medium">
-                          {pattern.weight || 15}% ({pattern.count || 1}x)
+              {/* ✅ REPLACE THE 3 SECTIONS ABOVE WITH THIS ONE BLOCK */}
+              {Object.keys(detectedPatterns).length > 0 && (
+                <div className={`border rounded-lg p-3 mb-3 ${
+                  riskScore >= 80 ? 'bg-red-50 border-red-200' :
+                  riskScore >= 60 ? 'bg-orange-50 border-orange-200' :
+                  riskScore >= 40 ? 'bg-yellow-50 border-yellow-200' :
+                  'bg-blue-50 border-blue-200'
+                }`}>
+                  {/* Replace all your risk level conditionals with this simple version */}
+                  {Object.keys(detectedPatterns).length > 0 && (
+                    <div className={`border rounded-lg p-3 mb-3 ${
+                      riskScore >= 80 ? 'bg-red-50 border-red-200' :
+                      riskScore >= 60 ? 'bg-orange-50 border-orange-200' :
+                      riskScore >= 40 ? 'bg-yellow-50 border-yellow-200' :
+                      'bg-blue-50 border-blue-200'
+                    }`}>
+                      <div className="flex items-center space-x-2">
+                        <AlertCircle className={`w-4 h-4 ${
+                          riskScore >= 80 ? 'text-red-600' :
+                          riskScore >= 60 ? 'text-orange-600' :
+                          riskScore >= 40 ? 'text-yellow-600' :
+                          'text-blue-600'
+                        }`} />
+                        <span className={`text-sm font-medium ${
+                          riskScore >= 80 ? 'text-red-800' :
+                          riskScore >= 60 ? 'text-orange-800' :
+                          riskScore >= 40 ? 'text-yellow-800' :
+                          'text-blue-800'
+                        }`}>
+                          {riskScore >= 80 ? 'CRITICAL FRAUD DETECTED' :
+                           riskScore >= 60 ? 'HIGH RISK INDICATORS DETECTED' :
+                           riskScore >= 40 ? 'POTENTIAL RISK INDICATORS' :
+                           'RISK INDICATORS DETECTED'}
                         </span>
                       </div>
-                    ))}
-                  </div>
-                  
-                  <p className="text-xs text-red-700 mt-2">
-                    Total Risk: {riskScore}% - Immediate intervention required
-                  </p>
+                      
+                      {/* Risk Factor Breakdown */}
+                      <div className="mt-2 space-y-1">
+                        {Object.entries(detectedPatterns).map(([patternName, pattern]) => (
+                          <div key={patternName} className="flex justify-between items-center text-xs">
+                            <span className={riskScore >= 80 ? 'text-red-700' : riskScore >= 60 ? 'text-orange-700' : riskScore >= 40 ? 'text-yellow-700' : 'text-blue-700'}>
+                              {patternName.replace('_', ' ')}
+                            </span>
+                            <span className={`font-medium ${riskScore >= 80 ? 'text-red-600' : riskScore >= 60 ? 'text-orange-600' : riskScore >= 40 ? 'text-yellow-600' : 'text-blue-600'}`}>
+                              {pattern.weight || 10}% ({pattern.count || 1}x)
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <p className={`text-xs mt-2 ${riskScore >= 80 ? 'text-red-700' : riskScore >= 60 ? 'text-orange-700' : riskScore >= 40 ? 'text-yellow-700' : 'text-blue-700'}`}>
+                        Total Risk: {riskScore}% - {riskScore >= 80 ? 'Immediate intervention required' : riskScore >= 60 ? 'Enhanced monitoring required' : riskScore >= 40 ? 'Monitoring recommended' : 'Early detection monitoring'}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
-              
-              {/* High Risk Alert */}
-              {riskScore >= 60 && riskScore < 80 && (
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
-                  <div className="flex items-center space-x-2">
-                    <AlertCircle className="w-4 h-4 text-orange-600" />
-                    <span className="text-sm font-medium text-orange-800">
-                      HIGH RISK INDICATORS DETECTED
-                    </span>
-                  </div>
-                  
-                  {/* Risk Factor Breakdown */}
-                  <div className="mt-2 space-y-1">
-                    {Object.entries(detectedPatterns).map(([patternName, pattern]) => (
-                      <div key={patternName} className="flex justify-between items-center text-xs">
-                        <span className="text-orange-700">{patternName.replace('_', ' ')}</span>
-                        <span className="text-orange-600 font-medium">
-                          {pattern.weight || 15}% ({pattern.count || 1}x)
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <p className="text-xs text-orange-700 mt-2">
-                    Total Risk: {riskScore}% - Enhanced monitoring required
-                  </p>
-                </div>
-              )}
-              
-              {/* Medium Risk Alert */}
-              {riskScore >= 40 && riskScore < 60 && Object.keys(detectedPatterns).length > 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
-                  <div className="flex items-center space-x-2">
-                    <AlertCircle className="w-4 h-4 text-yellow-600" />
-                    <span className="text-sm font-medium text-yellow-800">
-                      POTENTIAL RISK INDICATORS
-                    </span>
-                  </div>
-                  
-                  {/* Risk Factor Breakdown */}
-                  <div className="mt-2 space-y-1">
-                    {Object.entries(detectedPatterns).map(([patternName, pattern]) => (
-                      <div key={patternName} className="flex justify-between items-center text-xs">
-                        <span className="text-yellow-700">{patternName.replace('_', ' ')}</span>
-                        <span className="text-yellow-600 font-medium">
-                          {pattern.weight || 10}% ({pattern.count || 1}x)
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <p className="text-xs text-yellow-700 mt-2">
-                    Total Risk: {riskScore}% - Monitoring recommended
-                  </p>
-                </div>
-              )}
-              {/* Low Risk Alert */}
-              {riskScore >= 1 && riskScore < 40 && Object.keys(detectedPatterns).length > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
-                  <div className="flex items-center space-x-2">
-                    <AlertCircle className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm font-medium text-blue-800">
-                      RISK INDICATORS DETECTED
-                    </span>
-                  </div>
-                  
-                  {/* Risk Factor Breakdown */}
-                  <div className="mt-2 space-y-1">
-                    {Object.entries(detectedPatterns).map(([patternName, pattern]) => (
-                      <div key={patternName} className="flex justify-between items-center text-xs">
-                        <span className="text-blue-700">{patternName.replace('_', ' ')}</span>
-                        <span className="text-blue-600 font-medium">
-                          {pattern.weight || 10}% ({pattern.count || 1}x)
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <p className="text-xs text-blue-700 mt-2">
-                    Total Risk: {riskScore}% - Early detection monitoring
-                  </p>
-                </div>
-              )}              
             </div>
           )}
+          
           {/* Recommended Actions */}
           {policyGuidance && safeLength(policyGuidance.recommended_actions) > 0 && (
             <div className="p-4 border-b border-gray-200">

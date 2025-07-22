@@ -96,7 +96,7 @@ DEMO_SCRIPTS = {
                 'riskScore': 25,
                 'suggestedQuestion': {
                     'question': 'What is the purpose of the transfer?',
-                    'context': 'Urgent transfer detected',
+                    'context': 'Caller verification needed',
                     'urgency': 'medium'
                 }
             },
@@ -161,6 +161,188 @@ DEMO_SCRIPTS = {
                     'question': 'Recommend temporary hold and escalate to fraud team.',
                     'context': 'Secrecy request detected',
                     'urgency': 'critical'
+                }
+            }
+        ]
+    },
+    'impersonation_scam_1.wav': {
+        'title': 'Impersonation Scam Demo',
+        'timeline': [
+            {
+                'triggerAtSeconds': 12,
+                'riskScore': 25,
+                'suggestedQuestion': {
+                    'question': 'Whom they spoke to and what number they called from?',
+                    'context': 'Urgent transfer detected',
+                    'urgency': 'medium'
+                }
+            },
+            {
+                'triggerAtSeconds': 24,
+                'riskScore': 65,
+                'suggestedQuestion': {
+                    'question': 'What they asked customer to do?',
+                    'context': 'Romance scam indicators',
+                    'urgency': 'high'
+                }
+            },
+            {
+                'triggerAtSeconds': 35,
+                'riskScore': 80,
+                'suggestedQuestion': {
+                    'question': 'Did they give any account details?',
+                    'context': 'Relationship verification needed',
+                    'urgency': 'high'
+                }
+            },
+            {
+                'triggerAtSeconds': 60,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Did they give their PIN?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            },
+            {
+                'triggerAtSeconds': 70,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Did they ask customer any other details?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            },
+            {
+                'triggerAtSeconds': 135,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Did they ask customer any other details?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            },
+            {
+                'triggerAtSeconds': 1525,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Has this happened before?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            }
+        ]
+    },
+    'investment_scam_1.wav': {
+        'title': 'Investment Scam Demo',
+        'timeline': [
+            {
+                'triggerAtSeconds': 30,
+                'riskScore': 25,
+                'suggestedQuestion': {
+                    'question': 'Ask details about the investment opportunity?',
+                    'context': 'Urgent transfer detected',
+                    'urgency': 'medium'
+                }
+            },
+            {
+                'triggerAtSeconds': 42,
+                'riskScore': 65,
+                'suggestedQuestion': {
+                    'question': 'How did they find the advisor?',
+                    'context': 'Romance scam indicators',
+                    'urgency': 'high'
+                }
+            },
+            {
+                'triggerAtSeconds': 60,
+                'riskScore': 80,
+                'suggestedQuestion': {
+                    'question': 'Have they withdrawn any profits?',
+                    'context': 'Relationship verification needed',
+                    'urgency': 'high'
+                }
+            },
+            {
+                'triggerAtSeconds': 75,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Is the advisor regulated by FCA?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            },
+            {
+                'triggerAtSeconds': 90,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'What is the name of the trading platform?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            },
+            {
+                'triggerAtSeconds': 125,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Has the advisor pressured to invest more?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            }
+        ]
+    },
+    'app_scam_1.wav': {
+        'title': 'APP Scam Demo',
+        'timeline': [
+            {
+                'triggerAtSeconds': 30,
+                'riskScore': 25,
+                'suggestedQuestion': {
+                    'question': 'How did they receive the updated bank details?',
+                    'context': 'Urgent transfer detected',
+                    'urgency': 'medium'
+                }
+            },
+            {
+                'triggerAtSeconds': 46,
+                'riskScore': 65,
+                'suggestedQuestion': {
+                    'question': 'Did they speak directly to their solicitor about these new bank details?',
+                    'context': 'Romance scam indicators',
+                    'urgency': 'high'
+                }
+            },
+            {
+                'triggerAtSeconds': 63,
+                'riskScore': 80,
+                'suggestedQuestion': {
+                    'question': 'What's the name of their solicitor firm and the account name for the new bank details?',
+                    'context': 'Relationship verification needed',
+                    'urgency': 'high'
+                }
+            },
+            {
+                'triggerAtSeconds': 85,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Does the email address looks same as previous email correspondence?',
+                    'context': 'Secrecy request detected',
+                    'urgency': 'critical'
+                }
+            }
+        ]
+    },
+    'legitimate_call_1.wav': {
+        'title': 'Legit Call Demo',
+        'timeline': [
+            {
+                'triggerAtSeconds': 94,
+                'riskScore': 25,
+                'suggestedQuestion': {
+                    'question': 'Ask about travel dates and destination.',
+                    'context': 'Urgent transfer detected',
+                    'urgency': 'medium'
                 }
             }
         ]

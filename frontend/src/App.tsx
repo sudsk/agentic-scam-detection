@@ -309,7 +309,7 @@ const QuestionPromptCard = ({
         </div>
         
         <div className="mb-4 text-xs">
-          <p><strong>Triggered by:</strong> {currentQuestion.pattern.replace('_', ' ')} pattern</p>
+          <p><strong>Context:</strong> {currentQuestion.context}</p>
         </div>
         
         <div className="flex space-x-2">

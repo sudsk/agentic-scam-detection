@@ -34,8 +34,19 @@ class DemoOrchestrator:
     async def _run_question_timeline(self, session_id: str, timeline: list, callback: Callable):
         """Run timed question prompts"""
         try:
+            last_trigger_time = 0
+            
             for event in timeline:
-                await asyncio.sleep(event.get('triggerAtSeconds', 10))
+                trigger_time = event.get('triggerAtSeconds', 10)
+                
+                # Calculate interval since last event
+                interval = trigger_time - last_trigger_time
+                
+                if interval > 0:
+                    print(f"🎭 DEMO: Waiting {interval} seconds (total: {trigger_time}s)")
+                    await asyncio.sleep(interval)
+                
+                last_trigger_time = trigger_time
                 
                 # Check if session still active
                 if session_id not in self.active_sessions:
@@ -44,6 +55,7 @@ class DemoOrchestrator:
                 # Send question prompt
                 question_data = event.get('suggestedQuestion', {})
                 if question_data.get('question'):
+                    print(f"🎭 DEMO: Sending question at {trigger_time}s: {question_data['question']}")
                     await callback({
                         'type': 'question_prompt_ready',
                         'data': {
@@ -53,11 +65,12 @@ class DemoOrchestrator:
                             'urgency': question_data.get('urgency', 'medium'),
                             'pattern': 'demo_timing',
                             'risk_level': event.get('riskScore', 0),
-                            'question_id': f"demo_{session_id}_{event.get('triggerAtSeconds', 0)}"
+                            'question_id': f"demo_{session_id}_{trigger_time}"
                         }
                     })
                     
         except asyncio.CancelledError:
+            print(f"🎭 DEMO: Timeline cancelled for {session_id}")
             pass
     
     async def stop_session_demo(self, session_id: str):

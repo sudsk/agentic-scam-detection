@@ -539,8 +539,7 @@ class FraudDetectionOrchestrator:
             logger.error(f"❌ Error getting latest analysis: {e}")
             return {'risk_score': 0, 'risk_level': 'MINIMAL', 'scam_type': 'unknown'}
 
-# ===== ADK AGENT EXECUTION PATTERN =====
-    
+    # ===== ADK AGENT EXECUTION PATTERN =====
     async def _run_adk_agent_pipeline(self, session_id: str, customer_text: str, callback: Optional[Callable] = None) -> Dict[str, Any]:
         """Run ADK agent pipeline with proper session management and UI updates"""
         try:
@@ -1086,7 +1085,6 @@ Please provide professional incident summary for ServiceNow case documentation.
         return str(input_data)
 
     # ===== PARSING METHODS =====
-    
     async def _parse_and_accumulate_patterns(self, session_id: str, analysis_result: str) -> Dict[str, Any]:
         """FIXED: Proper pattern accumulation without counts but maintaining history"""
         try:
@@ -1132,9 +1130,6 @@ Please provide professional incident summary for ServiceNow case documentation.
                                 'severity': config['severity']
                             }
                             break
-                    
-                    if not matched_config:
-                        matched_config = self._match_specific_patterns(individual_pattern)
                     
                     if not matched_config:
                         matched_config = self._match_by_keywords(individual_pattern, keyword_mapping)

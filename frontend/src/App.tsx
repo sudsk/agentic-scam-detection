@@ -1378,6 +1378,7 @@ Click OK to open the case in ServiceNow.
 
           {/* Live Alerts */}
           {/* Enhanced Live Alerts with Risk Factor Breakdown */}
+          {/* Enhanced Live Alerts with Risk Factor Breakdown */}
           {(riskScore >= 40 || Object.keys(detectedPatterns).length > 0) && (
             <div className="p-4 border-b border-gray-200">
               <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
@@ -1385,18 +1386,18 @@ Click OK to open the case in ServiceNow.
                 Live Alerts
               </h4>
               
-              {/* FIX 3: MOVE STOP TRANSACTION ALERT HERE (from Recommendations section) */}
+              {/* STOP TRANSACTION ALERT */}
               {riskScore >= 80 && (
                 <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg">
                   <div className="flex items-center space-x-2">
                     <AlertTriangle className="w-4 h-4 text-red-600" />
-                    <span className="text-xs font-medium text-red-800">1. ALERT: STOP TRANSACTION</span>
+                    <span className="text-xs font-medium text-red-800">🚨 ALERT: STOP TRANSACTION</span>
                   </div>
                   <p className="text-xs text-red-700 mt-1">Detection alert - Do not process any transfers</p>
                 </div>
               )}
               
-              {/* Main Risk Alert with Ordered Patterns */}
+              {/* SIMPLIFIED PATTERN DISPLAY */}
               {Object.keys(detectedPatterns).length > 0 && (
                 <div className={`border rounded-lg p-3 mb-3 ${
                   riskScore >= 80 ? 'bg-red-50 border-red-200' :
@@ -1404,7 +1405,7 @@ Click OK to open the case in ServiceNow.
                   riskScore >= 40 ? 'bg-yellow-50 border-yellow-200' :
                   'bg-blue-50 border-blue-200'
                 }`}>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2 mb-2">
                     <AlertTriangle className={`w-4 h-4 ${
                       riskScore >= 80 ? 'text-red-600' :
                       riskScore >= 60 ? 'text-orange-600' :
@@ -1412,7 +1413,7 @@ Click OK to open the case in ServiceNow.
                       'text-blue-600'
                     }`} />
                     
-                    {/* FIX 3: DYNAMIC SCAM TYPE TITLE */}
+                    {/* DYNAMIC SCAM TYPE TITLE */}
                     <span className={`text-sm font-medium ${
                       riskScore >= 80 ? 'text-red-800' :
                       riskScore >= 60 ? 'text-orange-800' :
@@ -1431,29 +1432,34 @@ Click OK to open the case in ServiceNow.
                     </span>
                   </div>
                   
-                  {/* FIX 2: ORDERED PATTERN BREAKDOWN */}
-                  <div className="mt-2 space-y-1">
+                  {/* SIMPLIFIED PATTERN LIST - NO COUNTS */}
+                  <div className="space-y-1">
                     {Object.entries(detectedPatterns)
-                      .sort(([,a], [,b]) => (b.weight || 0) - (a.weight || 0)) // Sort by weight descending
+                      .sort(([,a], [,b]) => (b.weight || 0) - (a.weight || 0)) // Ordered by weight
                       .map(([patternName, pattern]) => (
                         <div key={patternName} className="flex justify-between items-center text-xs">
                           <span className={riskScore >= 80 ? 'text-red-700' : riskScore >= 60 ? 'text-orange-700' : riskScore >= 40 ? 'text-yellow-700' : 'text-blue-700'}>
-                            {patternName.replace('_', ' ')}
+                            {patternName}
                           </span>
                           <span className={`font-medium ${riskScore >= 80 ? 'text-red-600' : riskScore >= 60 ? 'text-orange-600' : riskScore >= 40 ? 'text-yellow-600' : 'text-blue-600'}`}>
-                            {pattern.weight || 10}% ({pattern.count || 1}x)
+                            {pattern.weight || 10}%
                           </span>
                         </div>
                       ))}
                   </div>
                   
-                  <div className="mt-2 pt-2 border-t border-current border-opacity-20">
+                  {/* TOTAL RISK WITH >100% DISPLAY */}
+                  <div className="mt-3 pt-2 border-t border-current border-opacity-20">
                     <div className="flex justify-between items-center text-sm">
                       <span className={`font-medium ${riskScore >= 80 ? 'text-red-800' : riskScore >= 60 ? 'text-orange-800' : riskScore >= 40 ? 'text-yellow-800' : 'text-blue-800'}`}>
                         Total Risk:
                       </span>
                       <span className={`font-bold ${riskScore >= 80 ? 'text-red-600' : riskScore >= 60 ? 'text-orange-600' : riskScore >= 40 ? 'text-yellow-600' : 'text-blue-600'}`}>
-                        {riskScore}%
+                        {(() => {
+                          // Calculate actual total for display
+                          const actualTotal = Object.values(detectedPatterns).reduce((sum, pattern) => sum + (pattern.weight || 10), 5);
+                          return actualTotal > 100 ? '>100%' : `${riskScore}%`;
+                        })()}
                       </span>
                     </div>
                     <p className={`text-xs mt-1 ${riskScore >= 80 ? 'text-red-700' : riskScore >= 60 ? 'text-orange-700' : riskScore >= 40 ? 'text-yellow-700' : 'text-blue-700'}`}>

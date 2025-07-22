@@ -1088,7 +1088,9 @@ Please provide professional incident summary for ServiceNow case documentation.
     # ===== PARSING METHODS =====
     
     async def _parse_and_accumulate_patterns(self, session_id: str, analysis_result: str) -> Dict[str, Any]:
-        """SIMPLIFIED: Just add up pattern weights, no counts"""
+        """
+        FIXED: Parse analysis with PROPER pattern matching - no more false matches
+        """
         try:
             # Parse the raw ADK result
             parsed = self._parse_agent_result('scam_detection', analysis_result)
@@ -1096,88 +1098,155 @@ Please provide professional incident summary for ServiceNow case documentation.
             # Get keyword mapping from config
             keyword_mapping = create_keyword_mapping()
             
-            # Extract raw patterns
+            # Extract raw patterns from ADK response
             raw_patterns = []
             if 'detected_patterns' in parsed:
                 if isinstance(parsed['detected_patterns'], list):
                     raw_patterns = parsed['detected_patterns']
                 elif isinstance(parsed['detected_patterns'], str):
+                    # Handle comma-separated or other formats
                     raw_patterns = [p.strip() for p in parsed['detected_patterns'].split(',')]
             
-            # SIMPLIFIED: Map to clean patterns (no counting)
+            # STEP 1: FIXED PATTERN MATCHING with priority order
             clean_patterns = {}
             
             for raw_pattern in raw_patterns:
                 if not raw_pattern or raw_pattern == 'unknown':
                     continue
                     
-                # Split comma-separated patterns
+                logger.info(f"🔍 Trying to match: '{raw_pattern}'")
+                
+                # Split comma-separated patterns first
                 individual_patterns = [p.strip() for p in raw_pattern.split(',')]
                 
                 for individual_pattern in individual_patterns:
                     if not individual_pattern:
                         continue
                         
+                    normalized_pattern = individual_pattern.lower().strip()
                     matched_config = None
                     
-                    # Pattern matching (same as before)
+                    # METHOD 1: EXACT DIRECT NAME MATCH (highest priority)
                     for pattern_id, config in FRAUD_PATTERN_CONFIG.items():
-                        if config['name'].lower() == individual_pattern.strip().lower():
+                        if config['name'].lower() == individual_pattern.strip():
                             matched_config = {
                                 'name': config['name'],
                                 'weight': config['weight'],
                                 'severity': config['severity']
                             }
+                            logger.info(f"   ✅ EXACT NAME MATCH: '{individual_pattern}' → {matched_config['name']} ({matched_config['weight']}%)")
                             break
                     
+                    # METHOD 2: EXACT KEYWORD MATCH (if no direct name match)
+                    if not matched_config:
+                        if normalized_pattern in keyword_mapping:
+                            matched_config = keyword_mapping[normalized_pattern]
+                            logger.info(f"   ✅ EXACT KEYWORD MATCH: '{individual_pattern}' → {matched_config['name']} ({matched_config['weight']}%)")
+                    
+                    # METHOD 3: SPECIFIC PATTERN RECOGNITION (most important)
                     if not matched_config:
                         matched_config = self._match_specific_patterns(individual_pattern)
+                        if matched_config:
+                            logger.info(f"   ✅ SPECIFIC PATTERN MATCH: '{individual_pattern}' → {matched_config['name']} ({matched_config['weight']}%)")
                     
+                    # METHOD 4: KEYWORD CONTAINS MATCH (careful fuzzy matching)
                     if not matched_config:
                         matched_config = self._match_by_keywords(individual_pattern, keyword_mapping)
+                        if matched_config:
+                            logger.info(f"   ✅ KEYWORD CONTAINS MATCH: '{individual_pattern}' → {matched_config['name']} ({matched_config['weight']}%)")
                     
-                    # Use matched config or fallback
+                    # Use matched config or create fallback
                     if matched_config:
                         clean_name = matched_config['name']
                         weight = matched_config['weight']
                         severity = matched_config['severity']
                     else:
+                        # Fallback for unrecognized patterns
                         clean_name = individual_pattern.replace('_', ' ').title()
-                        weight = 10
+                        weight = 10  # Default weight
                         severity = 'low'
+                        logger.info(f"   ❌ NO MATCH: '{individual_pattern}' → fallback: {clean_name} ({weight}%)")
                     
-                    # SIMPLIFIED: Just store unique patterns (no counts)
-                    clean_patterns[clean_name] = {
-                        'pattern_name': clean_name,
-                        'weight': weight,
-                        'severity': severity,
-                        'confidence': 0.8
-                    }
+                    # STEP 2: Deduplicate and accumulate counts
+                    if clean_name in clean_patterns:
+                        # Increment count for existing pattern
+                        clean_patterns[clean_name]['count'] += 1
+                        clean_patterns[clean_name]['raw_matches'].append(individual_pattern)
+                    else:
+                        # Create new clean pattern entry
+                        clean_patterns[clean_name] = {
+                            'pattern_name': clean_name,
+                            'count': 1,
+                            'weight': weight,
+                            'severity': severity,
+                            'confidence': 0.8,
+                            'raw_matches': [individual_pattern]
+                        }
             
-            # Store in session (overwrites, no accumulation)
-            self.accumulated_patterns[session_id] = clean_patterns
+            # STEP 3: Store clean patterns in session accumulation
+            if session_id not in self.accumulated_patterns:
+                self.accumulated_patterns[session_id] = {}
             
-            # SIMPLIFIED: Calculate total risk (just add weights)
-            total_pattern_risk = sum(pattern['weight'] for pattern in clean_patterns.values())
+            # Merge with existing session patterns
+            session_patterns = self.accumulated_patterns[session_id]
+            
+            for clean_name, pattern_data in clean_patterns.items():
+                if clean_name in session_patterns:
+                    # Update existing pattern - increment count
+                    session_patterns[clean_name]['count'] += pattern_data['count']
+                    session_patterns[clean_name]['raw_matches'].extend(pattern_data['raw_matches'])
+                    # Keep highest severity
+                    if pattern_data['severity'] == 'critical' or session_patterns[clean_name]['severity'] != 'critical':
+                        session_patterns[clean_name]['severity'] = pattern_data['severity']
+                else:
+                    # Add new pattern
+                    session_patterns[clean_name] = pattern_data
+            
+            self.accumulated_patterns[session_id] = session_patterns
+            
+            # STEP 4: Update analysis history
+            if session_id not in self.session_analysis_history:
+                self.session_analysis_history[session_id] = []
+            
+            self.session_analysis_history[session_id].append(parsed)
+            
+            # STEP 5: Calculate total risk score
+            total_pattern_risk = 0
+            for pattern in session_patterns.values():
+                base_weight = pattern['weight']
+                extra_occurrences = max(0, pattern['count'] - 1)
+                diminishing_weight = extra_occurrences * (base_weight * 0.5)
+                pattern_total_risk = base_weight + diminishing_weight
+                total_pattern_risk += pattern_total_risk
+                # Debug log to verify math
+                logger.info(f"   MATH CHECK: {pattern['pattern_name']} = {base_weight}% + ({extra_occurrences} × {base_weight * 0.5}%) = {pattern_total_risk}%")
+
+            # Cap at maximum and add baseline
             baseline_risk = 5
-            calculated_risk = baseline_risk + total_pattern_risk
+            calculated_risk = min(baseline_risk + total_pattern_risk, 100)
             
             # Update parsed result
-            parsed['risk_score'] = min(calculated_risk, 100)  # Cap at 100 for backend
-            parsed['pattern_count'] = len(clean_patterns)
-            parsed['total_pattern_weight'] = total_pattern_risk
-            parsed['total_raw_risk'] = calculated_risk  # Store uncapped for UI
+            parsed['risk_score'] = int(calculated_risk)
+            parsed['pattern_count'] = len(session_patterns)
+            parsed['total_pattern_weight'] = int(total_pattern_risk)
+            parsed['baseline_risk'] = baseline_risk
             
-            logger.info(f"🧹 SIMPLE PATTERNS: {session_id} - {len(clean_patterns)} patterns, {calculated_risk}% total")
-            for name, data in clean_patterns.items():
-                logger.info(f"   • {name}: {data['weight']}% [{data['severity']}]")
+            # Enhanced logging
+            logger.info(f"🧹 CLEAN PATTERNS: {session_id} - {len(session_patterns)} unique patterns, {calculated_risk:.0f}% total risk")
+            for name, data in session_patterns.items():
+                base_weight = data['weight']
+                extra_occurrences = max(0, data['count'] - 1)
+                diminishing_weight = extra_occurrences * (base_weight * 0.5)
+                total_weight = base_weight + diminishing_weight
+                
+                logger.info(f"   • {name}: {base_weight}% + ({extra_occurrences} × {base_weight * 0.5}%) = {total_weight:.0f}% [{data['severity']}]")
             
             return parsed
             
         except Exception as e:
             logger.error(f"❌ Pattern parsing error: {e}")
             return {'risk_score': 0.0, 'error': str(e)}
-        
+    
     # ADD THESE HELPER METHODS:
     
     def _match_specific_patterns(self, pattern_text: str) -> Optional[Dict[str, Any]]:
@@ -1474,7 +1543,7 @@ Please provide professional incident summary for ServiceNow case documentation.
                 await self._process_customer_speech(session_id, text, data)
     
     async def _process_customer_speech(self, session_id: str, customer_text: str, segment_data: Dict):
-        """SIMPLIFIED: Process customer speech with basic deduplication"""
+        """Process customer speech and send analysis updates to UI"""
         try:
             if session_id not in self.customer_speech_buffer:
                 self.customer_speech_buffer[session_id] = []
@@ -1485,47 +1554,72 @@ Please provide professional incident summary for ServiceNow case documentation.
                 'timestamp': segment_data.get('start', 0),
                 'confidence': segment_data.get('confidence', 0.0)
             })
-            
-            # SIMPLE DEDUPLICATION: Only analyze every 15+ seconds OR significant new content
+
+            # IMPROVED DEDUPLICATION: Check if this speech segment is substantially new
             if session_id not in self.analyzed_speech_segments:
                 self.analyzed_speech_segments[session_id] = []
-            
+                
             # Get accumulated speech
             accumulated_speech = " ".join([
                 segment['text'] for segment in self.customer_speech_buffer[session_id]
             ])
-            
-            # SIMPLE CHECK: Analyze if substantial new content
+
+            # DEDUPLICATION: Only analyze if we have significant new content
             should_analyze = False
-            
+            analysis_reason = ""
+
             if len(self.analyzed_speech_segments[session_id]) == 0:
-                # First analysis
+                # First analysis - always analyze
                 should_analyze = True
-            else:
-                # Check for significant new content (simple word count)
-                last_word_count = len(" ".join(self.analyzed_speech_segments[session_id]).split())
-                current_word_count = len(accumulated_speech.split())
-                new_words = current_word_count - last_word_count
+                analysis_reason = "First customer speech"
+            
+            elif len(accumulated_speech.strip()) >= 20:  # Increased minimum threshold
+                # Get the last analyzed content
+                last_analyzed_speech = " ".join(self.analyzed_speech_segments[session_id])
                 
-                if new_words >= 8:  # At least 8 new words
+                # Calculate NEW content only
+                if accumulated_speech.startswith(last_analyzed_speech):
+                    new_content = accumulated_speech[len(last_analyzed_speech):].strip()
+                else:
+                    # Fallback: check for substantial new words
+                    analyzed_words = set(last_analyzed_speech.lower().split())
+                    current_words = set(accumulated_speech.lower().split())
+                    new_words = current_words - analyzed_words
+                    new_content = " ".join(new_words)
+                
+                # STRICTER THRESHOLDS for new analysis
+                new_word_count = len(new_content.split()) if new_content else 0
+                new_char_count = len(new_content)
+                
+                if new_word_count >= 5 and new_char_count >= 25:  # At least 5 new words AND 25 characters
                     should_analyze = True
+                    analysis_reason = f"{new_word_count} new words, {new_char_count} new chars"
+                else:
+                    analysis_reason = f"Insufficient new content: {new_word_count} words, {new_char_count} chars"
+            else:
+                analysis_reason = f"Insufficient total length: {len(accumulated_speech)} chars"
+
+            # DEBUG LOG
+            logger.info(f"🔍 DEDUPLICATION: {analysis_reason}")
             
             if should_analyze:
-                # Store current speech
-                self.analyzed_speech_segments[session_id] = accumulated_speech.split()
+                # Store what we're analyzing to prevent re-analysis
+                self.analyzed_speech_segments[session_id] = accumulated_speech.split()  # Store as word list
                 
-                # Get callback
+                # Get callback for this session
                 session_data = self.active_sessions.get(session_id, {})
                 callback = session_data.get('callback')
                 
-                # Run analysis
+                logger.info(f"🔍 ANALYSIS TRIGGERED: {analysis_reason}")
+                
+                # Run analysis pipeline
                 analysis_result = await self._run_adk_agent_pipeline(session_id, accumulated_speech, callback)
                 
-                # Send to UI
+                # Send analysis update to UI
                 if callback and analysis_result:
                     scam_analysis = analysis_result.get('scam_analysis', {})
                     risk_score = scam_analysis.get('risk_score', 0)
-                    
+                
                     await callback({
                         'type': 'fraud_analysis_update',
                         'data': {
@@ -1535,11 +1629,12 @@ Please provide professional incident summary for ServiceNow case documentation.
                             'scam_type': scam_analysis.get('scam_type', 'unknown'),
                             'detected_patterns': self.accumulated_patterns.get(session_id, {}),
                             'confidence': scam_analysis.get('confidence', 0.0),
+                            'analysis_trigger': analysis_reason,
                             'timestamp': datetime.now().isoformat()
                         }
                     })
-                    
-                    # Policy guidance
+                
+                    # Send policy guidance if available
                     policy_guidance = analysis_result.get('policy_guidance')
                     if policy_guidance:
                         await callback({
@@ -1551,12 +1646,14 @@ Please provide professional incident summary for ServiceNow case documentation.
                             }
                         })
                     
-                    # Question prompt
+                    # Trigger question prompt after analysis update
                     await self._trigger_question_prompt(
                         session_id, accumulated_speech, 
                         self.accumulated_patterns.get(session_id, {}),
                         risk_score, callback
                     )
+            else:
+                logger.info(f"🔍 ANALYSIS SKIPPED: {analysis_reason}")
             
         except Exception as e:
             logger.error(f"❌ Error processing customer speech: {e}")

@@ -762,7 +762,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       
       const newSessionId = `server_session_${Date.now()}`;
       setSessionId(newSessionId);
-      setIsPlaying(true);
       setServerProcessing(true);
       setProcessingStage('🎵 Preparing audio...');
       
@@ -774,7 +773,8 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       } catch (error) {
         console.warn('⚠️ Preload failed, using direct audio', error);
         audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
-      }      
+      }
+      
       setProcessingStage('🖥️ Starting server-side processing...');
       
       const message = {
@@ -786,9 +786,9 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       };
       ws.send(JSON.stringify(message));
       
-      const audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
       setAudioElement(audio);
       
+      // Set up audio event listeners
       audio.addEventListener('timeupdate', () => {
         setCurrentTime(audio.currentTime);
       });

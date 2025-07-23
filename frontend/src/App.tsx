@@ -368,7 +368,6 @@ function App() {
 
   // ===== QUESTION PROMPT STATE =====
   const [currentQuestion, setCurrentQuestion] = useState<QuestionData | null>(null);
-
   const lastQuestionRef = useRef<string>('');
 
   // Add to existing state declarations
@@ -378,6 +377,10 @@ function App() {
     demoEnhancements: false,
     coordination: false
   });
+
+  // Preload Audio state 
+  const [preloadedAudio, setPreloadedAudio] = useState<Record<string, HTMLAudioElement>>({});
+  const preloadingRef = useRef<Set<string>>(new Set());
 
   // ===== WEBSOCKET FUNCTIONS =====
 
@@ -672,6 +675,72 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
 };
   // ===== AUDIO PROCESSING FUNCTIONS =====
 
+  const preloadAudioFile = useCallback(async (audioFile: RealAudioFile): Promise<HTMLAudioElement> => {
+    // Check if already preloaded
+    if (preloadedAudio[audioFile.id]) {
+      console.log(`✅ Audio already preloaded: ${audioFile.filename}`);
+      return preloadedAudio[audioFile.id];
+    }
+  
+    // Check if currently preloading
+    if (preloadingRef.current.has(audioFile.id)) {
+      console.log(`⏳ Audio already preloading: ${audioFile.filename}`);
+      return new Promise((resolve) => {
+        const checkPreloaded = () => {
+          if (preloadedAudio[audioFile.id]) {
+            resolve(preloadedAudio[audioFile.id]);
+          } else {
+            setTimeout(checkPreloaded, 100);
+          }
+        };
+        checkPreloaded();
+      });
+    }
+  
+    console.log(`🎵 Preloading audio: ${audioFile.filename}`);
+    preloadingRef.current.add(audioFile.id);
+  
+    return new Promise((resolve, reject) => {
+      const audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
+      audio.preload = 'auto';
+      
+      const onCanPlayThrough = () => {
+        console.log(`✅ Audio preloaded: ${audioFile.filename}`);
+        
+        // Store preloaded audio
+        setPreloadedAudio(prev => ({
+          ...prev,
+          [audioFile.id]: audio
+        }));
+        
+        preloadingRef.current.delete(audioFile.id);
+        
+        // Remove event listeners
+        audio.removeEventListener('canplaythrough', onCanPlayThrough);
+        audio.removeEventListener('error', onError);
+        
+        resolve(audio);
+      };
+  
+      const onError = (error: any) => {
+        console.error(`❌ Audio preload failed: ${audioFile.filename}`, error);
+        preloadingRef.current.delete(audioFile.id);
+        
+        // Remove event listeners
+        audio.removeEventListener('canplaythrough', onCanPlayThrough);
+        audio.removeEventListener('error', onError);
+        
+        reject(error);
+      };
+  
+      audio.addEventListener('canplaythrough', onCanPlayThrough);
+      audio.addEventListener('error', onError);
+      
+      // Start loading
+      audio.load();
+    });
+  }, [preloadedAudio]);
+  
   const startServerProcessing = async (audioFile: RealAudioFile): Promise<void> => {
     try {
       if (!ws || !isConnected) {
@@ -695,6 +764,17 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       setSessionId(newSessionId);
       setIsPlaying(true);
       setServerProcessing(true);
+      setProcessingStage('🎵 Preparing audio...');
+      
+      // PRELOAD AUDIO FIRST
+      let audio: HTMLAudioElement;
+      try {
+        audio = await preloadAudioFile(audioFile);
+        console.log('✅ Using preloaded audio');
+      } catch (error) {
+        console.warn('⚠️ Preload failed, using direct audio', error);
+        audio = new Audio(`${API_BASE_URL}/api/v1/audio/sample-files/${audioFile.filename}`);
+      }      
       setProcessingStage('🖥️ Starting server-side processing...');
       
       const message = {
@@ -733,6 +813,8 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
         stopServerProcessing();
       });
       
+      // Play immediately since audio is preloaded
+      setIsPlaying(true);
       await audio.play();
       
     } catch (error) {
@@ -853,34 +935,40 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
 
   // ===== COMPONENT FUNCTIONS =====
 
-  const DemoCallButton = ({ audioFile }: { audioFile: RealAudioFile }) => (
-    <button
-      onClick={() => !isPlaying ? startServerProcessing(audioFile) : null}
-      disabled={isPlaying}
-      className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-        selectedAudioFile?.id === audioFile.id 
-          ? 'bg-blue-100 text-blue-800 border-2 border-blue-300' 
-          : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-2 border-transparent'
-      } ${isPlaying ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-    >
-      <span className="text-lg">{audioFile.icon}</span>
-      {!isPlaying ? (
-        <Play className="w-4 h-4" />
-      ) : selectedAudioFile?.id === audioFile.id ? (
-        <Pause className="w-4 h-4" />
-      ) : (
-        <Play className="w-4 h-4" />
-      )}
-      <span className="font-medium">{audioFile.title}</span>
-      {selectedAudioFile?.id === audioFile.id && isPlaying && (
-        <div className="flex items-center space-x-1">
-          <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
-            LIVE
-          </span>
-        </div>
-      )}
-    </button>
-  );
+  const DemoCallButton = ({ audioFile }: { audioFile: RealAudioFile }) => { 
+    const handleMouseEnter = () => {
+    // Preload on hover for instant playback
+    preloadAudioFile(audioFile).catch(console.warn);
+    };
+    return (
+      <button
+        onClick={() => !isPlaying ? startServerProcessing(audioFile) : null}
+        disabled={isPlaying}
+        className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+          selectedAudioFile?.id === audioFile.id 
+            ? 'bg-blue-100 text-blue-800 border-2 border-blue-300' 
+            : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border-2 border-transparent'
+        } ${isPlaying ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+      >
+        <span className="text-lg">{audioFile.icon}</span>
+        {!isPlaying ? (
+          <Play className="w-4 h-4" />
+        ) : selectedAudioFile?.id === audioFile.id ? (
+          <Pause className="w-4 h-4" />
+        ) : (
+          <Play className="w-4 h-4" />
+        )}
+        <span className="font-medium">{audioFile.title}</span>
+        {selectedAudioFile?.id === audioFile.id && isPlaying && (
+          <div className="flex items-center space-x-1">
+            <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
+              LIVE
+            </span>
+          </div>
+        )}
+      </button>
+    );
+  };
 
   const ProcessingStatus = () => (
     <div className="flex items-center space-x-2 text-xs">

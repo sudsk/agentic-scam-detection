@@ -727,7 +727,7 @@ class FraudDetectionOrchestrator:
             patterns_text = ""
             if session_id in self.accumulated_patterns:
                 patterns_text = "\n".join([
-                    f"• {pattern.replace('_', ' ').title()}: {data.get('count', 0)} occurrences"
+                    f"• {pattern.replace('_', ' ').title()}"
                     for pattern, data in self.accumulated_patterns[session_id].items()
                 ])
             

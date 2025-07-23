@@ -92,25 +92,34 @@ DEMO_SCRIPTS = {
         'title': 'Romance Scam Demo',
         'timeline': [
             {
-                'triggerAtSeconds': 21,
+                'triggerAtSeconds': 23,
                 'riskScore': 25,
                 'suggestedQuestion': {
-                    'question': 'Can you tell me more about the reason for this international transfer?',
+                    'question': 'Can you tell me more about the purpose for this transfer?',
                     'context': 'Initial transfer inquiry',
                     'urgency': 'medium'
                 }
             },
             {
-                'triggerAtSeconds': 47,
+                'triggerAtSeconds': 41,
                 'riskScore': 65,
                 'suggestedQuestion': {
-                    'question': 'Have they tried reaching out to their own family or friends for assistance?',
+                    'question': 'How do you know the person?',
+                    'context': 'Verify beneficiary',
+                    'urgency': 'high'
+                }
+            },
+            {
+                'triggerAtSeconds': 53,
+                'riskScore': 65,
+                'suggestedQuestion': {
+                    'question': 'Have they tried reaching out to their own family or embassy for assistance?',
                     'context': 'Emergency assistance verification',
                     'urgency': 'high'
                 }
             },
             {
-                'triggerAtSeconds': 62,
+                'triggerAtSeconds': 70,
                 'riskScore': 80,
                 'suggestedQuestion': {
                     'question': 'How long have you known this person, and have you ever met face-to-face?',
@@ -119,7 +128,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 74,
+                'triggerAtSeconds': 81,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Can you walk me through how you first got in touch with this person?',
@@ -128,16 +137,16 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 91,
+                'triggerAtSeconds': 101,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'I need to discuss some concerns - this situation shows signs of a romance scam',
+                    'question': 'Inform customer we are concerned that this situation shows signs of a romance scam',
                     'context': 'Fraud warning to customer',
                     'urgency': 'critical'
                 }
             },
             {
-                'triggerAtSeconds': 108,
+                'triggerAtSeconds': 123,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Have you had any video calls or seen recent photos of this person?',
@@ -146,7 +155,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 123,
+                'triggerAtSeconds': 136,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Is this the first time they have requested financial help from you?',
@@ -155,10 +164,10 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 143,
+                'triggerAtSeconds': 152,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'I need to place a temporary hold on this transfer and escalate to our fraud team',
+                    'question': 'Inform customer we are placing a temporary hold on this transfer and escalating to our fraud team',
                     'context': 'Final escalation action',
                     'urgency': 'critical'
                 }

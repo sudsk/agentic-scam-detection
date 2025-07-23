@@ -95,7 +95,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 23,
                 'riskScore': 25,
                 'suggestedQuestion': {
-                    'question': 'What is the purpose of the transfer?',
+                    'question': 'Can you tell me more about the reason for this international transfer?',
                     'context': 'Initial transfer inquiry',
                     'urgency': 'medium'
                 }
@@ -104,7 +104,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 49,
                 'riskScore': 65,
                 'suggestedQuestion': {
-                    'question': 'Has the person contacted his family for help?',
+                    'question': 'Have they tried reaching out to their own family or friends for assistance?',
                     'context': 'Emergency assistance verification',
                     'urgency': 'high'
                 }
@@ -113,7 +113,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 64,
                 'riskScore': 80,
                 'suggestedQuestion': {
-                    'question': 'Have you met the person in person?',
+                    'question': 'How long have you known this person, and have you ever met face-to-face?',
                     'context': 'Relationship verification needed',
                     'urgency': 'high'
                 }
@@ -122,7 +122,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 76,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'How did the person contact you?',
+                    'question': 'Can you walk me through how you first got in touch with this person?',
                     'context': 'Contact method verification',
                     'urgency': 'critical'
                 }
@@ -131,7 +131,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 93,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Raise concern about potential Romance scam',
+                    'question': 'I need to discuss some concerns - this situation shows signs of a romance scam',
                     'context': 'Fraud warning to customer',
                     'urgency': 'critical'
                 }
@@ -140,7 +140,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 110,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Have you been able to video call?',
+                    'question': 'Have you had any video calls or seen recent photos of this person?',
                     'context': 'Visual verification check',
                     'urgency': 'critical'
                 }
@@ -149,7 +149,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 125,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Has the person asked for money before?',
+                    'question': 'Is this the first time they have requested financial help from you?',
                     'context': 'Previous requests investigation',
                     'urgency': 'critical'
                 }
@@ -158,7 +158,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 145,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Recommend temporary hold and escalate to fraud team.',
+                    'question': 'I need to place a temporary hold on this transfer and escalate to our fraud team',
                     'context': 'Final escalation action',
                     'urgency': 'critical'
                 }
@@ -172,7 +172,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 12,
                 'riskScore': 25,
                 'suggestedQuestion': {
-                    'question': 'Who did they speak to and what number did they call from?',
+                    'question': 'Can you tell me which department they said they were from and the number they called from?',
                     'context': 'Caller identity verification',
                     'urgency': 'medium'
                 }
@@ -181,7 +181,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 24,
                 'riskScore': 65,
                 'suggestedQuestion': {
-                    'question': 'What did they ask the customer to do?',
+                    'question': 'What specific instructions or requests did they make during that call?',
                     'context': 'Suspicious request investigation',
                     'urgency': 'high'
                 }
@@ -190,7 +190,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 35,
                 'riskScore': 80,
                 'suggestedQuestion': {
-                    'question': 'Did they ask for any account details?',
+                    'question': 'Did they request any banking information, passwords, or account details?',
                     'context': 'Information harvesting check',
                     'urgency': 'high'
                 }
@@ -199,7 +199,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 60,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Did they ask for your PIN?',
+                    'question': 'Did they specifically ask you to provide your PIN or any security codes?',
                     'context': 'Credential theft attempt',
                     'urgency': 'critical'
                 }
@@ -208,7 +208,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 70,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Did they ask for any other personal details?',
+                    'question': 'What other personal or financial information did they try to obtain?',
                     'context': 'Additional information gathering',
                     'urgency': 'critical'
                 }
@@ -217,7 +217,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 152,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Has this happened before?',
+                    'question': 'Have you received similar suspicious calls like this in the past?',
                     'context': 'Previous incident investigation',
                     'urgency': 'critical'
                 }
@@ -231,7 +231,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 30,
                 'riskScore': 25,
                 'suggestedQuestion': {
-                    'question': 'Ask details about the investment opportunity',
+                    'question': 'Could you provide more details about this investment opportunity you mentioned?',
                     'context': 'Investment verification',
                     'urgency': 'medium'
                 }
@@ -240,7 +240,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 42,
                 'riskScore': 65,
                 'suggestedQuestion': {
-                    'question': 'How did they find the advisor?',
+                    'question': 'How did you originally come across this investment advisor or platform?',
                     'context': 'Advisor source verification',
                     'urgency': 'high'
                 }
@@ -249,7 +249,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 60,
                 'riskScore': 80,
                 'suggestedQuestion': {
-                    'question': 'Have they withdrawn any profits?',
+                    'question': 'Have you been able to withdraw any returns or profits from previous investments?',
                     'context': 'Investment legitimacy check',
                     'urgency': 'high'
                 }
@@ -258,7 +258,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 75,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Is the advisor regulated by FCA?',
+                    'question': 'Can you confirm if this advisor is authorized and regulated by the FCA?',
                     'context': 'Regulatory compliance check',
                     'urgency': 'critical'
                 }
@@ -267,7 +267,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 90,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'What is the name of the trading platform?',
+                    'question': 'What is the exact name of the trading platform or investment company?',
                     'context': 'Platform verification',
                     'urgency': 'critical'
                 }
@@ -276,7 +276,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 125,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Has the advisor pressured you to invest more?',
+                    'question': 'Have you felt any pressure from the advisor to invest additional funds?',
                     'context': 'Pressure tactics investigation',
                     'urgency': 'critical'
                 }
@@ -290,7 +290,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 30,
                 'riskScore': 25,
                 'suggestedQuestion': {
-                    'question': 'How did they receive the updated bank details?',
+                    'question': 'Can you tell me how you received these updated banking details?',
                     'context': 'Bank detail change verification',
                     'urgency': 'medium'
                 }
@@ -299,7 +299,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 46,
                 'riskScore': 65,
                 'suggestedQuestion': {
-                    'question': 'Did they speak directly to their solicitor about these new bank details?',
+                    'question': 'Have you confirmed these new bank details directly with your solicitor by phone?',
                     'context': 'Direct contact verification',
                     'urgency': 'high'
                 }
@@ -308,7 +308,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 63,
                 'riskScore': 80,
                 'suggestedQuestion': {
-                    'question': "What's the name of their solicitor firm and the account name for the new bank details?",
+                    'question': 'Could you provide the name of the solicitor firm and the account holder name for these new details?',
                     'context': 'Solicitor and account verification',
                     'urgency': 'high'
                 }
@@ -317,7 +317,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 85,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Does the email address look the same as previous correspondence?',
+                    'question': 'Does the sender email address match previous communications from your solicitor?',
                     'context': 'Email authenticity check',
                     'urgency': 'critical'
                 }
@@ -331,7 +331,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 94,
                 'riskScore': 25,
                 'suggestedQuestion': {
-                    'question': 'Ask about travel dates and destination',
+                    'question': 'Could you share your travel dates and which countries you plan to visit?',
                     'context': 'Travel information verification',
                     'urgency': 'low'
                 }

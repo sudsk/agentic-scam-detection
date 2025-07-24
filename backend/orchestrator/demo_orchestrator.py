@@ -101,7 +101,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 38,
+                'triggerAtSeconds': 37,
                 'riskScore': 65,
                 'suggestedQuestion': {
                     'question': 'How do you know the person?',

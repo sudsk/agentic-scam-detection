@@ -110,7 +110,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 52.8,
+                'triggerAtSeconds': 52.7,
                 'riskScore': 65,
                 'suggestedQuestion': {
                     'question': 'Have they tried reaching out to their own family or embassy for assistance?',
@@ -137,7 +137,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 99.8,
+                'triggerAtSeconds': 100,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Inform customer we are concerned that this situation shows signs of a romance scam',
@@ -146,7 +146,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 122.8,
+                'triggerAtSeconds': 123,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Have you had any video calls or seen recent photos of this person?',
@@ -155,7 +155,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 135.8,
+                'triggerAtSeconds': 132,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Is this the first time they have requested financial help from you?',
@@ -164,7 +164,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 151.8,
+                'triggerAtSeconds': 152,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Inform customer we are placing a temporary hold on this transfer and escalating to our fraud team',

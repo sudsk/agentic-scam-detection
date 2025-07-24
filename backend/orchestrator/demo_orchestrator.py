@@ -92,7 +92,7 @@ DEMO_SCRIPTS = {
         'title': 'Romance Scam Demo',
         'timeline': [
             {
-                'triggerAtSeconds': 23,
+                'triggerAtSeconds': 22.8,
                 'riskScore': 25,
                 'suggestedQuestion': {
                     'question': 'Can you tell me more about the purpose for this transfer?',

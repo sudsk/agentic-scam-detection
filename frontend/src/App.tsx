@@ -964,27 +964,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     );
   };
 
-  const ProcessingStatus = () => (
-    <div className="flex items-center space-x-2 text-xs">
-      {hybridMode.enabled ? (
-        <div className="flex items-center space-x-1 text-purple-600">
-          <Server className="w-4 h-4 animate-pulse" />
-          <span>Hybrid Demo</span>
-        </div>
-      ) : serverProcessing ? (
-        <div className="flex items-center space-x-1 text-blue-600">
-          <Server className="w-4 h-4 animate-pulse" />
-          <span>Real Processing</span>
-        </div>
-      ) : (
-        <div className="flex items-center space-x-1 text-gray-500">
-          <Server className="w-4 h-4" />
-          <span>Ready</span>
-        </div>
-      )}
-    </div>
-  );
-
   // Safe helper function to check arrays
   const safeArray = (arr: any): any[] => {
     if (Array.isArray(arr)) return arr;

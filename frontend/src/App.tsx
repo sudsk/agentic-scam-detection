@@ -350,7 +350,6 @@ function App() {
   
   // ===== BACKEND INTEGRATION STATE =====
   const [audioFiles, setAudioFiles] = useState<RealAudioFile[]>([]);
-  const [isLoadingFiles, setIsLoadingFiles] = useState<boolean>(true);
   const [sessionId, setSessionId] = useState<string>('');
   
   // ===== WEBSOCKET STATE =====
@@ -868,7 +867,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
 
   const loadAudioFiles = async (): Promise<void> => {
     try {
-      setIsLoadingFiles(true);
       const response = await fetch(`${API_BASE_URL}/api/v1/audio/sample-files`);
       const data = await response.json();
       
@@ -879,9 +877,7 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
       }
     } catch (error) {
       console.error('Error loading audio files:', error);
-    } finally {
-      setIsLoadingFiles(false);
-    }
+    } 
   };
 
   // Memoize the question handlers to prevent re-creation

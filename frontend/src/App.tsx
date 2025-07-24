@@ -755,8 +755,9 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
         setSelectedAudioFile(audioFile);
         const customerProfile = customerProfiles[audioFile.filename] || defaultCustomerProfile;
         setCurrentCustomer(customerProfile);
-        resetState();
       }
+      // Always reset state, even for same file
+      resetState();
       
       const newSessionId = `server_session_${Date.now()}`;
       setSessionId(newSessionId);

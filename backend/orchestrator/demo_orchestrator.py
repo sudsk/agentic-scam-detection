@@ -128,7 +128,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 79,
+                'triggerAtSeconds': 79.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Can you walk me through how you first got in touch with this person?',

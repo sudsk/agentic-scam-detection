@@ -92,7 +92,7 @@ DEMO_SCRIPTS = {
         'title': 'Romance Scam Demo',
         'timeline': [
             {
-                'triggerAtSeconds': 23,
+                'triggerAtSeconds': 22.5,
                 'riskScore': 25,
                 'suggestedQuestion': {
                     'question': 'Can you tell me more about the purpose for this transfer?',
@@ -101,7 +101,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 40,
+                'triggerAtSeconds': 39.5,
                 'riskScore': 65,
                 'suggestedQuestion': {
                     'question': 'How do you know the person?',
@@ -110,7 +110,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 52,
+                'triggerAtSeconds': 51.5,
                 'riskScore': 65,
                 'suggestedQuestion': {
                     'question': 'Have they tried reaching out to their own family or embassy for assistance?',
@@ -119,7 +119,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 67,
+                'triggerAtSeconds': 66.5,
                 'riskScore': 80,
                 'suggestedQuestion': {
                     'question': 'How long have you known this person, and have you ever met face-to-face?',
@@ -137,7 +137,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 98,
+                'triggerAtSeconds': 97.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Inform customer we are concerned that this situation shows signs of a romance scam',
@@ -146,7 +146,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 121,
+                'triggerAtSeconds': 120.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Have you had any video calls or seen recent photos of this person?',
@@ -155,7 +155,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 133,
+                'triggerAtSeconds': 132.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Is this the first time they have requested financial help from you?',
@@ -164,7 +164,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 149,
+                'triggerAtSeconds': 148.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Inform customer we are placing a temporary hold on this transfer and escalating to our fraud team',

@@ -69,7 +69,7 @@ class StereoAudioBuffer:
                 empty_count += 1
                 continue
         
-        #logger.info(f"🎵 Stereo buffer generator completed after {empty_count} empty reads")
+        logger.info(f"🎵 Stereo buffer generator completed after {empty_count} empty reads")
     
     def mark_completed(self):
         """Mark audio as completed"""
@@ -167,8 +167,8 @@ class AudioProcessorAgent:
         
         self._initialize_google_stt()
         
-        #logger.info(f"🎵 {self.agent_name} initialized - NATIVE STEREO MODE")
-        #logger.info(f"🎯 Stereo chunk size: {self.stereo_chunk_size} bytes")
+        logger.info(f"🎵 {self.agent_name} initialized - NATIVE STEREO MODE")
+        logger.info(f"🎯 Stereo chunk size: {self.stereo_chunk_size} bytes")
     
     def _get_default_config(self) -> Dict[str, Any]:
         settings = get_settings()
@@ -268,7 +268,7 @@ class AudioProcessorAgent:
     async def start_realtime_processing(self, session_id: str, audio_filename: str, websocket_callback: Callable) -> Dict[str, Any]:
         """Start native stereo processing with UI sync"""
         try:
-            #logger.info(f"🎵 Starting NATIVE STEREO processing: {audio_filename}")
+            logger.info(f"🎵 Starting NATIVE STEREO processing: {audio_filename}")
             
             prepare_result = self._prepare_live_call({"session_id": session_id})
             if "error" in prepare_result:
@@ -284,7 +284,7 @@ class AudioProcessorAgent:
                 frames = wav_file.getnframes()
                 duration = frames / sample_rate
                 
-                #logger.info(f"📁 Audio: {duration:.1f}s, {sample_rate}Hz, {channels}ch")
+                logger.info(f"📁 Audio: {duration:.1f}s, {sample_rate}Hz, {channels}ch")
             
             if channels != 2:
                 return {"error": f"Only stereo audio supported. File has {channels} channels."}
@@ -352,18 +352,18 @@ class AudioProcessorAgent:
                 total_frames = wav_file.getnframes()
                 total_chunks = total_frames // frames_per_chunk
                 
-                #logger.info(f"🎵 Processing {total_chunks} NATIVE stereo chunks")
+                logger.info(f"🎵 Processing {total_chunks} NATIVE stereo chunks")
                 
                 while chunk_count < total_chunks:
                     # Check if processing was stopped
                     if self.active_sessions[session_id].get("processing_stopped", False):
-                        #logger.info(f"🛑 Native stereo processing stopped by user for {session_id}")
+                        logger.info(f"🛑 Native stereo processing stopped by user for {session_id}")
                         break
                     
                     # Read stereo frames DIRECTLY (no channel separation)
                     stereo_chunk = wav_file.readframes(frames_per_chunk)
                     if not stereo_chunk:
-                        #logger.info(f"📁 Reached end of stereo audio file at chunk {chunk_count}")
+                        logger.info(f"📁 Reached end of stereo audio file at chunk {chunk_count}")
                         break
                     
                     # Send stereo chunk directly to buffer (NO CONVERSION)
@@ -382,7 +382,7 @@ class AudioProcessorAgent:
                     if chunk_count % 100 == 0:
                         progress = (chunk_count / total_chunks) * 100
                         elapsed = chunk_count * self.chunk_duration_ms / 1000
-                        #logger.info(f"🎵 Native stereo progress: {progress:.1f}% ({elapsed:.1f}s) - {chunk_count}/{total_chunks}")
+                        logger.info(f"🎵 Native stereo progress: {progress:.1f}% ({elapsed:.1f}s) - {chunk_count}/{total_chunks}")
                         
                         await websocket_callback({
                             "type": "processing_progress",
@@ -400,7 +400,7 @@ class AudioProcessorAgent:
             self.active_sessions[session_id]["audio_completed"] = True
             audio_buffer.mark_completed()
             
-            #logger.info(f"✅ Native stereo audio processing complete: {chunk_count}/{total_chunks} chunks")
+            logger.info(f"✅ Native stereo audio processing complete: {chunk_count}/{total_chunks} chunks")
             
             # Wait for transcription to finish
             await asyncio.sleep(4.0)
@@ -419,7 +419,7 @@ class AudioProcessorAgent:
                         "timestamp": get_current_timestamp()
                     }
                 })
-                #logger.info(f"✅ AUDIO PROCESSOR: Sent processing_complete for {session_id}")
+                logger.info(f"✅ AUDIO PROCESSOR: Sent processing_complete for {session_id}")
                 
         except Exception as e:
             logger.error(f"❌ Error in native stereo audio processing: {e}")
@@ -495,11 +495,11 @@ class AudioProcessorAgent:
         while session_id in self.active_sessions and session.get("status") == "streaming":
             # Check if processing was stopped or audio completed
             if session.get("processing_stopped", False):
-                #logger.info(f"🛑 Native stereo streaming stopped by user for {session_id}")
+                logger.info(f"🛑 Native stereo streaming stopped by user for {session_id}")
                 break
                 
             if session.get("audio_completed", False):
-                #logger.info(f"🏁 Audio completed, ending streaming for {session_id}")
+                logger.info(f"🏁 Audio completed, ending streaming for {session_id}")
 
                 # Send completion only once
                 if not session.get("completion_sent", False):
@@ -514,7 +514,7 @@ class AudioProcessorAgent:
                                     "timestamp": get_current_timestamp()
                                 }
                             })
-                            #logger.info(f"✅ Sent processing_complete from streaming restart for {session_id}")
+                            logger.info(f"✅ Sent processing_complete from streaming restart for {session_id}")
                         except Exception as e:
                             logger.error(f"❌ Failed to send processing_complete from restart: {e}")
                 else:
@@ -531,7 +531,7 @@ class AudioProcessorAgent:
                 )
             except asyncio.TimeoutError:
                 session["restart_count"] += 1
-                #logger.info(f"🔄 Native stereo restart #{session['restart_count']} for {session_id}")
+                logger.info(f"🔄 Native stereo restart #{session['restart_count']} for {session_id}")
                 
                 if session["restart_count"] > 5:
                     logger.warning(f"Too many restarts for {session_id}")
@@ -553,7 +553,7 @@ class AudioProcessorAgent:
         audio_buffer = self.audio_buffers[session_id]
         speaker_tracker = self.speaker_trackers[session_id]
         
-        #logger.info(f"🎙️ Starting NATIVE STEREO Google STT for {session_id}")
+        logger.info(f"🎙️ Starting NATIVE STEREO Google STT for {session_id}")
         
         # ENHANCED: More explicit stereo configuration
         recognition_config = self.speech_types.RecognitionConfig(
@@ -616,10 +616,10 @@ class AudioProcessorAgent:
                 request.audio_content = stereo_chunk
                 yield request
                 
-            #logger.info(f"🎵 Native stereo generator sent {chunk_count} stereo chunks")
+            logger.info(f"🎵 Native stereo generator sent {chunk_count} stereo chunks")
         
         try:
-            #logger.info(f"🚀 Starting Google STT with ENHANCED NATIVE STEREO for {session_id}")
+            logger.info(f"🚀 Starting Google STT with ENHANCED NATIVE STEREO for {session_id}")
             
             responses = self.google_client.streaming_recognize(
                 config=streaming_config,
@@ -824,7 +824,7 @@ class AudioProcessorAgent:
     async def stop_streaming(self, session_id: str) -> Dict[str, Any]:
         """Stop native stereo processing"""
         try:
-            #logger.info(f"🛑 STOP native stereo session {session_id}")
+            logger.info(f"🛑 STOP native stereo session {session_id}")
             
             if session_id not in self.active_sessions:
                 return {"error": "Session not found"}
@@ -894,7 +894,7 @@ class AudioProcessorAgent:
                     }
                 })
             
-            #logger.info(f"✅ Native stereo session {session_id} stopped completely")
+            logger.info(f"✅ Native stereo session {session_id} stopped completely")
             
             return {
                 "session_id": session_id, 

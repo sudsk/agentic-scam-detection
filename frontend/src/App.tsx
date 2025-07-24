@@ -345,7 +345,6 @@ function App() {
   const [detectedPatterns, setDetectedPatterns] = useState<Record<string, DetectedPattern>>({});
   const [policyGuidance, setPolicyGuidance] = useState<PolicyGuidance | null>(null);
   const [processingStage, setProcessingStage] = useState<string>('');
-  const [showingSegments, setShowingSegments] = useState<AudioSegment[]>([]);
   const [scamType, setScamType] = useState<string>('unknown');
   const [currentCustomer, setCurrentCustomer] = useState<CustomerProfile>(defaultCustomerProfile);
   
@@ -856,7 +855,6 @@ const handleWebSocketMessage = (message: WebSocketMessage): void => {
     setDetectedPatterns({});
     setPolicyGuidance(null);
     setProcessingStage('');
-    setShowingSegments([]);
     setTranscriptSegments([]);
     setCurrentInterimSegment(null);
     setLastFinalSegmentTime(0);

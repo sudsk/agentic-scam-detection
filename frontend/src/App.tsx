@@ -2,14 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   AlertCircle, 
   CheckCircle, 
-  Shield, 
   FileText, 
   Users, 
   Play, 
   Pause, 
   Volume2,
   PhoneCall,
-  TrendingUp,
   AlertTriangle,
   Brain,
   Wifi,
@@ -233,13 +231,6 @@ const getSpeakerColor = (speaker: string, isInterim: boolean = false) => {
   } else {
     return isInterim ? 'bg-green-50 text-green-700 border-green-200' : 'bg-green-100 text-green-800 border-green-300';
   }
-};
-
-const getRiskColor = (riskScore: number): string => {
-  if (riskScore >= 80) return 'bg-red-100 text-red-800 border-red-300';
-  if (riskScore >= 60) return 'bg-orange-100 text-orange-800 border-orange-300';
-  if (riskScore >= 40) return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-  return 'bg-green-100 text-green-800 border-green-300';
 };
 
 const formatTime = (seconds: number): string => {

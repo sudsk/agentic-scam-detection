@@ -240,13 +240,13 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 30,
                 'riskScore': 25,
                 'suggestedQuestion': {
-                    'question': 'Could you provide more details about this investment opportunity you mentioned?',
+                    'question': 'Could you provide more details about this investment opportunity?',
                     'context': 'Investment verification',
                     'urgency': 'medium'
                 }
             },
             {
-                'triggerAtSeconds': 42,
+                'triggerAtSeconds': 45,
                 'riskScore': 65,
                 'suggestedQuestion': {
                     'question': 'How did you originally come across this investment advisor or platform?',

@@ -27,6 +27,7 @@ APPROVED PATTERN NAMES (use EXACTLY these names, no variations):
 - Authority Impersonation
 - Guaranteed Investment Returns
 - Investment Pressure Tactics
+- Unauthorised Investment Platform
 
 PATTERN DETECTION RULES:
 - Romance Exploitation: boyfriend/girlfriend, online dating, romantic relationship
@@ -39,6 +40,7 @@ PATTERN DETECTION RULES:
 - Authority Impersonation: police, HMRC, government, official investigation
 - Guaranteed Investment Returns: guaranteed returns, no risk, certain profit
 - Investment Pressure Tactics: limited time offer, exclusive opportunity, act now
+- Unauthorised Investment Platform: not regulated by FCA, unregulated by FCA, not approved by FCA
 
 CRITICAL RULES:
 1. Use ONLY the approved pattern names above - NO variations, additions, or creative interpretations

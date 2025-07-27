@@ -156,6 +156,18 @@ FRAUD_PATTERN_CONFIG = {
         ],
         'description': 'Using emotional manipulation to influence victim decisions'
     },
+    'unauthorised_investment_platform': {
+        'name': 'Unauthorised Investment Platform',
+        'weight': 10,  
+        'severity': 'medium',
+        'scam_types': ['investment_scam'],
+        'keywords': [
+            'not regulated by FCA', 'unregulated by FCA', 'not approved by FCA',
+            'not authorized', 'no regulation', 'bypasses regulation',
+            'unregulated platform', 'no oversight'
+        ],
+        'description': 'Investment platform lacks proper FCA regulation'
+    },    
 
     'credential_requests': {
         'name': 'Credential Requests',

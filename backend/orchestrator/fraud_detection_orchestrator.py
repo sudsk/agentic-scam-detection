@@ -548,7 +548,8 @@ class FraudDetectionOrchestrator:
         """Run ADK agent pipeline with proper session management and UI updates"""
         try:
             logger.info(f"🎭 Running ADK agent pipeline: {session_id}")
-            
+            logger.info(f"🔍 CUSTOMER TEXT: '{customer_text}'")
+        
             session_data = self.active_sessions[session_id]
             
             # STEP 1: Scam Detection using proper ADK execution
@@ -557,10 +558,14 @@ class FraudDetectionOrchestrator:
                 "customer_text": customer_text,
                 "session_id": session_id
             })
+
+            logger.info(f"🔍 RAW ADK RESPONSE: '{scam_analysis_raw}'")
             
             # Parse and send UI update
             parsed_analysis = await self._parse_and_accumulate_patterns(session_id, scam_analysis_raw)
             risk_score = parsed_analysis.get('risk_score', 0)
+
+            logger.info(f"🔍 PARSED PATTERNS: {parsed_analysis.get('detected_patterns', [])}")
             
             # Send fraud analysis update to UI with detailed logging
             if callback:

@@ -237,7 +237,7 @@ DEMO_SCRIPTS = {
         'title': 'Investment Scam Demo',
         'timeline': [
             {
-                'triggerAtSeconds': 29.5,
+                'triggerAtSeconds': 29,
                 'riskScore': 25,
                 'suggestedQuestion': {
                     'question': 'Could you provide more details about this investment opportunity?',

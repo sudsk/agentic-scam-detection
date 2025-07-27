@@ -40,7 +40,7 @@ PATTERN DETECTION RULES:
 - Authority Impersonation: police, HMRC, government, official investigation
 - Guaranteed Investment Returns: guaranteed returns, no risk, certain profit
 - Investment Pressure Tactics: limited time offer, exclusive opportunity, act now
-- Unauthorised Investment Platform: not regulated by FCA, unregulated by FCA, not approved by FCA
+- Unauthorised Investment Platform: explicitly states "not regulated by FCA", claims "no FCA regulation needed", says "unregulated investment" or "regulated globally" 
 
 CRITICAL RULES:
 1. Use ONLY the approved pattern names above - NO variations, additions, or creative interpretations

@@ -246,7 +246,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 45,
+                'triggerAtSeconds': 46,
                 'riskScore': 65,
                 'suggestedQuestion': {
                     'question': 'How did you originally come across this investment advisor or platform?',
@@ -255,7 +255,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 60,
+                'triggerAtSeconds': 63,
                 'riskScore': 80,
                 'suggestedQuestion': {
                     'question': 'Have you been able to withdraw any returns or profits from previous investments?',
@@ -264,7 +264,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 75,
+                'triggerAtSeconds': 79,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Can you confirm if this advisor is authorized and regulated by the FCA?',
@@ -273,7 +273,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 90,
+                'triggerAtSeconds': 96,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'What is the exact name of the trading platform or investment company?',
@@ -282,11 +282,29 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 125,
+                'triggerAtSeconds': 109,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Warn about the platform as unauthorized by FCA',
+                    'context': 'Platform verification',
+                    'urgency': 'critical'
+                }
+            },            
+            {
+                'triggerAtSeconds': 131,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Have you felt any pressure from the advisor to invest additional funds?',
                     'context': 'Pressure tactics investigation',
+                    'urgency': 'critical'
+                }
+            },            
+            {
+                'triggerAtSeconds': 152,
+                'riskScore': 90,
+                'suggestedQuestion': {
+                    'question': 'Warn about investment scam',
+                    'context': 'Scam detected',
                     'urgency': 'critical'
                 }
             }

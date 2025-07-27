@@ -237,7 +237,7 @@ DEMO_SCRIPTS = {
         'title': 'Investment Scam Demo',
         'timeline': [
             {
-                'triggerAtSeconds': 30,
+                'triggerAtSeconds': 29.5,
                 'riskScore': 25,
                 'suggestedQuestion': {
                     'question': 'Could you provide more details about this investment opportunity?',
@@ -246,7 +246,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 46,
+                'triggerAtSeconds': 45.5,
                 'riskScore': 65,
                 'suggestedQuestion': {
                     'question': 'How did you originally come across this investment advisor or platform?',
@@ -255,7 +255,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 63,
+                'triggerAtSeconds': 62.5,
                 'riskScore': 80,
                 'suggestedQuestion': {
                     'question': 'Have you been able to withdraw any returns or profits from previous investments?',
@@ -264,7 +264,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 79,
+                'triggerAtSeconds': 78.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Can you confirm if this advisor is authorised and regulated by the FCA?',
@@ -273,7 +273,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 96,
+                'triggerAtSeconds': 95.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'What is the exact name of the trading platform or investment company?',
@@ -282,7 +282,7 @@ DEMO_SCRIPTS = {
                 }
             },
             {
-                'triggerAtSeconds': 109,
+                'triggerAtSeconds': 108.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Warn about the platform as unauthorised by FCA',
@@ -291,7 +291,7 @@ DEMO_SCRIPTS = {
                 }
             },            
             {
-                'triggerAtSeconds': 131,
+                'triggerAtSeconds': 130.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Have you felt any pressure from the advisor to invest additional funds?',
@@ -300,7 +300,7 @@ DEMO_SCRIPTS = {
                 }
             },            
             {
-                'triggerAtSeconds': 152,
+                'triggerAtSeconds': 151.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Warn about investment scam',

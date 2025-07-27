@@ -267,7 +267,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 79,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Can you confirm if this advisor is authorized and regulated by the FCA?',
+                    'question': 'Can you confirm if this advisor is authorised and regulated by the FCA?',
                     'context': 'Regulatory compliance check',
                     'urgency': 'critical'
                 }
@@ -285,7 +285,7 @@ DEMO_SCRIPTS = {
                 'triggerAtSeconds': 109,
                 'riskScore': 90,
                 'suggestedQuestion': {
-                    'question': 'Warn about the platform as unauthorized by FCA',
+                    'question': 'Warn about the platform as unauthorised by FCA',
                     'context': 'Platform verification',
                     'urgency': 'critical'
                 }

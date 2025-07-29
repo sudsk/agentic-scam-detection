@@ -280,31 +280,13 @@ DEMO_SCRIPTS = {
                     'context': 'Platform verification',
                     'urgency': 'critical'
                 }
-            },
-            {
-                'triggerAtSeconds': 108.5,
-                'riskScore': 90,
-                'suggestedQuestion': {
-                    'question': 'Warn about the platform as unauthorised by FCA',
-                    'context': 'Platform verification',
-                    'urgency': 'critical'
-                }
-            },            
+            },         
             {
                 'triggerAtSeconds': 130.5,
                 'riskScore': 90,
                 'suggestedQuestion': {
                     'question': 'Have you felt any pressure from the advisor to invest additional funds?',
                     'context': 'Pressure tactics investigation',
-                    'urgency': 'critical'
-                }
-            },            
-            {
-                'triggerAtSeconds': 151.5,
-                'riskScore': 90,
-                'suggestedQuestion': {
-                    'question': 'Warn about investment scam',
-                    'context': 'Scam detected',
                     'urgency': 'critical'
                 }
             }

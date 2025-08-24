@@ -367,19 +367,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Internal HSBC**: Contact the AI/ML Engineering Team
-- **Issues**: [GitHub Issues](https://github.com/hsbc/scam-detection-agent/issues)
-- **Documentation**: [Wiki](https://github.com/hsbc/scam-detection-agent/wiki)
+- **Internal EPAM**: Contact the GCP EMEA Practice Team
+- **Issues**: [GitHub Issues]( )
+- **Documentation**: [Wiki]( )
 
 ## 🎯 Roadmap
 
-- **Q1 2025**: Multi-language support (Spanish, Mandarin)
-- **Q2 2025**: Advanced behavioral analysis
-- **Q3 2025**: Global deployment (APAC, Americas)
-- **Q4 2025**: Integration with additional fraud platforms
+- **Q3 2025**: xxxx
+- **Q4 2025**: xxxx
 
 ---
 
 **⚡ Ready to protect customers from fraud in real-time!**
 
-Built with ❤️ by the HSBC AI/ML Engineering Team using Google ADK v2.0

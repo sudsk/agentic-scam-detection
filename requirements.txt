@@ -10,6 +10,7 @@ aiofiles>=23.1.0
 
 # ===== HTTP CLIENT =====
 httpx>=0.24.0
+aiohttp==3.12.13
 
 # ===== UTILITIES =====
 python-dotenv>=1.0.0

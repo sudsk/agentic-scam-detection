@@ -77,19 +77,25 @@ python -m uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000 &
 ### 2. Frontend Setup
 
 ```bash
-python -m venv venv
-source venv/bin/activate
+cd frontend
 
-pip install -r requirements.txt
+# Copy .env.example and update the IP address of backend server like below
+# REACT_APP_API_URL=http://<IP>:8000
+# REACT_APP_WS_URL=ws://<IP>:8000
+cp .env.example .env
 
+# Install packages
+npm install
 
+# Start frontend
+npm start &
 ```
 
 ### 3. Access Demo Interface
 
-- **Frontend Dashboard**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
+- **Frontend Dashboard**: http://<IP address>:3000
+- **Backend API**: http://<IP address>:8000
+- **API Documentation**: http://<IP address>:8000/docs
 
 ### 4. Demo Workflow
 

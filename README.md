@@ -39,26 +39,50 @@ The system uses a **multi-agent architecture** with specialized agents working t
 
 - Python 3.9+
 - Node.js 16+
-- Docker & Docker Compose
-- Google Cloud Account (for production)
+- Google Cloud Account with ADK enabled
 
 ### 1. Clone and Setup
 
 ```bash
-git clone https://github.com/hsbc/scam-detection-agent.git
-cd scam-detection-agent
-chmod +x setup.sh
-./setup.sh
+git clone https://github.com/sudsk/agentic-scam-detection.git
+cd agentic-scam-detection
 ```
 
-### 2. Start Demo Environment
+### 2. Backend Setup
 
 ```bash
-# Start all services
-docker-compose up -d
+python -m venv venv
+source venv/bin/activate
 
-# Verify services are running
-docker-compose ps
+# Install requirements
+pip install -r requirements.txt
+
+# Set environment variables
+export GOOGLE_CLOUD_PROJECT="<GCP Project>"
+export GOOGLE_CLOUD_LOCATION="<GCP Region>"
+export GOOGLE_GENAI_USE_VERTEXAI="True"
+export SERVICENOW_INSTANCE_URL=https://<host>.service-now.com
+export SERVICENOW_USERNAME=<user>
+export SERVICENOW_PASSWORD='<password>'
+export SERVICENOW_ENABLED=true
+export SERVICENOW_MIN_RISK_SCORE=60
+
+# Obtain user access credentials for Application Default Credentials (ADC) for local development.
+gcloud auth application-default login
+
+# Start backend
+python -m uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000 &
+```
+
+### 2. Frontend Setup
+
+```bash
+python -m venv venv
+source venv/bin/activate
+
+pip install -r requirements.txt
+
+
 ```
 
 ### 3. Access Demo Interface

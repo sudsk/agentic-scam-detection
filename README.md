@@ -93,9 +93,9 @@ npm start &
 
 ### 3. Access Demo Interface
 
-- **Frontend Dashboard**: http://<IP address>:3000
-- **Backend API**: http://<IP address>:8000
-- **API Documentation**: http://<IP address>:8000/docs
+- **Frontend Dashboard**: http://<IP>:3000
+- **Backend API**: http://<IP>:8000
+- **API Documentation**: http://<IP>:8000/docs
 
 ### 4. Demo Workflow
 
